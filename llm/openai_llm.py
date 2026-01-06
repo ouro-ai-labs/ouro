@@ -15,7 +15,7 @@ class OpenAILLM(BaseLLM):
         Args:
             api_key: OpenAI API key
             model: GPT model identifier (e.g., gpt-4o, gpt-4-turbo, gpt-3.5-turbo)
-            **kwargs: Additional configuration (including retry_config)
+            **kwargs: Additional configuration (including retry_config, base_url)
         """
         super().__init__(api_key, model, **kwargs)
 
@@ -26,9 +26,17 @@ class OpenAILLM(BaseLLM):
             max_delay=60.0
         ))
 
+        # Get base_url from kwargs, or use None (default)
+        base_url = kwargs.get('base_url', None)
+
         try:
             from openai import OpenAI
-            self.client = OpenAI(api_key=api_key)
+
+            # Initialize client with optional base_url
+            if base_url:
+                self.client = OpenAI(api_key=api_key, base_url=base_url)
+            else:
+                self.client = OpenAI(api_key=api_key)
         except ImportError:
             raise ImportError(
                 "OpenAI package not installed. Install with: pip install openai"

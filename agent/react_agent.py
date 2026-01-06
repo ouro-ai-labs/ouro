@@ -26,26 +26,33 @@ When you have enough information, provide your final answer directly without usi
         Returns:
             Final answer as a string
         """
-        # Initialize conversation with system message and user task
-        messages = [
-            LLMMessage(role="system", content=self.SYSTEM_PROMPT),
-            LLMMessage(role="user", content=task)
-        ]
+        # Initialize memory with system message and user task
+        self.memory.add_message(LLMMessage(role="system", content=self.SYSTEM_PROMPT))
+        self.memory.add_message(LLMMessage(role="user", content=task))
+
         tools = self.tool_executor.get_tool_schemas()
 
         for iteration in range(self.max_iterations):
             print(f"\n--- Iteration {iteration + 1} ---")
 
+            # Get optimized context from memory
+            messages = self.memory.get_context_for_llm()
+
             # Call LLM with tools
             response = self._call_llm(messages=messages, tools=tools)
 
-            # Add assistant response to conversation
-            messages.append(LLMMessage(role="assistant", content=response.content))
+            # Add assistant response to memory (auto-compression if needed)
+            self.memory.add_message(LLMMessage(role="assistant", content=response.content))
+
+            # Show compression info if it happened
+            if self.memory.was_compressed_last_iteration:
+                print(f"[Memory compressed: saved {self.memory.last_compression_savings} tokens]")
 
             # Check if we're done (no tool calls)
             if response.stop_reason == "end_turn":
                 final_answer = self._extract_text(response)
                 print(f"\nFinal answer received.")
+                self._print_memory_stats()
                 return final_answer
 
             # Execute tool calls and add results
@@ -56,6 +63,7 @@ When you have enough information, provide your final answer directly without usi
                 if not tool_calls:
                     # No tool calls found, end loop
                     final_answer = self._extract_text(response)
+                    self._print_memory_stats()
                     return final_answer if final_answer else "No response generated."
 
                 # Execute each tool call
@@ -72,8 +80,19 @@ When you have enough information, provide your final answer directly without usi
                         content=result
                     ))
 
-                # Format tool results and add to conversation
+                # Format tool results and add to memory
                 result_message = self.llm.format_tool_results(tool_results)
-                messages.append(result_message)
+                self.memory.add_message(result_message)
 
+        self._print_memory_stats()
         return "Max iterations reached without completion."
+
+    def _print_memory_stats(self):
+        """Print memory usage statistics."""
+        stats = self.memory.get_stats()
+        print("\n--- Memory Statistics ---")
+        print(f"Total tokens: {stats['current_tokens']}")
+        print(f"Compressions: {stats['compression_count']}")
+        print(f"Net savings: {stats['net_savings']} tokens")
+        print(f"Total cost: ${stats['total_cost']:.4f}")
+        print(f"Messages: {stats['short_term_count']} in memory, {stats['summary_count']} summaries")

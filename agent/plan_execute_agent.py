@@ -70,7 +70,20 @@ Provide a final answer to the user's original task based on these results."""
         print("PHASE 3: SYNTHESIS")
         print("=" * 60)
         final_answer = self._synthesize_results(task, step_results)
+
+        # Print memory statistics
+        self._print_memory_stats()
+
         return final_answer
+
+    def _print_memory_stats(self):
+        """Print memory usage statistics."""
+        stats = self.memory.get_stats()
+        print("\n--- Memory Statistics ---")
+        print(f"Total tokens: {stats['current_tokens']}")
+        print(f"Compressions: {stats['compression_count']}")
+        print(f"Net savings: {stats['net_savings']} tokens")
+        print(f"Total cost: ${stats['total_cost']:.4f}")
 
     def _create_plan(self, task: str) -> str:
         """Generate a plan without using tools."""
@@ -98,6 +111,7 @@ Provide a final answer to the user's original task based on these results."""
         """Execute a single step using tools (mini ReAct loop)."""
         history = "\n\n".join(previous_results) if previous_results else "None"
 
+        # Initialize step-specific message list for mini-loop
         messages = [
             LLMMessage(
                 role="user",
@@ -116,14 +130,23 @@ Provide a final answer to the user's original task based on these results."""
             messages.append(LLMMessage(role="assistant", content=response.content))
 
             if response.stop_reason == "end_turn":
-                return self._extract_text(response)
+                result = self._extract_text(response)
+                # Save step result summary to main memory
+                self.memory.add_message(
+                    LLMMessage(role="assistant", content=f"Step {step_num} completed: {result}")
+                )
+                return result
 
             if response.stop_reason == "tool_use":
                 # Extract tool calls
                 tool_calls = self.llm.extract_tool_calls(response)
 
                 if not tool_calls:
-                    return self._extract_text(response)
+                    result = self._extract_text(response)
+                    self.memory.add_message(
+                        LLMMessage(role="assistant", content=f"Step {step_num} completed: {result}")
+                    )
+                    return result
 
                 # Execute tool calls
                 tool_results = []
@@ -139,7 +162,9 @@ Provide a final answer to the user's original task based on these results."""
                 result_message = self.llm.format_tool_results(tool_results)
                 messages.append(result_message)
 
-        return "Step execution incomplete (max iterations reached)"
+        incomplete_msg = "Step execution incomplete (max iterations reached)"
+        self.memory.add_message(LLMMessage(role="assistant", content=f"Step {step_num}: {incomplete_msg}"))
+        return incomplete_msg
 
     def _synthesize_results(self, task: str, results: List[str]) -> str:
         """Combine step results into final answer."""

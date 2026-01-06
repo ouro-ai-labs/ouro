@@ -15,10 +15,18 @@ class AnthropicLLM(BaseLLM):
         Args:
             api_key: Anthropic API key
             model: Claude model identifier
-            **kwargs: Additional configuration (including retry_config)
+            **kwargs: Additional configuration (including retry_config, base_url)
         """
         super().__init__(api_key, model, **kwargs)
-        self.client = anthropic.Anthropic(api_key=api_key, base_url="https://api.xiaomimimo.com/anthropic")
+
+        # Get base_url from kwargs, or use None (default)
+        base_url = kwargs.get('base_url', None)
+
+        # Initialize client with optional base_url
+        if base_url:
+            self.client = anthropic.Anthropic(api_key=api_key, base_url=base_url)
+        else:
+            self.client = anthropic.Anthropic(api_key=api_key)
 
         # Configure retry behavior
         self.retry_config = kwargs.get('retry_config', RetryConfig(

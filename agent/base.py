@@ -5,6 +5,7 @@ from typing import List, Optional
 from .tool_executor import ToolExecutor
 from tools.base import BaseTool
 from llm import BaseLLM, LLMMessage, LLMResponse
+from memory import MemoryManager, MemoryConfig
 
 
 class BaseAgent(ABC):
@@ -15,6 +16,7 @@ class BaseAgent(ABC):
         llm: BaseLLM,
         max_iterations: int = 10,
         tools: List[BaseTool] = None,
+        memory_config: Optional[MemoryConfig] = None,
     ):
         """Initialize the agent.
 
@@ -22,10 +24,16 @@ class BaseAgent(ABC):
             llm: LLM instance to use
             max_iterations: Maximum number of agent loop iterations
             tools: List of tools available to the agent
+            memory_config: Optional memory configuration (None = use defaults)
         """
         self.llm = llm
         self.max_iterations = max_iterations
         self.tool_executor = ToolExecutor(tools or [])
+
+        # Initialize memory manager
+        if memory_config is None:
+            memory_config = MemoryConfig()
+        self.memory = MemoryManager(memory_config, llm)
 
     @abstractmethod
     def run(self, task: str) -> str:
