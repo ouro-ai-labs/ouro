@@ -34,11 +34,12 @@ def create_agent(mode: str = "react", enable_shell: bool = False):
         print("⚠️  Warning: Shell tool enabled - use with caution!")
         tools.append(ShellTool())
 
-    # Create LLM instance
+    # Create LLM instance with retry configuration
     llm = create_llm(
         provider=Config.LLM_PROVIDER,
         api_key=Config.get_api_key(),
-        model=Config.get_default_model()
+        model=Config.get_default_model(),
+        retry_config=Config.get_retry_config()
     )
 
     # Create agent based on mode

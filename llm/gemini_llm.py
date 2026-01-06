@@ -9,6 +9,7 @@ import json
 import warnings
 
 from .base import BaseLLM, LLMMessage, LLMResponse, ToolCall, ToolResult
+from .retry import with_retry, RetryConfig
 
 # Suppress the deprecation warning for now
 warnings.filterwarnings("ignore", category=FutureWarning, module="google.generativeai")
@@ -23,9 +24,16 @@ class GeminiLLM(BaseLLM):
         Args:
             api_key: Google AI API key
             model: Gemini model identifier (e.g., gemini-1.5-pro, gemini-1.5-flash)
-            **kwargs: Additional configuration
+            **kwargs: Additional configuration (including retry_config)
         """
         super().__init__(api_key, model, **kwargs)
+
+        # Configure retry behavior
+        self.retry_config = kwargs.get('retry_config', RetryConfig(
+            max_retries=5,
+            initial_delay=2.0,
+            max_delay=60.0
+        ))
 
         try:
             import google.generativeai as genai
@@ -38,6 +46,21 @@ class GeminiLLM(BaseLLM):
                 "Install with: pip install google-generativeai"
             )
 
+    @with_retry()
+    def _make_api_call(self, model, messages, tools, generation_config):
+        """Internal method to make API call with retry logic."""
+        if tools:
+            return model.generate_content(
+                messages,
+                tools=tools,
+                generation_config=generation_config
+            )
+        else:
+            return model.generate_content(
+                messages,
+                generation_config=generation_config
+            )
+
     def call(
         self,
         messages: List[LLMMessage],
@@ -45,7 +68,7 @@ class GeminiLLM(BaseLLM):
         max_tokens: int = 4096,
         **kwargs
     ) -> LLMResponse:
-        """Call Gemini API.
+        """Call Gemini API with automatic retry on rate limits.
 
         Args:
             messages: List of conversation messages
@@ -118,19 +141,19 @@ class GeminiLLM(BaseLLM):
                 system_instruction=system_instruction
             )
 
-        # Make API call
+        # Make API call with retry logic
         try:
-            if gemini_tools:
-                response = model.generate_content(
-                    gemini_messages,
-                    tools=gemini_tools,
-                    generation_config=generation_config
-                )
-            else:
-                response = model.generate_content(
-                    gemini_messages,
-                    generation_config=generation_config
-                )
+            response = self._make_api_call(
+                model,
+                gemini_messages,
+                gemini_tools,
+                generation_config
+            )
+
+            # Print token usage
+            if hasattr(response, 'usage_metadata'):
+                usage = response.usage_metadata
+                print(f"\n📊 Token Usage: Input={usage.prompt_token_count}, Output={usage.candidates_token_count}, Total={usage.total_token_count}")
 
             # Determine stop reason
             if hasattr(response, "candidates") and response.candidates:

@@ -3,6 +3,7 @@ from typing import List, Dict, Any, Optional
 import json
 
 from .base import BaseLLM, LLMMessage, LLMResponse, ToolCall, ToolResult
+from .retry import with_retry, RetryConfig
 
 
 class OpenAILLM(BaseLLM):
@@ -14,9 +15,16 @@ class OpenAILLM(BaseLLM):
         Args:
             api_key: OpenAI API key
             model: GPT model identifier (e.g., gpt-4o, gpt-4-turbo, gpt-3.5-turbo)
-            **kwargs: Additional configuration
+            **kwargs: Additional configuration (including retry_config)
         """
         super().__init__(api_key, model, **kwargs)
+
+        # Configure retry behavior
+        self.retry_config = kwargs.get('retry_config', RetryConfig(
+            max_retries=5,
+            initial_delay=1.0,
+            max_delay=60.0
+        ))
 
         try:
             from openai import OpenAI
@@ -26,6 +34,11 @@ class OpenAILLM(BaseLLM):
                 "OpenAI package not installed. Install with: pip install openai"
             )
 
+    @with_retry()
+    def _make_api_call(self, **call_params):
+        """Internal method to make API call with retry logic."""
+        return self.client.chat.completions.create(**call_params)
+
     def call(
         self,
         messages: List[LLMMessage],
@@ -33,7 +46,7 @@ class OpenAILLM(BaseLLM):
         max_tokens: int = 4096,
         **kwargs
     ) -> LLMResponse:
-        """Call OpenAI API.
+        """Call OpenAI API with automatic retry on rate limits.
 
         Args:
             messages: List of conversation messages
@@ -100,8 +113,13 @@ class OpenAILLM(BaseLLM):
         # Add any additional parameters
         call_params.update(kwargs)
 
-        # Make API call
-        response = self.client.chat.completions.create(**call_params)
+        # Make API call with retry logic
+        response = self._make_api_call(**call_params)
+
+        # Print token usage
+        if hasattr(response, 'usage') and response.usage:
+            usage = response.usage
+            print(f"\n📊 Token Usage: Input={usage.prompt_tokens}, Output={usage.completion_tokens}, Total={usage.total_tokens}")
 
         # Determine stop reason
         finish_reason = response.choices[0].finish_reason

@@ -3,6 +3,7 @@ from typing import List, Dict, Any, Optional
 import anthropic
 
 from .base import BaseLLM, LLMMessage, LLMResponse, ToolCall, ToolResult
+from .retry import with_retry, RetryConfig
 
 
 class AnthropicLLM(BaseLLM):
@@ -14,10 +15,22 @@ class AnthropicLLM(BaseLLM):
         Args:
             api_key: Anthropic API key
             model: Claude model identifier
-            **kwargs: Additional configuration
+            **kwargs: Additional configuration (including retry_config)
         """
         super().__init__(api_key, model, **kwargs)
-        self.client = anthropic.Anthropic(api_key=api_key)
+        self.client = anthropic.Anthropic(api_key=api_key, base_url="https://api.xiaomimimo.com/anthropic")
+
+        # Configure retry behavior
+        self.retry_config = kwargs.get('retry_config', RetryConfig(
+            max_retries=5,
+            initial_delay=1.0,
+            max_delay=60.0
+        ))
+
+    @with_retry()
+    def _make_api_call(self, **call_params):
+        """Internal method to make API call with retry logic."""
+        return self.client.messages.create(**call_params)
 
     def call(
         self,
@@ -26,7 +39,7 @@ class AnthropicLLM(BaseLLM):
         max_tokens: int = 4096,
         **kwargs
     ) -> LLMResponse:
-        """Call Claude API.
+        """Call Claude API with automatic retry on rate limits.
 
         Args:
             messages: List of conversation messages
@@ -70,8 +83,13 @@ class AnthropicLLM(BaseLLM):
         # Add any additional parameters
         call_params.update(kwargs)
 
-        # Make API call
-        response = self.client.messages.create(**call_params)
+        # Make API call with retry logic
+        response = self._make_api_call(**call_params)
+
+        # Print token usage
+        if hasattr(response, 'usage'):
+            usage = response.usage
+            print(f"\n📊 Token Usage: Input={usage.input_tokens}, Output={usage.output_tokens}, Total={usage.input_tokens + usage.output_tokens}")
 
         # Convert to unified format
         return LLMResponse(

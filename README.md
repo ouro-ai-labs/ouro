@@ -20,6 +20,11 @@ A Python agentic loop system supporting both **ReAct** and **Plan-and-Execute** 
   - Web search (DuckDuckGo)
   - Shell command execution (optional)
 
+- 🔄 **Robust & Resilient**:
+  - Automatic retry with exponential backoff for rate limits (429 errors)
+  - Handles API quota exhaustion gracefully
+  - Configurable retry behavior per provider
+
 - 🎓 **Learning-Friendly**:
   - Clean, concise code (~1500 lines)
   - Modular design, easy to understand
@@ -307,12 +312,49 @@ python test_basic.py
 - **Anthropic API Documentation**: [docs.anthropic.com](https://docs.anthropic.com)
 - **Tool Use Guide**: [Tool Use (Function Calling)](https://docs.anthropic.com/en/docs/tool-use)
 
+## Advanced Features
+
+### Automatic Retry on Rate Limits
+
+All LLM providers now support automatic retry with exponential backoff when encountering rate limit errors (429). This is especially useful for free tier APIs:
+
+```python
+# Automatic retry is enabled by default
+# When you hit rate limits, the system will:
+# 1. Detect the 429 error
+# 2. Wait with exponential backoff (1s, 2s, 4s, 8s, ...)
+# 3. Retry up to 5 times
+# 4. Add random jitter to avoid thundering herd
+
+# Example output when hitting rate limit:
+# ⚠️  Rate limit error: 429 You exceeded your current quota
+#    Retrying in 2.3s... (attempt 1/5)
+```
+
+**Retry Configuration** (optional):
+```python
+from llm import create_llm, RetryConfig
+
+# Custom retry behavior
+llm = create_llm(
+    provider="gemini",
+    api_key="your_key",
+    model="gemini-1.5-flash",
+    retry_config=RetryConfig(
+        max_retries=10,      # More retries
+        initial_delay=2.0,   # Start with 2s
+        max_delay=120.0,     # Cap at 2 minutes
+        exponential_base=2.0,
+        jitter=True          # Add randomness
+    )
+)
+```
+
 ## Future Improvements
 
 - [ ] Streaming output to display agent thinking process
 - [ ] Conversation memory to maintain context
 - [ ] Parallel tool execution
-- [ ] Better error recovery and retry mechanisms
 - [ ] Detailed logging and tracing
 - [ ] Human-in-the-loop for dangerous operations
 - [ ] Multi-agent collaboration system

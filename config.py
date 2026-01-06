@@ -25,6 +25,11 @@ class Config:
     # Tool Configuration
     ENABLE_SHELL = os.getenv("ENABLE_SHELL", "false").lower() == "true"
 
+    # Retry Configuration
+    RETRY_MAX_ATTEMPTS = int(os.getenv("RETRY_MAX_ATTEMPTS", "5"))
+    RETRY_INITIAL_DELAY = float(os.getenv("RETRY_INITIAL_DELAY", "1.0"))
+    RETRY_MAX_DELAY = float(os.getenv("RETRY_MAX_DELAY", "60.0"))
+
     @classmethod
     def get_api_key(cls) -> str:
         """Get the appropriate API key based on the selected provider.
@@ -68,6 +73,23 @@ class Config:
         }
 
         return defaults.get(cls.LLM_PROVIDER, "")
+
+    @classmethod
+    def get_retry_config(cls):
+        """Get retry configuration.
+
+        Returns:
+            RetryConfig instance with settings from environment variables
+        """
+        from llm.retry import RetryConfig
+
+        return RetryConfig(
+            max_retries=cls.RETRY_MAX_ATTEMPTS,
+            initial_delay=cls.RETRY_INITIAL_DELAY,
+            max_delay=cls.RETRY_MAX_DELAY,
+            exponential_base=2.0,
+            jitter=True
+        )
 
     @classmethod
     def validate(cls):
