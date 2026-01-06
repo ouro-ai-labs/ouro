@@ -24,7 +24,7 @@ class GeminiLLM(BaseLLM):
         Args:
             api_key: Google AI API key
             model: Gemini model identifier (e.g., gemini-1.5-pro, gemini-1.5-flash)
-            **kwargs: Additional configuration (including retry_config)
+            **kwargs: Additional configuration (including retry_config, base_url)
         """
         super().__init__(api_key, model, **kwargs)
 
@@ -37,7 +37,19 @@ class GeminiLLM(BaseLLM):
 
         try:
             import google.generativeai as genai
-            genai.configure(api_key=api_key)
+
+            # Get base_url from kwargs, or use None (default)
+            base_url = kwargs.get('base_url', None)
+
+            # Configure with optional base_url
+            if base_url:
+                # Use client_options to set custom endpoint
+                from google.api_core.client_options import ClientOptions
+                client_options = ClientOptions(api_endpoint=base_url)
+                genai.configure(api_key=api_key, client_options=client_options)
+            else:
+                genai.configure(api_key=api_key)
+
             self.genai = genai
             self.client = genai.GenerativeModel(model)
         except ImportError:

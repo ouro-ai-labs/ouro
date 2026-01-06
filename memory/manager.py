@@ -38,27 +38,39 @@ class MemoryManager:
         self.last_compression_savings = 0
         self.compression_count = 0
 
-    def add_message(self, message: "LLMMessage") -> None:
+    def add_message(self, message: "LLMMessage", actual_tokens: Dict[str, int] = None) -> None:
         """Add a message to memory and trigger compression if needed.
 
         Args:
             message: Message to add
+            actual_tokens: Optional dict with actual token counts from LLM response
+                          Format: {"input": int, "output": int}
         """
         # Track system messages separately
         if message.role == "system":
             self.system_messages.append(message)
             return
 
-        # Count tokens
-        provider = self.llm.provider_name.lower()
-        model = self.llm.model
-        tokens = self.token_tracker.count_message_tokens(message, provider, model)
+        # Count tokens (use actual if provided, otherwise estimate)
+        if actual_tokens:
+            # Use actual token counts from LLM response
+            input_tokens = actual_tokens.get("input", 0)
+            output_tokens = actual_tokens.get("output", 0)
+            tokens = input_tokens + output_tokens
 
-        # Update token count
-        if message.role == "assistant":
-            self.token_tracker.add_output_tokens(tokens)
+            self.token_tracker.add_input_tokens(input_tokens)
+            self.token_tracker.add_output_tokens(output_tokens)
         else:
-            self.token_tracker.add_input_tokens(tokens)
+            # Estimate token count
+            provider = self.llm.provider_name.lower()
+            model = self.llm.model
+            tokens = self.token_tracker.count_message_tokens(message, provider, model)
+
+            # Update token count
+            if message.role == "assistant":
+                self.token_tracker.add_output_tokens(tokens)
+            else:
+                self.token_tracker.add_input_tokens(tokens)
 
         self.current_tokens += tokens
 
