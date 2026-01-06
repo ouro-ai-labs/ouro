@@ -2,6 +2,7 @@
 import argparse
 
 from config import Config
+from llm import create_llm
 from agent.react_agent import ReActAgent
 from agent.plan_execute_agent import PlanExecuteAgent
 from tools.file_ops import FileReadTool, FileWriteTool, FileSearchTool
@@ -33,6 +34,13 @@ def create_agent(mode: str = "react", enable_shell: bool = False):
         print("⚠️  Warning: Shell tool enabled - use with caution!")
         tools.append(ShellTool())
 
+    # Create LLM instance
+    llm = create_llm(
+        provider=Config.LLM_PROVIDER,
+        api_key=Config.get_api_key(),
+        model=Config.get_default_model()
+    )
+
     # Create agent based on mode
     if mode == "react":
         agent_class = ReActAgent
@@ -42,8 +50,7 @@ def create_agent(mode: str = "react", enable_shell: bool = False):
         raise ValueError(f"Unknown mode: {mode}")
 
     return agent_class(
-        api_key=Config.ANTHROPIC_API_KEY,
-        model=Config.MODEL,
+        llm=llm,
         max_iterations=Config.MAX_ITERATIONS,
         tools=tools,
     )
@@ -94,8 +101,9 @@ def main():
 
     # Create and run agent
     print(f"\n{'=' * 60}")
+    print(f"LLM Provider: {Config.LLM_PROVIDER.upper()}")
+    print(f"Model: {Config.get_default_model()}")
     print(f"Mode: {args.mode.upper()}")
-    print(f"Model: {Config.MODEL}")
     print(f"Task: {task}")
     print(f"{'=' * 60}")
 

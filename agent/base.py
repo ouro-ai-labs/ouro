@@ -1,10 +1,10 @@
 """Base agent class for all agent types."""
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any
-import anthropic
+from typing import List, Optional
 
 from .tool_executor import ToolExecutor
 from tools.base import BaseTool
+from llm import BaseLLM, LLMMessage, LLMResponse
 
 
 class BaseAgent(ABC):
@@ -12,21 +12,18 @@ class BaseAgent(ABC):
 
     def __init__(
         self,
-        api_key: str,
-        model: str = "claude-3-5-sonnet-20241022",
+        llm: BaseLLM,
         max_iterations: int = 10,
         tools: List[BaseTool] = None,
     ):
         """Initialize the agent.
 
         Args:
-            api_key: Anthropic API key
-            model: Claude model to use
+            llm: LLM instance to use
             max_iterations: Maximum number of agent loop iterations
             tools: List of tools available to the agent
         """
-        self.client = anthropic.Anthropic(api_key=api_key)
-        self.model = model
+        self.llm = llm
         self.max_iterations = max_iterations
         self.tool_executor = ToolExecutor(tools or [])
 
@@ -35,29 +32,36 @@ class BaseAgent(ABC):
         """Execute the agent on a task and return final answer."""
         pass
 
-    def _call_claude(
+    def _call_llm(
         self,
-        messages: List[Dict[str, Any]],
-        system: str = None,
-        tools: List[Dict[str, Any]] = None,
-    ) -> anthropic.types.Message:
-        """Helper to call Claude API with consistent parameters."""
-        kwargs = {
-            "model": self.model,
-            "max_tokens": 4096,
-            "messages": messages,
-        }
-        if system:
-            kwargs["system"] = system
-        if tools:
-            kwargs["tools"] = tools
+        messages: List[LLMMessage],
+        tools: Optional[List] = None,
+        **kwargs
+    ) -> LLMResponse:
+        """Helper to call LLM with consistent parameters.
 
-        return self.client.messages.create(**kwargs)
+        Args:
+            messages: List of conversation messages
+            tools: Optional list of tool schemas
+            **kwargs: Additional LLM-specific parameters
 
-    def _extract_text(self, content) -> str:
-        """Extract text from response content blocks."""
-        texts = []
-        for block in content:
-            if hasattr(block, "text"):
-                texts.append(block.text)
-        return "\n".join(texts) if texts else ""
+        Returns:
+            LLMResponse object
+        """
+        return self.llm.call(
+            messages=messages,
+            tools=tools,
+            max_tokens=4096,
+            **kwargs
+        )
+
+    def _extract_text(self, response: LLMResponse) -> str:
+        """Extract text from LLM response.
+
+        Args:
+            response: LLMResponse object
+
+        Returns:
+            Extracted text
+        """
+        return self.llm.extract_text(response)

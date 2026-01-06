@@ -27,7 +27,12 @@ class WebSearchTool(BaseTool):
     def execute(self, query: str) -> str:
         """Execute web search and return results."""
         try:
-            from duckduckgo_search import DDGS
+            # Try new package name first
+            try:
+                from ddgs import DDGS
+            except ImportError:
+                # Fallback to old package name
+                from duckduckgo_search import DDGS
 
             results = []
             with DDGS() as ddgs:
@@ -38,6 +43,6 @@ class WebSearchTool(BaseTool):
                 "\n---\n".join(results) if results else "No results found"
             )
         except ImportError:
-            return "Error: duckduckgo-search not installed. Run: pip install duckduckgo-search"
+            return "Error: Search package not installed. Run: pip install ddgs"
         except Exception as e:
             return f"Error searching web: {str(e)}"

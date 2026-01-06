@@ -1,12 +1,18 @@
 # Agentic Loop
 
-A Python agentic loop system supporting both **ReAct** and **Plan-and-Execute** modes, powered by Anthropic Claude API.
+A Python agentic loop system supporting both **ReAct** and **Plan-and-Execute** modes, with support for multiple LLM providers (Anthropic Claude, OpenAI GPT, Google Gemini).
 
 ## Features
 
 - 🤖 **Two Agent Modes**:
   - **ReAct**: Reasoning-Acting loop, ideal for interactive problem-solving
   - **Plan-and-Execute**: Planning-Execution-Synthesis, perfect for complex multi-step tasks
+
+- 🤖 **Multiple LLM Support**:
+  - **Anthropic Claude** (Claude 3.5 Sonnet, Opus, etc.)
+  - **OpenAI GPT** (GPT-4o, GPT-4 Turbo, GPT-3.5, etc.)
+  - **Google Gemini** (Gemini 1.5 Pro, Flash, etc.)
+  - Easy to switch between providers with configuration
 
 - 🛠️ **Rich Toolset**:
   - File operations (read/write/search)
@@ -44,11 +50,28 @@ Create `.env` file:
 cp .env.example .env
 ```
 
-Edit `.env` file and add your Anthropic API key:
+Edit `.env` file and configure your LLM provider:
 
-```
+```bash
+# Choose your LLM provider (anthropic, openai, or gemini)
+LLM_PROVIDER=anthropic
+
+# Add the corresponding API key
 ANTHROPIC_API_KEY=your_api_key_here
+# OPENAI_API_KEY=your_api_key_here
+# GEMINI_API_KEY=your_api_key_here
+
+# Optional: specify a model (uses provider defaults if not set)
+# MODEL=claude-3-5-sonnet-20241022
+# MODEL=gpt-4o
+# MODEL=gemini-1.5-pro
 ```
+
+**Quick setup for different providers:**
+
+- **Anthropic Claude**: Set `LLM_PROVIDER=anthropic` and `ANTHROPIC_API_KEY`
+- **OpenAI GPT**: Set `LLM_PROVIDER=openai` and `OPENAI_API_KEY`
+- **Google Gemini**: Set `LLM_PROVIDER=gemini` and `GEMINI_API_KEY`
 
 ### 3. Run
 
@@ -107,6 +130,12 @@ agentic-loop/
 ├── config.py                    # Configuration management
 ├── main.py                      # CLI entry point
 ├── test_basic.py                # Basic tests
+├── llm/                         # LLM abstraction layer
+│   ├── __init__.py
+│   ├── base.py                  # BaseLLM abstract class
+│   ├── anthropic_llm.py         # Anthropic Claude adapter
+│   ├── openai_llm.py            # OpenAI GPT adapter
+│   └── gemini_llm.py            # Google Gemini adapter
 ├── agent/                       # Agent implementations
 │   ├── __init__.py
 │   ├── base.py                  # BaseAgent abstract class
@@ -232,18 +261,36 @@ class MyAgent(BaseAgent):
 
 ## Configuration Options
 
-Configurable in `.env` file:
+All configuration is done via the `.env` file:
 
 ```bash
-# Required
-ANTHROPIC_API_KEY=your_api_key_here
+# LLM Provider (required)
+LLM_PROVIDER=anthropic  # Options: anthropic, openai, gemini
 
-# Optional
-MODEL=claude-3-5-sonnet-20241022  # Model to use
-MAX_ITERATIONS=10                  # Maximum iterations
-ENABLE_SHELL=false                 # Enable shell tool
-ENABLE_WEB_SEARCH=true            # Enable web search
+# API Keys (set the one for your chosen provider)
+ANTHROPIC_API_KEY=your_key_here
+OPENAI_API_KEY=your_key_here
+GEMINI_API_KEY=your_key_here
+
+# Model (optional - uses provider defaults if not set)
+# Anthropic: claude-3-5-sonnet-20241022, claude-3-opus-20240229, etc.
+# OpenAI: gpt-4o, gpt-4-turbo, gpt-3.5-turbo, etc.
+# Gemini: gemini-1.5-pro, gemini-1.5-flash, etc.
+MODEL=
+
+# Agent Configuration
+MAX_ITERATIONS=10        # Maximum iteration loops
+
+# Tool Configuration
+ENABLE_SHELL=false       # Enable shell command execution
 ```
+
+### Default Models by Provider
+
+If no `MODEL` is specified, these defaults are used:
+- **Anthropic**: `claude-3-5-sonnet-20241022`
+- **OpenAI**: `gpt-4o`
+- **Gemini**: `gemini-1.5-pro`
 
 ## Testing
 

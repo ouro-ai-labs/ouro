@@ -2,6 +2,7 @@
 from typing import List
 import re
 
+from llm import LLMMessage, ToolResult
 from .base import BaseAgent
 
 
@@ -73,16 +74,12 @@ Provide a final answer to the user's original task based on these results."""
 
     def _create_plan(self, task: str) -> str:
         """Generate a plan without using tools."""
-        response = self._call_claude(
-            messages=[
-                {
-                    "role": "user",
-                    "content": self.PLANNER_PROMPT.format(task=task),
-                }
-            ],
-            system="You are a planning expert. Create clear, actionable plans.",
-        )
-        return self._extract_text(response.content)
+        messages = [
+            LLMMessage(role="system", content="You are a planning expert. Create clear, actionable plans."),
+            LLMMessage(role="user", content=self.PLANNER_PROMPT.format(task=task))
+        ]
+        response = self._call_llm(messages=messages)
+        return self._extract_text(response)
 
     def _parse_plan(self, plan: str) -> List[str]:
         """Parse plan into individual steps."""
@@ -102,55 +99,57 @@ Provide a final answer to the user's original task based on these results."""
         history = "\n\n".join(previous_results) if previous_results else "None"
 
         messages = [
-            {
-                "role": "user",
-                "content": self.EXECUTOR_PROMPT.format(
+            LLMMessage(
+                role="user",
+                content=self.EXECUTOR_PROMPT.format(
                     step_num=step_num, step=step, history=history
-                ),
-            }
+                )
+            )
         ]
 
         tools = self.tool_executor.get_tool_schemas()
 
         # Mini ReAct loop for this step (limited iterations)
         for iteration in range(5):  # Limit iterations per step
-            response = self._call_claude(messages=messages, tools=tools)
+            response = self._call_llm(messages=messages, tools=tools)
 
-            messages.append({"role": "assistant", "content": response.content})
+            messages.append(LLMMessage(role="assistant", content=response.content))
 
             if response.stop_reason == "end_turn":
-                return self._extract_text(response.content)
+                return self._extract_text(response)
 
             if response.stop_reason == "tool_use":
-                tool_results = []
-                for block in response.content:
-                    if block.type == "tool_use":
-                        print(f"  Tool: {block.name}")
-                        result = self.tool_executor.execute_tool_call(
-                            block.name, block.input
-                        )
-                        tool_results.append(
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": block.id,
-                                "content": result,
-                            }
-                        )
+                # Extract tool calls
+                tool_calls = self.llm.extract_tool_calls(response)
 
-                messages.append({"role": "user", "content": tool_results})
+                if not tool_calls:
+                    return self._extract_text(response)
+
+                # Execute tool calls
+                tool_results = []
+                for tc in tool_calls:
+                    print(f"  Tool: {tc.name}")
+                    result = self.tool_executor.execute_tool_call(tc.name, tc.arguments)
+                    tool_results.append(ToolResult(
+                        tool_call_id=tc.id,
+                        content=result
+                    ))
+
+                # Format and add results
+                result_message = self.llm.format_tool_results(tool_results)
+                messages.append(result_message)
 
         return "Step execution incomplete (max iterations reached)"
 
     def _synthesize_results(self, task: str, results: List[str]) -> str:
         """Combine step results into final answer."""
-        response = self._call_claude(
-            messages=[
-                {
-                    "role": "user",
-                    "content": self.SYNTHESIZER_PROMPT.format(
-                        results="\n\n".join(results), task=task
-                    ),
-                }
-            ]
-        )
-        return self._extract_text(response.content)
+        messages = [
+            LLMMessage(
+                role="user",
+                content=self.SYNTHESIZER_PROMPT.format(
+                    results="\n\n".join(results), task=task
+                )
+            )
+        ]
+        response = self._call_llm(messages=messages)
+        return self._extract_text(response)
