@@ -9,6 +9,7 @@ from tools.file_ops import FileReadTool, FileWriteTool, FileSearchTool
 from tools.calculator import CalculatorTool
 from tools.shell import ShellTool
 from tools.web_search import WebSearchTool
+from utils import setup_logger, get_log_file_path
 
 
 def create_agent(mode: str = "react", enable_shell: bool = False):
@@ -60,6 +61,9 @@ def create_agent(mode: str = "react", enable_shell: bool = False):
 
 def main():
     """Main CLI entry point."""
+    # Initialize logging
+    setup_logger()
+
     parser = argparse.ArgumentParser(
         description="Run an AI agent with tool-calling capabilities"
     )
@@ -116,6 +120,11 @@ def main():
     print("FINAL ANSWER:")
     print(f"{'=' * 60}")
     print(result)
+
+    # Show log file location
+    log_file = get_log_file_path()
+    if log_file:
+        print(f"\n📄 Detailed logs: {log_file}")
 
 
 if __name__ == "__main__":

@@ -4,6 +4,9 @@ import anthropic
 
 from .base import BaseLLM, LLMMessage, LLMResponse, ToolCall, ToolResult
 from .retry import with_retry, RetryConfig
+from utils import get_logger
+
+logger = get_logger(__name__)
 
 
 class AnthropicLLM(BaseLLM):
@@ -102,7 +105,7 @@ class AnthropicLLM(BaseLLM):
                 "input_tokens": usage.input_tokens,
                 "output_tokens": usage.output_tokens
             }
-            print(f"\n📊 Token Usage: Input={usage.input_tokens}, Output={usage.output_tokens}, Total={usage.input_tokens + usage.output_tokens}")
+            logger.debug(f"Token Usage: Input={usage.input_tokens}, Output={usage.output_tokens}, Total={usage.input_tokens + usage.output_tokens}")
 
         # Convert to unified format
         return LLMResponse(

@@ -3,7 +3,9 @@ import time
 import random
 from typing import Callable, TypeVar, Any
 from functools import wraps
+from utils import get_logger
 
+logger = get_logger(__name__)
 T = TypeVar('T')
 
 
@@ -148,8 +150,8 @@ def with_retry(config: RetryConfig = None):
 
                     # Log retry attempt
                     error_type = "Rate limit" if is_rate_limit_error(e) else "Retryable"
-                    print(f"\n⚠️  {error_type} error: {str(e)}")
-                    print(f"   Retrying in {delay:.1f}s... (attempt {attempt + 1}/{retry_config.max_retries})")
+                    logger.warning(f"{error_type} error: {str(e)}")
+                    logger.warning(f"Retrying in {delay:.1f}s... (attempt {attempt + 1}/{retry_config.max_retries})")
 
                     # Wait before retry
                     time.sleep(delay)

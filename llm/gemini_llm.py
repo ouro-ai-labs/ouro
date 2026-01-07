@@ -10,9 +10,12 @@ import warnings
 
 from .base import BaseLLM, LLMMessage, LLMResponse, ToolCall, ToolResult
 from .retry import with_retry, RetryConfig
+from utils import get_logger
 
 # Suppress the deprecation warning for now
 warnings.filterwarnings("ignore", category=FutureWarning, module="google.generativeai")
+
+logger = get_logger(__name__)
 
 
 class GeminiLLM(BaseLLM):
@@ -162,10 +165,10 @@ class GeminiLLM(BaseLLM):
                 generation_config
             )
 
-            # Print token usage
+            # Log token usage
             if hasattr(response, 'usage_metadata'):
                 usage = response.usage_metadata
-                print(f"\n📊 Token Usage: Input={usage.prompt_token_count}, Output={usage.candidates_token_count}, Total={usage.total_token_count}")
+                logger.debug(f"Token Usage: Input={usage.prompt_token_count}, Output={usage.candidates_token_count}, Total={usage.total_token_count}")
 
             # Determine stop reason
             if hasattr(response, "candidates") and response.candidates:

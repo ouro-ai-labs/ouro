@@ -6,6 +6,9 @@ from .tool_executor import ToolExecutor
 from tools.base import BaseTool
 from llm import BaseLLM, LLMMessage, LLMResponse, ToolResult
 from memory import MemoryManager, MemoryConfig
+from utils import get_logger
+
+logger = get_logger(__name__)
 
 
 class BaseAgent(ABC):
@@ -126,9 +129,9 @@ class BaseAgent(ABC):
                         }
                     self.memory.add_message(assistant_msg, actual_tokens=actual_tokens)
 
-                    # Show compression info if it happened
-                    if verbose and self.memory.was_compressed_last_iteration:
-                        print(f"[Memory compressed: saved {self.memory.last_compression_savings} tokens]")
+                    # Log compression info if it happened
+                    if self.memory.was_compressed_last_iteration:
+                        logger.debug(f"Memory compressed: saved {self.memory.last_compression_savings} tokens")
             else:
                 # For local messages (mini-loop), still track token usage
                 if response.usage:
@@ -161,8 +164,8 @@ class BaseAgent(ABC):
 
                     result = self.tool_executor.execute_tool_call(tc.name, tc.arguments)
 
-                    if verbose:
-                        print(f"Result: {result[:200]}...")  # Print first 200 chars
+                    # Log result (truncated)
+                    logger.debug(f"Tool result: {result[:200]}{'...' if len(result) > 200 else ''}")
 
                     tool_results.append(ToolResult(
                         tool_call_id=tc.id,

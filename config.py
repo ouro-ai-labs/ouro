@@ -43,6 +43,12 @@ class Config:
     MEMORY_SHORT_TERM_SIZE = int(os.getenv("MEMORY_SHORT_TERM_SIZE", "20"))
     MEMORY_COMPRESSION_RATIO = float(os.getenv("MEMORY_COMPRESSION_RATIO", "0.3"))
 
+    # Logging Configuration
+    LOG_DIR = os.getenv("LOG_DIR", "logs")
+    LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG").upper()
+    LOG_TO_FILE = os.getenv("LOG_TO_FILE", "true").lower() == "true"
+    LOG_TO_CONSOLE = os.getenv("LOG_TO_CONSOLE", "false").lower() == "true"
+
     @classmethod
     def get_api_key(cls) -> str:
         """Get the appropriate API key based on the selected provider.

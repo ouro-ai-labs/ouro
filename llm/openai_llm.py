@@ -4,6 +4,9 @@ import json
 
 from .base import BaseLLM, LLMMessage, LLMResponse, ToolCall, ToolResult
 from .retry import with_retry, RetryConfig
+from utils import get_logger
+
+logger = get_logger(__name__)
 
 
 class OpenAILLM(BaseLLM):
@@ -124,10 +127,10 @@ class OpenAILLM(BaseLLM):
         # Make API call with retry logic
         response = self._make_api_call(**call_params)
 
-        # Print token usage
+        # Log token usage
         if hasattr(response, 'usage') and response.usage:
             usage = response.usage
-            print(f"\n📊 Token Usage: Input={usage.prompt_tokens}, Output={usage.completion_tokens}, Total={usage.total_tokens}")
+            logger.debug(f"Token Usage: Input={usage.prompt_tokens}, Output={usage.completion_tokens}, Total={usage.total_tokens}")
 
         # Determine stop reason
         finish_reason = response.choices[0].finish_reason
