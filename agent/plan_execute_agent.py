@@ -139,9 +139,15 @@ Provide your final answer to the user based on the execution results above.
         return final_answer
 
     def _print_memory_stats(self):
-        """Print memory usage statistics."""
+        """Print memory usage statistics and routing stats."""
+        # Memory statistics
         stats = self.memory.get_stats()
         terminal_ui.print_memory_stats(stats)
+
+        # Model routing statistics
+        if self.model_router:
+            router_stats = self.model_router.get_stats()
+            terminal_ui.print_routing_stats(router_stats)
 
     def _create_plan(self, task: str, enable_context: bool = True) -> str:
         """Generate a plan without using tools.

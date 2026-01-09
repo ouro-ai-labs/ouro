@@ -56,6 +56,17 @@ def create_agent(mode: str = "react", enable_shell: bool = False):
         base_url=Config.get_base_url()
     )
 
+    # Phase 2: Create model router for cost optimization
+    model_router = None
+    if Config.ENABLE_MODEL_ROUTING:
+        from llm.model_router import ModelRouter
+        tier_config = Config.get_model_tier_config()
+        model_router = ModelRouter(tier_config, enable_routing=True)
+        terminal_ui.print_success(f"Smart model routing enabled (Phase 2 Cost Optimization)")
+        terminal_ui.console.print(f"  [dim]Light: {tier_config.light_model}[/dim]")
+        terminal_ui.console.print(f"  [dim]Medium: {tier_config.medium_model}[/dim]")
+        terminal_ui.console.print(f"  [dim]Heavy: {tier_config.heavy_model}[/dim]")
+
     # Create agent based on mode
     if mode == "react":
         agent_class = ReActAgent
@@ -69,6 +80,7 @@ def create_agent(mode: str = "react", enable_shell: bool = False):
         max_iterations=Config.MAX_ITERATIONS,
         tools=tools,
         enable_todo=Config.ENABLE_TODO_SYSTEM,
+        model_router=model_router,
     )
 
 

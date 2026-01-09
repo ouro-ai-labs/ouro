@@ -19,6 +19,11 @@ class Config:
     # Model Configuration
     MODEL = os.getenv("MODEL")  # Optional, will use provider defaults if not set
 
+    # Phase 2: Model tier configuration for smart routing
+    LIGHT_MODEL = os.getenv("LIGHT_MODEL")    # Cheapest model for simple operations
+    MEDIUM_MODEL = os.getenv("MEDIUM_MODEL")  # Balanced model for standard operations
+    HEAVY_MODEL = os.getenv("HEAVY_MODEL")    # Most capable model for complex operations
+
     # Base URL Configuration (for custom endpoints, proxies, etc.)
     ANTHROPIC_BASE_URL = os.getenv("ANTHROPIC_BASE_URL")  # None = use default
     OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")  # None = use default
@@ -32,6 +37,9 @@ class Config:
     ENABLE_TODO_SYSTEM = os.getenv("ENABLE_TODO_SYSTEM", "true").lower() == "true"
     ENABLE_ADVANCED_TOOLS = os.getenv("ENABLE_ADVANCED_TOOLS", "true").lower() == "true"
     ENABLE_CONTEXT_INJECTION = os.getenv("ENABLE_CONTEXT_INJECTION", "true").lower() == "true"
+
+    # Phase 2: Cost Optimization - Model Routing
+    ENABLE_MODEL_ROUTING = os.getenv("ENABLE_MODEL_ROUTING", "true").lower() == "true"
 
     # Retry Configuration
     RETRY_MAX_ATTEMPTS = int(os.getenv("RETRY_MAX_ATTEMPTS", "5"))
@@ -145,6 +153,25 @@ class Config:
             short_term_message_count=cls.MEMORY_SHORT_TERM_SIZE,
             compression_ratio=cls.MEMORY_COMPRESSION_RATIO,
             enable_compression=cls.MEMORY_ENABLED,
+        )
+
+    @classmethod
+    def get_model_tier_config(cls):
+        """Get model tier configuration for cost optimization.
+
+        Returns:
+            ModelTierConfig instance
+        """
+        from llm.model_router import ModelTierConfig
+
+        # Get default model (fallback if tiers not specified)
+        default_model = cls.get_default_model()
+
+        # Use user-specified models or fall back to default
+        return ModelTierConfig(
+            light_model=cls.LIGHT_MODEL or default_model,
+            medium_model=cls.MEDIUM_MODEL or default_model,
+            heavy_model=cls.HEAVY_MODEL or default_model,
         )
 
     @classmethod

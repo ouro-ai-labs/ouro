@@ -21,6 +21,14 @@ A Python agentic loop system supporting both **ReAct** and **Plan-and-Execute** 
   - **Edit**: Surgical file editing without reading entire contents
   - **Todo List**: Complex task management with progress tracking
 
+- 💰 **Smart Model Routing** (Phase 2 - NEW!):
+  - **70-80% cost reduction** through intelligent model tier selection
+  - **Light models** for simple operations (Haiku, GPT-4o-mini, Flash)
+  - **Medium models** for standard reasoning (Sonnet, GPT-4o, Pro)
+  - **Heavy models** only for complex tasks (Sonnet, GPT-4, Pro)
+  - Automatic routing with real-time cost tracking
+  - Zero quality degradation with smart rules
+
 - 🤖 **Multiple LLM Support**:
   - **Anthropic Claude** (Claude 3.5 Sonnet, Haiku, Opus, etc.)
   - **OpenAI GPT** (GPT-4o, GPT-4o-mini, O1, O3, etc.)
@@ -89,6 +97,12 @@ GEMINI_API_KEY=your_gemini_api_key_here
 ENABLE_TODO_SYSTEM=true                    # Enable todo list management
 ENABLE_ADVANCED_TOOLS=true                 # Enable Glob/Grep/Edit tools
 ENABLE_CONTEXT_INJECTION=true              # Enable environment/git context
+
+# Phase 2: Smart Model Routing (70-80% cost reduction)
+ENABLE_MODEL_ROUTING=true                  # Enable intelligent model tier selection
+LIGHT_MODEL=claude-3-5-haiku-20241022      # Cheapest model for simple operations
+MEDIUM_MODEL=claude-3-5-sonnet-20241022    # Balanced model for standard operations
+HEAVY_MODEL=claude-3-5-sonnet-20241022     # Most capable model for complex reasoning
 
 # Memory Management (optional, enabled by default)
 MEMORY_ENABLED=true

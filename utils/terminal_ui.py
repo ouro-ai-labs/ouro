@@ -164,6 +164,65 @@ def print_memory_stats(stats: Dict[str, Any]) -> None:
     console.print(table)
 
 
+def print_routing_stats(stats: Dict[str, Any]) -> None:
+    """Print model routing statistics in a formatted table.
+
+    Args:
+        stats: Dictionary of routing statistics
+    """
+    console.print()
+    console.print("[bold magenta]🎯 Model Routing Statistics [/bold magenta]", justify="left")
+
+    table = Table(
+        show_header=True,
+        header_style="bold magenta",
+        box=box.ROUNDED,
+        border_style="magenta",
+        padding=(0, 1)
+    )
+
+    table.add_column("Model Tier", style="magenta")
+    table.add_column("Calls", justify="right", style="yellow")
+    table.add_column("Percentage", justify="right", style="cyan")
+
+    # Add rows for each tier
+    total_calls = stats['total_calls']
+    if total_calls > 0:
+        table.add_row(
+            "Light (Cheapest)",
+            str(stats['light_calls']),
+            f"{stats['light_percentage']:.1f}%"
+        )
+        table.add_row(
+            "Medium",
+            str(stats['medium_calls']),
+            f"{stats['medium_percentage']:.1f}%"
+        )
+        table.add_row(
+            "Heavy (Most Capable)",
+            str(stats['heavy_calls']),
+            f"{stats['heavy_percentage']:.1f}%"
+        )
+        table.add_row(
+            "[bold]Total Calls[/bold]",
+            f"[bold]{total_calls}[/bold]",
+            "[bold]100.0%[/bold]"
+        )
+
+        # Add estimated cost savings
+        savings_pct = stats['estimated_cost_savings_pct']
+        savings_color = "green" if savings_pct > 0 else "yellow"
+        table.add_row(
+            f"[bold {savings_color}]Est. Cost Savings[/bold {savings_color}]",
+            "",
+            f"[bold {savings_color}]{savings_pct:.1f}%[/bold {savings_color}]"
+        )
+    else:
+        table.add_row("No routing data", "0", "0%")
+
+    console.print(table)
+
+
 def print_error(message: str, title: str = "Error") -> None:
     """Print an error message.
 
