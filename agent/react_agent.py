@@ -98,10 +98,24 @@ When you have enough information, provide your final answer directly without usi
 You have access to various tools including:
 - File operations: glob_files, grep_content, edit_file, read_file, write_file, search_files
 - Task management: manage_todo_list
-- Utilities: calculate, web_search, shell (if enabled)
+- Sub-agent delegation: delegate_subtask (for complex multi-step subtasks)
+- Utilities: calculate, web_search, shell
 
 Always choose the most efficient tool for the task at hand.
-</available_tools>"""
+</available_tools>
+
+<delegation_strategy>
+Use delegate_subtask when:
+- A subtask requires deep exploration (5+ iterations of searching/reading)
+- Subtask details would clutter your context (e.g., exploring large codebases)
+- You need to isolate experimental operations
+- The subtask is self-contained and doesn't need frequent interaction
+
+Example: "Research all Python files that use asyncio and analyze their patterns"
+→ delegate_subtask(subtask_description="Find and analyze all asyncio usage patterns", max_iterations=8)
+
+DO NOT delegate simple operations that can be done in 1-2 tool calls.
+</delegation_strategy>"""
 
     def run(self, task: str) -> str:
         """Execute ReAct loop until task is complete.

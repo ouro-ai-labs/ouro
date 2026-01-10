@@ -206,7 +206,7 @@ Provide your final answer to the user based on the execution results above.
         result = self._react_loop(
             messages=messages,
             tools=tools,
-            max_iterations=5,  # Limited iterations for each step
+            max_iterations=self.max_iterations,  # Limited iterations for each step
             use_memory=False,  # Use local messages list, not global memory
             save_to_memory=False,  # Don't auto-save to memory
             verbose=False  # Quieter output for sub-steps

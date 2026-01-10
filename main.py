@@ -11,6 +11,7 @@ from tools.shell import ShellTool
 from tools.web_search import WebSearchTool
 from tools.advanced_file_ops import GlobTool, GrepTool, EditTool
 from tools.todo import TodoTool
+from tools.delegation import DelegationTool
 from agent.todo import TodoList
 from utils import setup_logger, get_log_file_path, terminal_ui
 
@@ -54,11 +55,17 @@ def create_agent(mode: str = "react"):
     else:
         raise ValueError(f"Unknown mode: {mode}")
 
-    return agent_class(
+    agent = agent_class(
         llm=llm,
         tools=tools,
         max_iterations=Config.MAX_ITERATIONS,
     )
+
+    # Add delegation tool (requires agent instance)
+    delegation_tool = DelegationTool(agent)
+    agent.tool_executor.add_tool(delegation_tool)
+
+    return agent
 
 
 def main():

@@ -25,3 +25,11 @@ class ToolExecutor:
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
         """Get Anthropic-formatted schemas for all tools."""
         return [tool.to_anthropic_schema() for tool in self.tools.values()]
+
+    def add_tool(self, tool: BaseTool):
+        """Add a tool to the executor.
+
+        Args:
+            tool: Tool instance to add
+        """
+        self.tools[tool.name] = tool
