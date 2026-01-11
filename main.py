@@ -14,6 +14,7 @@ from tools.todo import TodoTool
 from tools.delegation import DelegationTool
 from agent.todo import TodoList
 from utils import setup_logger, get_log_file_path, terminal_ui
+from interactive import run_interactive_mode
 
 
 def create_agent(mode: str = "react"):
@@ -78,11 +79,17 @@ def main():
     )
     parser.add_argument(
         "--mode",
+        "-m",
         choices=["react", "plan"],
         default="react",
         help="Agent mode: 'react' for ReAct loop, 'plan' for Plan-and-Execute",
     )
-    parser.add_argument("--task", type=str, help="Task for the agent to complete")
+    parser.add_argument(
+        "--task",
+        "-t",
+        type=str,
+        help="Task for the agent to complete (if not provided, enters interactive mode)"
+    )
 
     args = parser.parse_args()
 
@@ -93,29 +100,23 @@ def main():
         terminal_ui.print_error(str(e), title="Configuration Error")
         return
 
-    # Get task from CLI or prompt user
-    task = args.task
-    if not task:
-        terminal_ui.console.print("[bold cyan]Enter your task (press Enter twice to submit):[/bold cyan]")
-        lines = []
-        while True:
-            line = input()
-            if line == "" and lines:
-                break
-            lines.append(line)
-        task = "\n".join(lines)
+    # Create agent
+    agent = create_agent(args.mode)
 
-    if not task.strip():
-        terminal_ui.print_error("No task provided")
+    # If no task provided, enter interactive mode (default behavior)
+    if not args.task:
+        run_interactive_mode(agent, args.mode)
         return
 
-    # Create and run agent
+    # Single-turn mode: execute one task and exit
+    task = args.task
+
+    # Display header and config
     terminal_ui.print_header(
         "🤖 Agentic Loop System",
         subtitle="Intelligent AI Agent with Tool-Calling Capabilities"
     )
 
-    # Display configuration
     config_dict = {
         "LLM Provider": Config.LLM_PROVIDER.upper(),
         "Model": Config.get_default_model(),
@@ -124,7 +125,7 @@ def main():
     }
     terminal_ui.print_config(config_dict)
 
-    agent = create_agent(args.mode)
+    # Run agent
     result = agent.run(task)
 
     terminal_ui.print_final_answer(result)

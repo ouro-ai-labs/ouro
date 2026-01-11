@@ -126,17 +126,21 @@ DO NOT delegate simple operations that can be done in 1-2 tool calls.
         Returns:
             Final answer as a string
         """
-        # Build system message with context
-        system_content = self.SYSTEM_PROMPT
-        try:
-            context = format_context_prompt()
-            system_content = context + "\n" + system_content
-        except Exception as e:
-            # If context gathering fails, continue without it
-            pass
+        # Build system message with context (only if not already in memory)
+        # This allows multi-turn conversations to reuse the same system message
+        if not self.memory.system_messages:
+            system_content = self.SYSTEM_PROMPT
+            try:
+                context = format_context_prompt()
+                system_content = context + "\n" + system_content
+            except Exception as e:
+                # If context gathering fails, continue without it
+                pass
 
-        # Initialize memory with system message and user task
-        self.memory.add_message(LLMMessage(role="system", content=system_content))
+            # Add system message only on first turn
+            self.memory.add_message(LLMMessage(role="system", content=system_content))
+
+        # Add user task/message
         self.memory.add_message(LLMMessage(role="user", content=task))
 
         tools = self.tool_executor.get_tool_schemas()
