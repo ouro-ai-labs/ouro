@@ -11,6 +11,11 @@ logger = logging.getLogger(__name__)
 class WorkingMemoryCompressor:
     """Compresses conversation history using LLM summarization."""
 
+    # Tools that should NEVER be compressed - their state must be preserved
+    PROTECTED_TOOLS = {
+        "manage_todo_list",  # Todo list state is critical for tracking progress
+    }
+
     COMPRESSION_PROMPT = """You are a memory compression system. Summarize the following conversation messages while preserving:
 1. Key decisions and outcomes
 2. Important facts, data, and findings
@@ -236,8 +241,9 @@ Provide a concise but comprehensive summary that captures the essential informat
 
         Strategy:
         1. Preserve system messages (if configured)
-        2. Use selective strategy for other messages (system decides based on recency, importance)
-        3. **Critical rule**: Tool pairs (tool_use + tool_result) must stay together
+        2. Preserve protected tools (todo list, etc.) - NEVER compress these
+        3. Use selective strategy for other messages (system decides based on recency, importance)
+        4. **Critical rule**: Tool pairs (tool_use + tool_result) must stay together
            - If one is preserved, the other must be preserved too
            - If one is compressed, the other must be compressed too
 
@@ -254,15 +260,21 @@ Provide a concise but comprehensive summary that captures the essential informat
             if self.config.preserve_system_prompts and msg.role == "system":
                 preserve_indices.add(i)
 
-        # Step 2: Apply selective preservation strategy (keep recent N messages)
+        # Step 2: Mark protected tools for preservation (CRITICAL for stateful tools)
+        tool_pairs = self._find_tool_pairs(messages)
+        protected_pairs = self._find_protected_tool_pairs(messages, tool_pairs)
+        for assistant_idx, user_idx in protected_pairs:
+            preserve_indices.add(assistant_idx)
+            preserve_indices.add(user_idx)
+
+        # Step 3: Apply selective preservation strategy (keep recent N messages)
         # Preserve last short_term_min_message_count messages by default (sliding window approach)
         preserve_count = min(self.config.short_term_min_message_count, len(messages))
         for i in range(len(messages) - preserve_count, len(messages)):
             if i >= 0:
                 preserve_indices.add(i)
 
-        # Step 3: Ensure tool pairs stay together
-        tool_pairs = self._find_tool_pairs(messages)
+        # Step 4: Ensure tool pairs stay together
         for assistant_idx, user_idx in tool_pairs:
             # If either message in the pair is marked for preservation, preserve both
             if assistant_idx in preserve_indices or user_idx in preserve_indices:
@@ -270,7 +282,7 @@ Provide a concise but comprehensive summary that captures the essential informat
                 preserve_indices.add(user_idx)
             # Otherwise both will be compressed together
 
-        # Step 4: Build preserved and to_compress lists
+        # Step 5: Build preserved and to_compress lists
         preserved = []
         to_compress = []
         for i, msg in enumerate(messages):
@@ -279,7 +291,10 @@ Provide a concise but comprehensive summary that captures the essential informat
             else:
                 to_compress.append(msg)
 
-        logger.info(f"Separated: {len(preserved)} preserved, {len(to_compress)} to compress ({len(tool_pairs)} tool pairs)")
+        logger.info(
+            f"Separated: {len(preserved)} preserved, {len(to_compress)} to compress "
+            f"({len(tool_pairs)} tool pairs, {len(protected_pairs)} protected)"
+        )
         return preserved, to_compress
 
     def _find_tool_pairs(self, messages: List[LLMMessage]) -> List[List[int]]:
@@ -313,6 +328,37 @@ Provide a concise but comprehensive summary that captures the essential informat
                             del pending_tool_uses[tool_use_id]
 
         return pairs
+
+    def _find_protected_tool_pairs(
+        self, messages: List[LLMMessage], tool_pairs: List[List[int]]
+    ) -> List[List[int]]:
+        """Find tool pairs that use protected tools (must never be compressed).
+
+        Args:
+            messages: All messages
+            tool_pairs: All tool_use/tool_result pairs
+
+        Returns:
+            List of protected tool pairs [assistant_index, user_index]
+        """
+        protected_pairs = []
+
+        for assistant_idx, user_idx in tool_pairs:
+            # Check if this tool pair uses a protected tool
+            msg = messages[assistant_idx]
+            if msg.role == "assistant" and isinstance(msg.content, list):
+                for block in msg.content:
+                    btype = self._get_block_attr(block, "type")
+                    if btype == "tool_use":
+                        tool_name = self._get_block_attr(block, "name")
+                        if tool_name in self.PROTECTED_TOOLS:
+                            protected_pairs.append([assistant_idx, user_idx])
+                            logger.debug(
+                                f"Protected tool '{tool_name}' at indices [{assistant_idx}, {user_idx}] - will be preserved"
+                            )
+                            break  # Only need to find one protected tool in the message
+
+        return protected_pairs
 
     def _get_block_attr(self, block, attr: str):
         """Get attribute from block (supports dict and object)."""
