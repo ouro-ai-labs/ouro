@@ -3,7 +3,7 @@ import sqlite3
 import json
 import uuid
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional
 from pathlib import Path
 import logging
 
@@ -14,13 +14,13 @@ logger = logging.getLogger(__name__)
 
 
 class MemoryStore:
-    """Persistent storage for conversation memory using SQLite.
+    """Simplified persistent storage for conversation memory using SQLite.
 
     Features:
+    - Single table structure for easy management
     - Store complete conversation history by session
     - Save/load memory state (messages + summaries)
     - Query historical sessions
-    - Debug by inspecting specific sessions
     """
 
     def __init__(self, db_path: str = "data/memory.db"):
@@ -40,73 +40,18 @@ class MemoryStore:
         logger.info(f"MemoryStore initialized at {db_path}")
 
     def _init_db(self):
-        """Initialize database schema."""
+        """Initialize database schema with single table."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
 
-            # Sessions table
+            # Single sessions table with all data stored as JSON
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS sessions (
                     id TEXT PRIMARY KEY,
                     created_at TIMESTAMP NOT NULL,
-                    updated_at TIMESTAMP NOT NULL,
-                    metadata TEXT,
-                    config TEXT,
-                    current_tokens INTEGER DEFAULT 0,
-                    compression_count INTEGER DEFAULT 0
-                )
-            """)
-
-            # Messages table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS messages (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    session_id TEXT NOT NULL,
-                    role TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    tokens INTEGER DEFAULT 0,
-                    timestamp TIMESTAMP NOT NULL,
-                    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-                )
-            """)
-
-            # Create index for efficient querying
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_messages_session
-                ON messages(session_id, timestamp)
-            """)
-
-            # Summaries table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS summaries (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    session_id TEXT NOT NULL,
-                    summary_text TEXT NOT NULL,
-                    preserved_messages TEXT NOT NULL,
-                    original_message_count INTEGER DEFAULT 0,
-                    original_tokens INTEGER DEFAULT 0,
-                    compressed_tokens INTEGER DEFAULT 0,
-                    compression_ratio REAL DEFAULT 0.0,
-                    metadata TEXT,
-                    created_at TIMESTAMP NOT NULL,
-                    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-                )
-            """)
-
-            # Create index for summaries
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_summaries_session
-                ON summaries(session_id, created_at)
-            """)
-
-            # System messages table (separate for clarity)
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS system_messages (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    session_id TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    timestamp TIMESTAMP NOT NULL,
-                    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+                    messages TEXT,
+                    system_messages TEXT,
+                    summaries TEXT
                 )
             """)
 
@@ -130,34 +75,20 @@ class MemoryStore:
         session_id = str(uuid.uuid4())
         now = datetime.now()
 
-        # Serialize config
-        config_json = None
-        if config:
-            config_dict = {
-                "max_context_tokens": config.max_context_tokens,
-                "target_working_memory_tokens": config.target_working_memory_tokens,
-                "compression_threshold": config.compression_threshold,
-                "short_term_message_count": config.short_term_message_count,
-                "short_term_min_message_count": config.short_term_min_message_count,
-                "compression_ratio": config.compression_ratio,
-                "preserve_tool_calls": config.preserve_tool_calls,
-                "preserve_system_prompts": config.preserve_system_prompts,
-            }
-            config_json = json.dumps(config_dict)
-
+        # Initialize with empty lists
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT INTO sessions (id, created_at, updated_at, metadata, config)
+                INSERT INTO sessions (id, created_at, messages, system_messages, summaries)
                 VALUES (?, ?, ?, ?, ?)
                 """,
                 (
                     session_id,
                     now,
-                    now,
-                    json.dumps(metadata) if metadata else None,
-                    config_json,
+                    json.dumps([]),  # Empty messages list
+                    json.dumps([]),  # Empty system_messages list
+                    json.dumps([])   # Empty summaries list
                 )
             )
             conn.commit()
@@ -178,36 +109,38 @@ class MemoryStore:
             message: LLMMessage to save
             tokens: Token count for this message
         """
-        now = datetime.now()
-
-        # Serialize content (handle both str and list)
-        content_json = json.dumps(message.content)
-
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
 
-            # Save message
+            # Determine which field to update
             if message.role == "system":
-                cursor.execute(
-                    """
-                    INSERT INTO system_messages (session_id, content, timestamp)
-                    VALUES (?, ?, ?)
-                    """,
-                    (session_id, content_json, now)
-                )
+                field = "system_messages"
             else:
-                cursor.execute(
-                    """
-                    INSERT INTO messages (session_id, role, content, tokens, timestamp)
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (session_id, message.role, content_json, tokens, now)
-                )
+                field = "messages"
 
-            # Update session updated_at
+            # Load current messages
             cursor.execute(
-                "UPDATE sessions SET updated_at = ? WHERE id = ?",
-                (now, session_id)
+                f"SELECT {field} FROM sessions WHERE id = ?",
+                (session_id,)
+            )
+            row = cursor.fetchone()
+            if not row:
+                logger.warning(f"Session {session_id} not found")
+                return
+
+            messages = json.loads(row[0]) if row[0] else []
+
+            # Append new message with serialized content
+            messages.append({
+                "role": message.role,
+                "content": self._serialize_content(message.content),
+                "tokens": tokens
+            })
+
+            # Update the field
+            cursor.execute(
+                f"UPDATE sessions SET {field} = ? WHERE id = ?",
+                (json.dumps(messages), session_id)
             )
 
             conn.commit()
@@ -223,51 +156,142 @@ class MemoryStore:
             session_id: Session ID
             summary: CompressedMemory object
         """
-        now = datetime.now()
-
-        # Serialize preserved messages
-        preserved_json = json.dumps([
-            {"role": msg.role, "content": msg.content}
-            for msg in summary.preserved_messages
-        ])
-
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
 
+            # Load current summaries
             cursor.execute(
-                """
-                INSERT INTO summaries (
-                    session_id, summary_text, preserved_messages,
-                    original_message_count, original_tokens, compressed_tokens,
-                    compression_ratio, metadata, created_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    session_id,
-                    summary.summary,
-                    preserved_json,
-                    summary.original_message_count,
-                    summary.original_tokens,
-                    summary.compressed_tokens,
-                    summary.compression_ratio,
-                    json.dumps(summary.metadata),
-                    now,
-                )
+                "SELECT summaries FROM sessions WHERE id = ?",
+                (session_id,)
             )
+            row = cursor.fetchone()
+            if not row:
+                logger.warning(f"Session {session_id} not found")
+                return
 
-            # Update session stats
+            summaries = json.loads(row[0]) if row[0] else []
+
+            # Append new summary with serialized content
+            summaries.append({
+                "summary": summary.summary,
+                "preserved_messages": [
+                    {"role": msg.role, "content": self._serialize_content(msg.content)}
+                    for msg in summary.preserved_messages
+                ],
+                "original_message_count": summary.original_message_count,
+                "original_tokens": summary.original_tokens,
+                "compressed_tokens": summary.compressed_tokens,
+                "compression_ratio": summary.compression_ratio,
+                "metadata": summary.metadata,
+                "created_at": summary.created_at.isoformat()
+            })
+
+            # Update summaries field
             cursor.execute(
-                """
-                UPDATE sessions
-                SET compression_count = compression_count + 1,
-                    updated_at = ?
-                WHERE id = ?
-                """,
-                (now, session_id)
+                "UPDATE sessions SET summaries = ? WHERE id = ?",
+                (json.dumps(summaries), session_id)
             )
 
             conn.commit()
+
+    def _serialize_content(self, content):
+        """Serialize message content, handling complex objects.
+
+        Args:
+            content: Message content (can be string, list, or dict)
+
+        Returns:
+            JSON-serializable content
+        """
+        if isinstance(content, str):
+            return content
+        elif isinstance(content, (list, dict)):
+            # Content is already a structure, ensure it's JSON-serializable
+            # Convert any non-serializable objects to strings
+            try:
+                json.dumps(content)  # Test if serializable
+                return content
+            except (TypeError, ValueError):
+                # If not serializable, convert to string
+                return str(content)
+        else:
+            # Unknown type, convert to string
+            return str(content)
+
+    def save_memory(
+        self,
+        session_id: str,
+        system_messages: List[LLMMessage],
+        messages: List[LLMMessage],
+        summaries: List[CompressedMemory]
+    ):
+        """Save complete memory state to the database.
+
+        This method replaces the entire memory state for a session,
+        including system messages, short-term messages, and summaries.
+
+        Args:
+            session_id: Session ID
+            system_messages: List of system messages
+            messages: List of regular messages (short-term memory)
+            summaries: List of compressed memory summaries
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+
+            # Check if session exists
+            cursor.execute("SELECT id FROM sessions WHERE id = ?", (session_id,))
+            if not cursor.fetchone():
+                logger.warning(f"Session {session_id} not found")
+                return
+
+            # Serialize system messages
+            system_messages_json = json.dumps([
+                {"role": msg.role, "content": self._serialize_content(msg.content)}
+                for msg in system_messages
+            ])
+
+            # Serialize regular messages
+            messages_json = json.dumps([
+                {"role": msg.role, "content": self._serialize_content(msg.content), "tokens": 0}
+                for msg in messages
+            ])
+
+            # Serialize summaries
+            summaries_json = json.dumps([
+                {
+                    "summary": summary.summary,
+                    "preserved_messages": [
+                        {"role": msg.role, "content": self._serialize_content(msg.content)}
+                        for msg in summary.preserved_messages
+                    ],
+                    "original_message_count": summary.original_message_count,
+                    "original_tokens": summary.original_tokens,
+                    "compressed_tokens": summary.compressed_tokens,
+                    "compression_ratio": summary.compression_ratio,
+                    "metadata": summary.metadata,
+                    "created_at": summary.created_at.isoformat()
+                }
+                for summary in summaries
+            ])
+
+            # Update all fields in one transaction
+            cursor.execute(
+                """
+                UPDATE sessions
+                SET system_messages = ?,
+                    messages = ?,
+                    summaries = ?
+                WHERE id = ?
+                """,
+                (system_messages_json, messages_json, summaries_json, session_id)
+            )
+
+            conn.commit()
+            logger.debug(f"Saved memory for session {session_id}: "
+                        f"{len(system_messages)} system msgs, "
+                        f"{len(messages)} messages, "
+                        f"{len(summaries)} summaries")
 
     def load_session(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Load complete session state.
@@ -278,8 +302,7 @@ class MemoryStore:
         Returns:
             Dictionary with session data:
             {
-                "metadata": {...},
-                "config": MemoryConfig,
+                "config": None,  # Config removed in simplified version
                 "system_messages": [LLMMessage],
                 "messages": [LLMMessage],
                 "summaries": [CompressedMemory],
@@ -301,83 +324,48 @@ class MemoryStore:
                 logger.warning(f"Session {session_id} not found")
                 return None
 
-            # Parse config
-            config = None
-            if session_row["config"]:
-                config_dict = json.loads(session_row["config"])
-                config = MemoryConfig(**config_dict)
-
-            # Load system messages
-            cursor.execute(
-                """
-                SELECT content, timestamp
-                FROM system_messages
-                WHERE session_id = ?
-                ORDER BY timestamp
-                """,
-                (session_id,)
-            )
+            # Parse system messages from JSON
+            system_messages_data = json.loads(session_row["system_messages"]) if session_row["system_messages"] else []
             system_messages = [
-                LLMMessage(role="system", content=json.loads(row["content"]))
-                for row in cursor.fetchall()
+                LLMMessage(role=msg["role"], content=msg["content"])
+                for msg in system_messages_data
             ]
 
-            # Load regular messages
-            cursor.execute(
-                """
-                SELECT role, content, tokens, timestamp
-                FROM messages
-                WHERE session_id = ?
-                ORDER BY timestamp
-                """,
-                (session_id,)
-            )
+            # Parse regular messages from JSON
+            messages_data = json.loads(session_row["messages"]) if session_row["messages"] else []
             messages = [
-                LLMMessage(role=row["role"], content=json.loads(row["content"]))
-                for row in cursor.fetchall()
+                LLMMessage(role=msg["role"], content=msg["content"])
+                for msg in messages_data
             ]
 
-            # Load summaries
-            cursor.execute(
-                """
-                SELECT summary_text, preserved_messages, original_message_count,
-                       original_tokens, compressed_tokens, compression_ratio,
-                       metadata, created_at
-                FROM summaries
-                WHERE session_id = ?
-                ORDER BY created_at
-                """,
-                (session_id,)
-            )
+            # Parse summaries from JSON
+            summaries_data = json.loads(session_row["summaries"]) if session_row["summaries"] else []
             summaries = []
-            for row in cursor.fetchall():
+            for summary_data in summaries_data:
                 preserved_msgs = [
                     LLMMessage(role=m["role"], content=m["content"])
-                    for m in json.loads(row["preserved_messages"])
+                    for m in summary_data.get("preserved_messages", [])
                 ]
 
                 summaries.append(CompressedMemory(
-                    summary=row["summary_text"],
+                    summary=summary_data.get("summary", ""),
                     preserved_messages=preserved_msgs,
-                    original_message_count=row["original_message_count"],
-                    original_tokens=row["original_tokens"],
-                    compressed_tokens=row["compressed_tokens"],
-                    compression_ratio=row["compression_ratio"],
-                    metadata=json.loads(row["metadata"]) if row["metadata"] else {},
-                    created_at=datetime.fromisoformat(row["created_at"])
+                    original_message_count=summary_data.get("original_message_count", 0),
+                    original_tokens=summary_data.get("original_tokens", 0),
+                    compressed_tokens=summary_data.get("compressed_tokens", 0),
+                    compression_ratio=summary_data.get("compression_ratio", 0.0),
+                    metadata=summary_data.get("metadata", {}),
+                    created_at=datetime.fromisoformat(summary_data["created_at"]) if "created_at" in summary_data else datetime.now()
                 ))
 
             return {
-                "metadata": json.loads(session_row["metadata"]) if session_row["metadata"] else {},
-                "config": config,
+                "config": None,  # Config management removed in simplified version
                 "system_messages": system_messages,
                 "messages": messages,
                 "summaries": summaries,
                 "stats": {
                     "created_at": session_row["created_at"],
-                    "updated_at": session_row["updated_at"],
-                    "current_tokens": session_row["current_tokens"],
-                    "compression_count": session_row["compression_count"],
+                    "compression_count": len(summaries),
                 }
             }
 
@@ -385,14 +373,14 @@ class MemoryStore:
         self,
         limit: int = 50,
         offset: int = 0,
-        order_by: str = "updated_at"
+        order_by: str = "created_at"
     ) -> List[Dict[str, Any]]:
         """List all sessions.
 
         Args:
             limit: Maximum number of sessions to return
             offset: Offset for pagination
-            order_by: Column to order by (created_at or updated_at)
+            order_by: Column to order by (created_at only in simplified version)
 
         Returns:
             List of session summaries
@@ -402,23 +390,14 @@ class MemoryStore:
             cursor = conn.cursor()
 
             # Validate order_by
-            if order_by not in ["created_at", "updated_at"]:
-                order_by = "updated_at"
+            if order_by not in ["created_at"]:
+                order_by = "created_at"
 
             cursor.execute(
                 f"""
-                SELECT
-                    s.id, s.created_at, s.updated_at, s.metadata,
-                    s.compression_count,
-                    COUNT(DISTINCT m.id) as message_count,
-                    COUNT(DISTINCT sm.id) as system_message_count,
-                    COUNT(DISTINCT su.id) as summary_count
-                FROM sessions s
-                LEFT JOIN messages m ON s.id = m.session_id
-                LEFT JOIN system_messages sm ON s.id = sm.session_id
-                LEFT JOIN summaries su ON s.id = su.session_id
-                GROUP BY s.id
-                ORDER BY s.{order_by} DESC
+                SELECT id, created_at, messages, system_messages, summaries
+                FROM sessions
+                ORDER BY {order_by} DESC
                 LIMIT ? OFFSET ?
                 """,
                 (limit, offset)
@@ -426,15 +405,16 @@ class MemoryStore:
 
             sessions = []
             for row in cursor.fetchall():
+                messages_data = json.loads(row["messages"]) if row["messages"] else []
+                system_messages_data = json.loads(row["system_messages"]) if row["system_messages"] else []
+                summaries_data = json.loads(row["summaries"]) if row["summaries"] else []
+
                 sessions.append({
                     "id": row["id"],
                     "created_at": row["created_at"],
-                    "updated_at": row["updated_at"],
-                    "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
-                    "message_count": row["message_count"],
-                    "system_message_count": row["system_message_count"],
-                    "summary_count": row["summary_count"],
-                    "compression_count": row["compression_count"],
+                    "message_count": len(messages_data),
+                    "system_message_count": len(system_messages_data),
+                    "summary_count": len(summaries_data),
                 })
 
             return sessions
@@ -461,35 +441,6 @@ class MemoryStore:
 
         return deleted
 
-    def update_session_metadata(
-        self,
-        session_id: str,
-        metadata: Dict[str, Any]
-    ) -> bool:
-        """Update session metadata.
-
-        Args:
-            session_id: Session ID
-            metadata: New metadata
-
-        Returns:
-            True if updated, False if not found
-        """
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                UPDATE sessions
-                SET metadata = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (json.dumps(metadata), datetime.now(), session_id)
-            )
-            updated = cursor.rowcount > 0
-            conn.commit()
-
-        return updated
-
     def get_session_stats(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Get session statistics.
 
@@ -504,23 +455,7 @@ class MemoryStore:
             cursor = conn.cursor()
 
             cursor.execute(
-                """
-                SELECT
-                    s.created_at, s.updated_at, s.compression_count,
-                    s.current_tokens, s.metadata,
-                    COUNT(DISTINCT m.id) as message_count,
-                    SUM(m.tokens) as total_message_tokens,
-                    COUNT(DISTINCT sm.id) as system_message_count,
-                    COUNT(DISTINCT su.id) as summary_count,
-                    SUM(su.original_tokens) as total_original_tokens,
-                    SUM(su.compressed_tokens) as total_compressed_tokens
-                FROM sessions s
-                LEFT JOIN messages m ON s.id = m.session_id
-                LEFT JOIN system_messages sm ON s.id = sm.session_id
-                LEFT JOIN summaries su ON s.id = su.session_id
-                WHERE s.id = ?
-                GROUP BY s.id
-                """,
+                "SELECT * FROM sessions WHERE id = ?",
                 (session_id,)
             )
 
@@ -528,18 +463,25 @@ class MemoryStore:
             if not row:
                 return None
 
+            # Parse JSON fields
+            messages_data = json.loads(row["messages"]) if row["messages"] else []
+            system_messages_data = json.loads(row["system_messages"]) if row["system_messages"] else []
+            summaries_data = json.loads(row["summaries"]) if row["summaries"] else []
+
+            # Calculate token statistics from summaries
+            total_original_tokens = sum(s.get("original_tokens", 0) for s in summaries_data)
+            total_compressed_tokens = sum(s.get("compressed_tokens", 0) for s in summaries_data)
+            total_message_tokens = sum(m.get("tokens", 0) for m in messages_data)
+
             return {
                 "session_id": session_id,
                 "created_at": row["created_at"],
-                "updated_at": row["updated_at"],
-                "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
-                "message_count": row["message_count"] or 0,
-                "system_message_count": row["system_message_count"] or 0,
-                "summary_count": row["summary_count"] or 0,
-                "compression_count": row["compression_count"] or 0,
-                "current_tokens": row["current_tokens"] or 0,
-                "total_message_tokens": row["total_message_tokens"] or 0,
-                "total_original_tokens": row["total_original_tokens"] or 0,
-                "total_compressed_tokens": row["total_compressed_tokens"] or 0,
-                "token_savings": (row["total_original_tokens"] or 0) - (row["total_compressed_tokens"] or 0),
+                "message_count": len(messages_data),
+                "system_message_count": len(system_messages_data),
+                "summary_count": len(summaries_data),
+                "compression_count": len(summaries_data),
+                "total_message_tokens": total_message_tokens,
+                "total_original_tokens": total_original_tokens,
+                "total_compressed_tokens": total_compressed_tokens,
+                "token_savings": total_original_tokens - total_compressed_tokens,
             }

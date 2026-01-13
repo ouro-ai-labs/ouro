@@ -6,7 +6,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from memory import MemoryConfig, MemoryManager
-from memory.store import MemoryStore
 from llm.base import LLMMessage
 
 
@@ -28,37 +27,33 @@ class MockLLM:
 
 def main():
     # Initialize
-    store = MemoryStore(db_path="data/my_app.db")
     llm = MockLLM()
 
-    # Option 1: Create new session with auto-save
-    print("\n1️⃣  Creating new session with auto-save...")
+    # Option 1: Create new session (persistence is automatic)
+    print("\n1️⃣  Creating new session (automatically persisted)...")
     manager = MemoryManager(
         config=MemoryConfig(),
         llm=llm,
-        store=store,
-        enable_persistence=True  # ← Enable auto-save
+        db_path="data/my_app.db"
     )
     session_id = manager.session_id
     print(f"   Session ID: {session_id}")
 
-    # Add metadata for easy identification
-    store.update_session_metadata(session_id, {
-        "description": "Quick start demo",
-        "version": "1.0"
-    })
-
-    # Add messages (automatically saved)
+    # Add messages
     manager.add_message(LLMMessage(role="user", content="Hello!"))
     manager.add_message(LLMMessage(role="assistant", content="Hi there!"))
     print(f"   ✓ Added 2 messages")
+
+    # Save memory state (normally done automatically after agent.run())
+    manager.save_memory()
+    print(f"   ✓ Saved to database")
 
     # Option 2: Load existing session
     print(f"\n2️⃣  Loading session {session_id[:8]}...")
     manager2 = MemoryManager.from_session(
         session_id=session_id,
         llm=llm,
-        store=store
+        db_path="data/my_app.db"
     )
     print(f"   ✓ Loaded {manager2.short_term.count()} messages")
 
@@ -68,13 +63,13 @@ def main():
 
     # View sessions
     print("\n3️⃣  Viewing all sessions...")
-    sessions = store.list_sessions(limit=5)
+    sessions = manager.store.list_sessions(limit=5)
     for s in sessions:
         print(f"   • {s['id'][:8]}... - {s['message_count']} messages")
 
     print("\n✅ Done! View sessions with:")
-    print(f"   python tools/session_manager.py list")
-    print(f"   python tools/session_manager.py show {session_id}\n")
+    print(f"   python tools/session_manager.py list --db data/my_app.db")
+    print(f"   python tools/session_manager.py show {session_id} --db data/my_app.db\n")
 
 
 if __name__ == "__main__":

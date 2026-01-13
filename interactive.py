@@ -174,7 +174,6 @@ def _show_history():
         table.add_column("Created", width=20)
         table.add_column("Messages", justify="right", width=10)
         table.add_column("Summaries", justify="right", width=10)
-        table.add_column("Description", style="italic")
 
         for session in sessions:
             session_id = session["id"]
@@ -182,12 +181,7 @@ def _show_history():
             msg_count = str(session["message_count"])
             summary_count = str(session["summary_count"])
 
-            # Get description from metadata
-            description = ""
-            if session["metadata"]:
-                description = session["metadata"].get("description", "")
-
-            table.add_row(session_id, created, msg_count, summary_count, description)
+            table.add_row(session_id, created, msg_count, summary_count)
 
         terminal_ui.console.print(table)
         terminal_ui.console.print()
@@ -218,13 +212,7 @@ def _dump_memory(session_id: str):
         export_data = {
             "session_id": session_id,
             "exported_at": datetime.now().isoformat(),
-            "metadata": session_data["metadata"],
             "stats": session_data["stats"],
-            "config": {
-                "max_context_tokens": session_data["config"].max_context_tokens if session_data["config"] else None,
-                "short_term_message_count": session_data["config"].short_term_message_count if session_data["config"] else None,
-                "compression_ratio": session_data["config"].compression_ratio if session_data["config"] else None,
-            } if session_data["config"] else None,
             "system_messages": [
                 {"role": msg.role, "content": msg.content}
                 for msg in session_data["system_messages"]
@@ -274,10 +262,6 @@ def _dump_memory(session_id: str):
         terminal_ui.console.print(f"  Messages: {len(export_data['messages'])}")
         terminal_ui.console.print(f"  System Messages: {len(export_data['system_messages'])}")
         terminal_ui.console.print(f"  Summaries: {len(export_data['summaries'])}")
-
-        if export_data["metadata"]:
-            terminal_ui.console.print(f"  Metadata: {export_data['metadata']}")
-
         terminal_ui.console.print()
 
     except Exception as e:

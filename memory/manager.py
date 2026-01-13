@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class MemoryManager:
-    """Central memory management system with optional persistence."""
+    """Central memory management system with built-in persistence."""
 
     def __init__(
         self,
@@ -22,27 +22,31 @@ class MemoryManager:
         llm: "BaseLLM",
         store: Optional[MemoryStore] = None,
         session_id: Optional[str] = None,
-        enable_persistence: bool = False
+        db_path: str = "data/memory.db"
     ):
         """Initialize memory manager.
 
         Args:
             config: Memory configuration
             llm: LLM instance for compression
-            store: Optional MemoryStore for persistence
-            session_id: Optional session ID (if resuming or using persistence)
-            enable_persistence: Enable automatic saving to store
+            store: Optional MemoryStore for persistence (if None, creates default store)
+            session_id: Optional session ID (if resuming session)
+            db_path: Path to database file (default: data/memory.db)
         """
         self.config = config
         self.llm = llm
-        self.store = store
-        self.session_id = session_id
-        self.enable_persistence = enable_persistence
 
-        # If persistence enabled but no session_id, create one
-        if enable_persistence and not session_id and store:
-            self.session_id = store.create_session(config=config)
+        # Always create/use store for persistence
+        if store is None:
+            store = MemoryStore(db_path=db_path)
+        self.store = store
+
+        # Create new session or use existing one
+        if session_id is None:
+            self.session_id = store.create_session()
             logger.info(f"Created new session: {self.session_id}")
+        else:
+            self.session_id = session_id
 
         # Initialize components
         self.short_term = ShortTermMemory(max_size=config.short_term_message_count)
@@ -64,20 +68,24 @@ class MemoryManager:
         cls,
         session_id: str,
         llm: "BaseLLM",
-        store: MemoryStore,
-        enable_persistence: bool = True
+        store: Optional[MemoryStore] = None,
+        db_path: str = "data/memory.db"
     ) -> "MemoryManager":
         """Load a MemoryManager from a saved session.
 
         Args:
             session_id: Session ID to load
             llm: LLM instance for compression
-            store: MemoryStore instance
-            enable_persistence: Enable automatic saving
+            store: Optional MemoryStore instance (if None, creates default store)
+            db_path: Path to database file (default: data/memory.db)
 
         Returns:
             MemoryManager instance with loaded state
         """
+        # Create store if not provided
+        if store is None:
+            store = MemoryStore(db_path=db_path)
+
         # Load session data
         session_data = store.load_session(session_id)
         if not session_data:
@@ -91,8 +99,7 @@ class MemoryManager:
             config=config,
             llm=llm,
             store=store,
-            session_id=session_id,
-            enable_persistence=enable_persistence
+            session_id=session_id
         )
 
         # Restore state
@@ -127,11 +134,6 @@ class MemoryManager:
         # Track system messages separately
         if message.role == "system":
             self.system_messages.append(message)
-
-            # Save to store if persistence enabled
-            if self.enable_persistence and self.store and self.session_id:
-                self.store.save_message(self.session_id, message, tokens=0)
-
             return
 
         # Count tokens (use actual if provided, otherwise estimate)
@@ -159,10 +161,6 @@ class MemoryManager:
 
         # Add to short-term memory
         self.short_term.add_message(message)
-
-        # Save to store if persistence enabled
-        if self.enable_persistence and self.store and self.session_id:
-            self.store.save_message(self.session_id, message, tokens=tokens)
 
         # Log memory state for debugging
         logger.debug(
@@ -261,10 +259,6 @@ class MemoryManager:
             self.compression_count += 1
             self.was_compressed_last_iteration = True
             self.last_compression_savings = compressed.token_savings
-
-            # Save to store if persistence enabled
-            if self.enable_persistence and self.store and self.session_id:
-                self.store.save_summary(self.session_id, compressed)
 
             # Update token tracker
             self.token_tracker.add_compression_savings(compressed.token_savings)
@@ -452,6 +446,34 @@ class MemoryManager:
             "total_cost": self.token_tracker.get_total_cost(self.llm.model),
             "budget_status": self.token_tracker.get_budget_status(self.config.max_context_tokens),
         }
+
+    def save_memory(self):
+        """Save current memory state to store.
+
+        This saves the complete memory state including:
+        - System messages
+        - Short-term messages
+        - Summaries
+
+        Call this method after completing a task or at key checkpoints.
+        """
+        if not self.store or not self.session_id:
+            return
+
+        messages = self.short_term.get_messages()
+
+        # Skip saving if there are no messages (empty conversation)
+        if not messages and not self.system_messages and not self.summaries:
+            logger.debug(f"Skipping save_memory: no messages to save for session {self.session_id}")
+            return
+
+        self.store.save_memory(
+            session_id=self.session_id,
+            system_messages=self.system_messages,
+            messages=messages,
+            summaries=self.summaries
+        )
+        logger.info(f"Saved memory state for session {self.session_id}")
 
     def reset(self):
         """Reset memory manager state."""

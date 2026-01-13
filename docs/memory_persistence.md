@@ -5,49 +5,84 @@
 Memory Persistence provides an embedded SQLite database for persisting conversation memory. Key features:
 
 1. **Session Management**: Each conversation is saved as a session
-2. **History Viewing**: View historical sessions and restore them
-3. **Debug Support**: Dump specific session memory for debugging
-4. **Auto-Persistence**: Configurable automatic saving of messages and summaries
+2. **Batch Persistence**: Memory is saved as a batch after task completion (efficient)
+3. **History Viewing**: View historical sessions and restore them
+4. **Debug Support**: Dump specific session memory for debugging
+
+## How It Works
+
+Memory is **automatically saved** when:
+- `ReActAgent.run()` completes a task
+- `PlanExecuteAgent.run()` completes a task
+
+You can also **manually save** by calling:
+```python
+manager.save_memory()  # Saves current state to database
+```
+
+This batch-save approach is more efficient than saving after every message.
 
 ## Quick Start
 
-### 1. Create New Session with Persistence
+### 1. Using with Agent (Automatic Save)
 
 ```python
-from memory import MemoryConfig, MemoryManager
-from memory.store import MemoryStore
+from agent import ReActAgent
+from memory import MemoryConfig
 from llm.anthropic import AnthropicLLM
 
 # Initialize
-store = MemoryStore(db_path="data/memory.db")
 llm = AnthropicLLM(api_key="your-key")
 config = MemoryConfig()
 
-# Create manager with persistence
+# Create agent (with built-in memory persistence)
+agent = ReActAgent(
+    llm=llm,
+    tools=[],
+    memory_config=config
+)
+
+# Run task - memory is automatically saved when complete
+result = agent.run("Your task here")
+
+print(f"Session ID: {agent.memory.session_id}")
+```
+
+### 2. Manual Save (Without Agent)
+
+```python
+from memory import MemoryConfig, MemoryManager
+from llm.anthropic import AnthropicLLM
+from llm.base import LLMMessage
+
+# Initialize
+llm = AnthropicLLM(api_key="your-key")
+config = MemoryConfig()
+
+# Create manager
 manager = MemoryManager(
     config=config,
     llm=llm,
-    store=store,
-    enable_persistence=True  # Auto-save enabled
+    db_path="data/memory.db"  # Optional, defaults to "data/memory.db"
 )
 
-# Use manager (automatically saved to database)
-from llm.base import LLMMessage
-
+# Add messages
 manager.add_message(LLMMessage(role="user", content="Hello"))
 manager.add_message(LLMMessage(role="assistant", content="Hi!"))
+
+# Manually save to database
+manager.save_memory()
 
 print(f"Session ID: {manager.session_id}")
 ```
 
-### 2. Restore Existing Session
+### 3. Restore Existing Session
 
 ```python
 from memory import MemoryManager
-from memory.store import MemoryStore
 from llm.anthropic import AnthropicLLM
+from llm.base import LLMMessage
 
-store = MemoryStore(db_path="data/memory.db")
 llm = AnthropicLLM(api_key="your-key")
 
 # Restore from session
@@ -55,12 +90,14 @@ session_id = "your-session-id-here"
 manager = MemoryManager.from_session(
     session_id=session_id,
     llm=llm,
-    store=store,
-    enable_persistence=True
+    db_path="data/memory.db"
 )
 
 # Continue conversation
 manager.add_message(LLMMessage(role="user", content="Continue..."))
+
+# Save after adding messages
+manager.save_memory()
 ```
 
 ### 3. View Historical Sessions
@@ -254,44 +291,26 @@ store = MemoryStore(db_path="data/memory.db")
 - `delete_session(session_id)` → bool
   - Delete session
 
-- `update_session_metadata(session_id, metadata)` → bool
-  - Update metadata
-
 ### MemoryManager Persistence
 
 ```python
 from memory import MemoryManager, MemoryConfig
-from memory.store import MemoryStore
 
-store = MemoryStore()
 config = MemoryConfig()
 
-# Method 1: Create new session (auto-persistence)
+# Method 1: Create new session (persistence is automatic)
 manager = MemoryManager(
     config=config,
     llm=llm,
-    store=store,
-    enable_persistence=True
+    db_path="data/memory.db"  # Optional, defaults to "data/memory.db"
 )
 
 # Method 2: Load from existing session
 manager = MemoryManager.from_session(
     session_id="existing-id",
     llm=llm,
-    store=store,
-    enable_persistence=True
+    db_path="data/memory.db"
 )
-
-# Method 3: Disable auto-persistence (manual control)
-manager = MemoryManager(
-    config=config,
-    llm=llm,
-    store=store,
-    enable_persistence=False  # No auto-save
-)
-# Manual save
-if manager.store and manager.session_id:
-    manager.store.save_message(manager.session_id, message, tokens)
 ```
 
 ## Use Cases
@@ -300,14 +319,14 @@ if manager.store and manager.session_id:
 
 ```python
 # 1. Record session_id when running agent
-manager = MemoryManager(..., enable_persistence=True)
+manager = MemoryManager(config, llm)
 print(f"Session ID: {manager.session_id}")  # Save this ID
 
 # 2. After encountering issues, view session details
 python tools/session_manager.py show <session_id> --messages
 
 # 3. Reload session in code for debugging
-manager = MemoryManager.from_session(session_id, llm, store)
+manager = MemoryManager.from_session(session_id, llm)
 # Analyze memory state
 print(f"Summaries: {len(manager.summaries)}")
 print(f"Short-term: {manager.short_term.count()}")
@@ -316,14 +335,14 @@ print(f"Short-term: {manager.short_term.count()}")
 ### Use Case 2: Long-Running Conversations
 
 ```python
-# Day 1: Create session
-manager = MemoryManager(..., enable_persistence=True)
+# Day 1: Create session (automatically persisted)
+manager = MemoryManager(config, llm)
 session_id = manager.session_id
 save_to_config("last_session_id", session_id)
 
 # Day 2: Continue conversation
 session_id = load_from_config("last_session_id")
-manager = MemoryManager.from_session(session_id, llm, store)
+manager = MemoryManager.from_session(session_id, llm)
 # Continue conversation...
 ```
 

@@ -6,7 +6,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from memory import MemoryConfig, MemoryManager
-from memory.store import MemoryStore
 from llm.base import LLMMessage
 
 
@@ -31,14 +30,13 @@ class MockLLM:
 def demo_create_session():
     """Demo: Create a new session and add messages."""
     print("\n" + "=" * 80)
-    print("Demo 1: Create a new session with persistence")
+    print("Demo 1: Create a new session (automatically persisted)")
     print("=" * 80)
 
-    # Initialize store and LLM
-    store = MemoryStore(db_path="data/demo_memory.db")
+    # Initialize LLM
     llm = MockLLM()
 
-    # Create manager with persistence enabled
+    # Create manager (persistence is automatic)
     config = MemoryConfig(
         short_term_message_count=5,
         target_working_memory_tokens=100
@@ -47,18 +45,11 @@ def demo_create_session():
     manager = MemoryManager(
         config=config,
         llm=llm,
-        store=store,
-        enable_persistence=True
+        db_path="data/demo_memory.db"
     )
 
     session_id = manager.session_id
     print(f"\n✅ Created session: {session_id}")
-
-    # Update metadata
-    store.update_session_metadata(
-        session_id,
-        {"description": "Demo session", "project": "memory_test"}
-    )
 
     # Add some messages
     messages = [
@@ -75,13 +66,16 @@ def demo_create_session():
         manager.add_message(msg)
         print(f"  Added message: [{msg.role}] {str(msg.content)[:50]}...")
 
+    # Save memory state (normally done automatically after agent.run())
+    manager.save_memory()
+    print(f"\n💾 Saved memory to database")
+
     # Get stats
-    stats = store.get_session_stats(session_id)
+    stats = manager.store.get_session_stats(session_id)
     print(f"\n📊 Session Stats:")
     print(f"  Messages: {stats['message_count']}")
     print(f"  System Messages: {stats['system_message_count']}")
     print(f"  Compressions: {stats['compression_count']}")
-    print(f"  Current Tokens: {stats['current_tokens']}")
 
     return session_id
 
@@ -92,16 +86,14 @@ def demo_load_session(session_id: str):
     print(f"Demo 2: Load session {session_id}")
     print("=" * 80)
 
-    # Initialize store and LLM
-    store = MemoryStore(db_path="data/demo_memory.db")
+    # Initialize LLM
     llm = MockLLM()
 
     # Load session
     manager = MemoryManager.from_session(
         session_id=session_id,
         llm=llm,
-        store=store,
-        enable_persistence=True
+        db_path="data/demo_memory.db"
     )
 
     print(f"\n✅ Loaded session with:")
@@ -121,12 +113,15 @@ def demo_load_session(session_id: str):
         manager.add_message(msg)
         print(f"  Added: [{msg.role}] {str(msg.content)[:50]}...")
 
+    # Save memory state
+    manager.save_memory()
+    print(f"\n💾 Saved memory to database")
+
     # Get updated stats
-    stats = store.get_session_stats(session_id)
+    stats = manager.store.get_session_stats(session_id)
     print(f"\n📊 Updated Stats:")
     print(f"  Messages: {stats['message_count']}")
     print(f"  Compressions: {stats['compression_count']}")
-    print(f"  Current Tokens: {stats['current_tokens']}")
 
 
 def demo_list_sessions():
@@ -135,6 +130,8 @@ def demo_list_sessions():
     print("Demo 3: List all sessions")
     print("=" * 80)
 
+    # Create a temporary manager to access the store
+    from memory.store import MemoryStore
     store = MemoryStore(db_path="data/demo_memory.db")
     sessions = store.list_sessions(limit=10)
 
@@ -144,8 +141,6 @@ def demo_list_sessions():
         print(f"  Created: {session['created_at']}")
         print(f"  Messages: {session['message_count']}")
         print(f"  Summaries: {session['summary_count']}")
-        if session['metadata']:
-            print(f"  Metadata: {session['metadata']}")
 
 
 def main():
@@ -165,8 +160,8 @@ def main():
     print("\n" + "=" * 80)
     print("✅ Demo complete!")
     print("\nTo view sessions, run:")
-    print(f"  python tools/session_manager.py list")
-    print(f"  python tools/session_manager.py show {session_id}")
+    print(f"  python tools/session_manager.py list --db data/demo_memory.db")
+    print(f"  python tools/session_manager.py show {session_id} --db data/demo_memory.db")
     print("=" * 80 + "\n")
 
 

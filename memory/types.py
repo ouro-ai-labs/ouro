@@ -2,6 +2,7 @@
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+from llm.base import LLMMessage
 
 
 @dataclass
@@ -35,7 +36,7 @@ class CompressedMemory:
     """Represents a compressed memory segment."""
 
     summary: str  # LLM-generated summary of compressed messages
-    preserved_messages: List[Any] = field(default_factory=list)  # Messages to keep verbatim
+    preserved_messages: List[LLMMessage] = field(default_factory=list)  # Messages to keep verbatim
     original_message_count: int = 0  # Number of original messages
     compressed_tokens: int = 0  # Token count of compressed representation
     original_tokens: int = 0  # Original token count before compression

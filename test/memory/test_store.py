@@ -47,27 +47,17 @@ class TestMemoryStoreBasics:
         assert session_id is not None
         assert len(session_id) == 36  # UUID length
 
-    def test_create_session_with_metadata(self, store):
-        """Test creating session with metadata."""
-        metadata = {"description": "Test session", "project": "test"}
-        session_id = store.create_session(metadata=metadata)
+    def test_create_session_basic(self, store):
+        """Test creating basic session (simplified version)."""
+        session_id = store.create_session()
 
         # Load and verify
         session_data = store.load_session(session_id)
-        assert session_data["metadata"] == metadata
-
-    def test_create_session_with_config(self, store):
-        """Test creating session with config."""
-        config = MemoryConfig(
-            max_context_tokens=50000,
-            short_term_message_count=10
-        )
-        session_id = store.create_session(config=config)
-
-        # Load and verify
-        session_data = store.load_session(session_id)
-        assert session_data["config"].max_context_tokens == 50000
-        assert session_data["config"].short_term_message_count == 10
+        assert session_data is not None
+        assert session_data["config"] is None  # Config not stored in simplified version
+        assert session_data["messages"] == []
+        assert session_data["system_messages"] == []
+        assert session_data["summaries"] == []
 
 
 class TestMessageStorage:
@@ -133,6 +123,77 @@ class TestMessageStorage:
         loaded_msg = session_data["messages"][0]
         assert isinstance(loaded_msg.content, list)
         assert len(loaded_msg.content) == 2
+
+
+class TestBatchSave:
+    """Test batch save_memory functionality."""
+
+    def test_save_memory(self, store):
+        """Test saving complete memory state at once."""
+        session_id = store.create_session()
+
+        # Create memory components
+        system_messages = [
+            LLMMessage(role="system", content="You are helpful")
+        ]
+
+        messages = [
+            LLMMessage(role="user", content="Hello"),
+            LLMMessage(role="assistant", content="Hi there"),
+            LLMMessage(role="user", content="How are you?"),
+        ]
+
+        summaries = [
+            CompressedMemory(
+                summary="Earlier conversation summary",
+                preserved_messages=[],
+                original_message_count=5,
+                original_tokens=500,
+                compressed_tokens=150,
+                compression_ratio=0.3
+            )
+        ]
+
+        # Save all at once
+        store.save_memory(session_id, system_messages, messages, summaries)
+
+        # Load and verify
+        session_data = store.load_session(session_id)
+        assert len(session_data["system_messages"]) == 1
+        assert len(session_data["messages"]) == 3
+        assert len(session_data["summaries"]) == 1
+
+        # Verify content
+        assert session_data["system_messages"][0].content == "You are helpful"
+        assert session_data["messages"][0].content == "Hello"
+        assert session_data["summaries"][0].summary == "Earlier conversation summary"
+
+    def test_save_memory_replaces_content(self, store):
+        """Test that save_memory replaces all content."""
+        session_id = store.create_session()
+
+        # First save
+        store.save_memory(
+            session_id,
+            [LLMMessage(role="system", content="First")],
+            [LLMMessage(role="user", content="Message 1")],
+            []
+        )
+
+        # Second save (should replace, not append)
+        store.save_memory(
+            session_id,
+            [LLMMessage(role="system", content="Second")],
+            [LLMMessage(role="user", content="Message 2")],
+            []
+        )
+
+        # Load and verify - should only have second save's content
+        session_data = store.load_session(session_id)
+        assert len(session_data["system_messages"]) == 1
+        assert len(session_data["messages"]) == 1
+        assert session_data["system_messages"][0].content == "Second"
+        assert session_data["messages"][0].content == "Message 2"
 
 
 class TestSummaryStorage:
@@ -277,24 +338,6 @@ class TestSessionManagement:
         success = store.delete_session("nonexistent-id")
         assert not success
 
-    def test_update_metadata(self, store):
-        """Test updating session metadata."""
-        session_id = store.create_session(metadata={"version": 1})
-
-        # Update
-        new_metadata = {"version": 2, "description": "Updated"}
-        success = store.update_session_metadata(session_id, new_metadata)
-        assert success
-
-        # Verify
-        session_data = store.load_session(session_id)
-        assert session_data["metadata"]["version"] == 2
-        assert session_data["metadata"]["description"] == "Updated"
-
-    def test_update_metadata_nonexistent_session(self, store):
-        """Test updating metadata for nonexistent session."""
-        success = store.update_session_metadata("nonexistent-id", {"key": "value"})
-        assert not success
 
 
 class TestIntegration:
@@ -302,12 +345,8 @@ class TestIntegration:
 
     def test_complete_session_lifecycle(self, store):
         """Test a complete session lifecycle."""
-        # Create session
-        config = MemoryConfig(short_term_message_count=5)
-        session_id = store.create_session(
-            metadata={"description": "Integration test"},
-            config=config
-        )
+        # Create session (simplified - no metadata or config storage)
+        session_id = store.create_session()
 
         # Add system message
         store.save_message(
@@ -344,7 +383,6 @@ class TestIntegration:
         # Load and verify
         session_data = store.load_session(session_id)
 
-        assert session_data["metadata"]["description"] == "Integration test"
         assert len(session_data["system_messages"]) == 1
         assert len(session_data["messages"]) == 20
         assert len(session_data["summaries"]) == 2

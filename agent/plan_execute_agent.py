@@ -135,6 +135,9 @@ Provide your final answer to the user based on the execution results above.
         # Print memory statistics
         self._print_memory_stats()
 
+        # Save memory state to database after task completion
+        self.memory.save_memory()
+
         return final_answer
 
     def _print_memory_stats(self):

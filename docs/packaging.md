@@ -16,8 +16,8 @@ pip install -e .
 
 Now you can use it globally:
 ```bash
-AgenticLoop --help
-AgenticLoop interactive
+aloop --help
+aloop interactive
 ```
 
 ## 🚀 Publishing to PyPI

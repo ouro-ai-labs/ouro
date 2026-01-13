@@ -160,6 +160,10 @@ DO NOT delegate simple operations that can be done in 1-2 tool calls.
         )
 
         self._print_memory_stats()
+
+        # Save memory state to database after task completion
+        self.memory.save_memory()
+
         return result
 
     def _print_memory_stats(self):
