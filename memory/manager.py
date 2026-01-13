@@ -8,22 +8,41 @@ from .types import MemoryConfig, CompressedMemory, CompressionStrategy
 from .short_term import ShortTermMemory
 from .compressor import WorkingMemoryCompressor
 from .token_tracker import TokenTracker
+from .store import MemoryStore
 
 logger = logging.getLogger(__name__)
 
 
 class MemoryManager:
-    """Central memory management system."""
+    """Central memory management system with optional persistence."""
 
-    def __init__(self, config: MemoryConfig, llm: "BaseLLM"):
+    def __init__(
+        self,
+        config: MemoryConfig,
+        llm: "BaseLLM",
+        store: Optional[MemoryStore] = None,
+        session_id: Optional[str] = None,
+        enable_persistence: bool = False
+    ):
         """Initialize memory manager.
 
         Args:
             config: Memory configuration
             llm: LLM instance for compression
+            store: Optional MemoryStore for persistence
+            session_id: Optional session ID (if resuming or using persistence)
+            enable_persistence: Enable automatic saving to store
         """
         self.config = config
         self.llm = llm
+        self.store = store
+        self.session_id = session_id
+        self.enable_persistence = enable_persistence
+
+        # If persistence enabled but no session_id, create one
+        if enable_persistence and not session_id and store:
+            self.session_id = store.create_session(config=config)
+            logger.info(f"Created new session: {self.session_id}")
 
         # Initialize components
         self.short_term = ShortTermMemory(max_size=config.short_term_message_count)
@@ -40,6 +59,63 @@ class MemoryManager:
         self.last_compression_savings = 0
         self.compression_count = 0
 
+    @classmethod
+    def from_session(
+        cls,
+        session_id: str,
+        llm: "BaseLLM",
+        store: MemoryStore,
+        enable_persistence: bool = True
+    ) -> "MemoryManager":
+        """Load a MemoryManager from a saved session.
+
+        Args:
+            session_id: Session ID to load
+            llm: LLM instance for compression
+            store: MemoryStore instance
+            enable_persistence: Enable automatic saving
+
+        Returns:
+            MemoryManager instance with loaded state
+        """
+        # Load session data
+        session_data = store.load_session(session_id)
+        if not session_data:
+            raise ValueError(f"Session {session_id} not found")
+
+        # Get config (use loaded config or default)
+        config = session_data["config"] or MemoryConfig()
+
+        # Create manager
+        manager = cls(
+            config=config,
+            llm=llm,
+            store=store,
+            session_id=session_id,
+            enable_persistence=enable_persistence
+        )
+
+        # Restore state
+        manager.system_messages = session_data["system_messages"]
+        manager.summaries = session_data["summaries"]
+        manager.compression_count = session_data["stats"]["compression_count"]
+
+        # Add messages to short-term memory
+        for msg in session_data["messages"]:
+            manager.short_term.add_message(msg)
+
+        # Recalculate tokens
+        manager.current_tokens = manager._recalculate_current_tokens()
+
+        logger.info(
+            f"Loaded session {session_id}: "
+            f"{len(session_data['messages'])} messages, "
+            f"{len(session_data['summaries'])} summaries, "
+            f"{manager.current_tokens} tokens"
+        )
+
+        return manager
+
     def add_message(self, message: LLMMessage, actual_tokens: Dict[str, int] = None) -> None:
         """Add a message to memory and trigger compression if needed.
 
@@ -51,6 +127,11 @@ class MemoryManager:
         # Track system messages separately
         if message.role == "system":
             self.system_messages.append(message)
+
+            # Save to store if persistence enabled
+            if self.enable_persistence and self.store and self.session_id:
+                self.store.save_message(self.session_id, message, tokens=0)
+
             return
 
         # Count tokens (use actual if provided, otherwise estimate)
@@ -78,6 +159,10 @@ class MemoryManager:
 
         # Add to short-term memory
         self.short_term.add_message(message)
+
+        # Save to store if persistence enabled
+        if self.enable_persistence and self.store and self.session_id:
+            self.store.save_message(self.session_id, message, tokens=tokens)
 
         # Log memory state for debugging
         logger.debug(
@@ -176,6 +261,10 @@ class MemoryManager:
             self.compression_count += 1
             self.was_compressed_last_iteration = True
             self.last_compression_savings = compressed.token_savings
+
+            # Save to store if persistence enabled
+            if self.enable_persistence and self.store and self.session_id:
+                self.store.save_summary(self.session_id, compressed)
 
             # Update token tracker
             self.token_tracker.add_compression_savings(compressed.token_savings)
