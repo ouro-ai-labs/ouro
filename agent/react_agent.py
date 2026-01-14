@@ -101,6 +101,7 @@ You have access to various tools including:
 - Code navigation: code_navigator (find functions/classes/structure/usages)
 - Code editing: smart_edit (intelligent edits with preview), edit_file
 - File operations: glob_files, grep_content, read_file, write_file, search_files
+- Git operations: git_status, git_diff, git_add, git_commit, git_log, git_branch, git_checkout, git_push, git_pull, git_remote, git_stash, git_clean
 - Task management: manage_todo_list
 - Sub-agent delegation: delegate_subtask (for complex multi-step subtasks)
 - Utilities: calculate, web_search, shell

@@ -14,6 +14,11 @@ from tools.smart_edit import SmartEditTool
 from tools.code_navigator import CodeNavigatorTool
 from tools.todo import TodoTool
 from tools.delegation import DelegationTool
+from tools.git_tools import (
+    GitStatusTool, GitDiffTool, GitAddTool, GitCommitTool,
+    GitLogTool, GitBranchTool, GitCheckoutTool, GitPushTool,
+    GitPullTool, GitRemoteTool, GitStashTool, GitCleanTool
+)
 from agent.todo import TodoList
 from utils import setup_logger, get_log_file_path, terminal_ui
 from interactive import run_interactive_mode
@@ -41,6 +46,19 @@ def create_agent(mode: str = "react"):
         SmartEditTool(),
         CodeNavigatorTool(),
         ShellTool(),
+        # Git tools
+        GitStatusTool(),
+        GitDiffTool(),
+        GitAddTool(),
+        GitCommitTool(),
+        GitLogTool(),
+        GitBranchTool(),
+        GitCheckoutTool(),
+        GitPushTool(),
+        GitPullTool(),
+        GitRemoteTool(),
+        GitStashTool(),
+        GitCleanTool(),
     ]
 
     # Create LLM instance with retry configuration and base_url
