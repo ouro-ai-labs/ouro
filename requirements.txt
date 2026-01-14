@@ -5,7 +5,7 @@ rich>=13.0.0  # For beautiful terminal output
 prompt_toolkit>=3.0.0  # For advanced terminal input with Unicode support
 
 # LiteLLM - Unified LLM interface for 100+ providers
-litellm>=1.30.0
+litellm>=1.72.6
 
 # Token counting
 tiktoken>=0.5.0

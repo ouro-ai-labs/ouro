@@ -1,6 +1,11 @@
 """Main entry point for the agentic loop system."""
 import argparse
-
+import warnings
+warnings.filterwarnings(
+    "ignore", 
+    message="Pydantic serializer warnings.*", 
+    category=UserWarning
+)
 from config import Config
 from llm import LiteLLMLLM
 from agent.react_agent import ReActAgent
