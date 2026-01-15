@@ -12,4 +12,3 @@ if [[ ! -x ".venv/bin/python" ]]; then
 fi
 
 export PYTHON="${PYTHON:-.venv/bin/python}"
-
