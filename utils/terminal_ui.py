@@ -1,13 +1,14 @@
 """Terminal UI utilities using Rich library for beautiful output."""
-from typing import Dict, Any, Optional
-from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
-from rich.progress import Progress, SpinnerColumn, TextColumn
-from rich.text import Text
+
+from typing import Any, Dict, Optional
+
 from rich import box
-from rich.syntax import Syntax
+from rich.console import Console
 from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.syntax import Syntax
+from rich.table import Table
+from rich.text import Text
 
 # Global console instance
 console = Console()
@@ -24,12 +25,7 @@ def print_header(title: str, subtitle: Optional[str] = None) -> None:
     if subtitle:
         content += f"\n[dim]{subtitle}[/dim]"
 
-    console.print(Panel(
-        content,
-        border_style="cyan",
-        box=box.DOUBLE,
-        padding=(1, 2)
-    ))
+    console.print(Panel(content, border_style="cyan", box=box.DOUBLE, padding=(1, 2)))
 
 
 def print_config(config: Dict[str, Any]) -> None:
@@ -38,12 +34,7 @@ def print_config(config: Dict[str, Any]) -> None:
     Args:
         config: Dictionary of configuration key-value pairs
     """
-    table = Table(
-        show_header=False,
-        box=box.SIMPLE,
-        border_style="blue",
-        padding=(0, 2)
-    )
+    table = Table(show_header=False, box=box.SIMPLE, border_style="blue", padding=(0, 2))
     table.add_column("Key", style="cyan bold")
     table.add_column("Value", style="green")
 
@@ -96,10 +87,8 @@ def print_tool_result(result: str, truncated: bool = False) -> None:
         result: Tool result string
         truncated: Whether the result was truncated
     """
-    result_preview = result[:200] if len(result) > 200 else result
-
     if truncated:
-        console.print(f"[yellow]⚠️  Result truncated[/yellow]")
+        console.print("[yellow]⚠️  Result truncated[/yellow]")
 
     # Only show preview in verbose mode
     # console.print(f"[dim]{result_preview}...[/dim]" if len(result) > 200 else f"[dim]{result_preview}[/dim]")
@@ -114,13 +103,15 @@ def print_final_answer(answer: str) -> None:
     console.print()
     # Render markdown content
     md = Markdown(answer)
-    console.print(Panel(
-        md,
-        title="[bold green]✓ Final Answer[/bold green]",
-        border_style="green",
-        box=box.DOUBLE,
-        padding=(1, 2)
-    ))
+    console.print(
+        Panel(
+            md,
+            title="[bold green]✓ Final Answer[/bold green]",
+            border_style="green",
+            box=box.DOUBLE,
+            padding=(1, 2),
+        )
+    )
 
 
 def print_memory_stats(stats: Dict[str, Any]) -> None:
@@ -137,29 +128,31 @@ def print_memory_stats(stats: Dict[str, Any]) -> None:
         header_style="bold cyan",
         box=box.ROUNDED,
         border_style="cyan",
-        padding=(0, 1)
+        padding=(0, 1),
     )
 
     table.add_column("Metric", style="cyan")
     table.add_column("Value", justify="right", style="green")
 
     # Calculate total tokens
-    total_used = stats['total_input_tokens'] + stats['total_output_tokens']
+    total_used = stats["total_input_tokens"] + stats["total_output_tokens"]
 
     # Add rows
     table.add_row("Total Tokens", f"{total_used:,}")
     table.add_row("├─ Input", f"{stats['total_input_tokens']:,}")
     table.add_row("└─ Output", f"{stats['total_output_tokens']:,}")
     table.add_row("Current Context", f"{stats['current_tokens']:,}")
-    table.add_row("Compressions", str(stats['compression_count']))
+    table.add_row("Compressions", str(stats["compression_count"]))
 
     # Net savings with color
-    savings = stats['net_savings']
+    savings = stats["net_savings"]
     savings_str = f"{savings:,}" if savings >= 0 else f"[red]{savings:,}[/red]"
     table.add_row("Net Savings", savings_str)
 
     table.add_row("Total Cost", f"${stats['total_cost']:.4f}")
-    table.add_row("Messages", f"{stats['short_term_count']} in memory, {stats['summary_count']} summaries")
+    table.add_row(
+        "Messages", f"{stats['short_term_count']} in memory, {stats['summary_count']} summaries"
+    )
 
     console.print(table)
 
@@ -171,12 +164,14 @@ def print_error(message: str, title: str = "Error") -> None:
         message: Error message
         title: Error title (default: "Error")
     """
-    console.print(Panel(
-        f"[red]{message}[/red]",
-        title=f"[bold red]❌ {title}[/bold red]",
-        border_style="red",
-        box=box.ROUNDED
-    ))
+    console.print(
+        Panel(
+            f"[red]{message}[/red]",
+            title=f"[bold red]❌ {title}[/bold red]",
+            border_style="red",
+            box=box.ROUNDED,
+        )
+    )
 
 
 def print_warning(message: str) -> None:

@@ -1,8 +1,8 @@
 """Logging configuration for the agentic loop system."""
+
 import logging
-import os
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 # Global flag to track if logging has been initialized
@@ -14,7 +14,7 @@ def setup_logger(
     log_dir: Optional[str] = None,
     log_level: str = "DEBUG",
     log_to_file: bool = True,
-    log_to_console: bool = False
+    log_to_console: bool = False,
 ) -> None:
     """Configure the logging system globally.
 
@@ -35,6 +35,7 @@ def setup_logger(
     if log_dir is None:
         try:
             from config import Config
+
             log_dir = Config.LOG_DIR
             log_level = Config.LOG_LEVEL
             log_to_file = Config.LOG_TO_FILE
@@ -48,8 +49,7 @@ def setup_logger(
 
     # Create formatter
     formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
     )
 
     # Add file handler if enabled
@@ -61,7 +61,7 @@ def setup_logger(
         log_file = log_path / f"agentic_loop_{timestamp}.log"
         _log_file_path = str(log_file)
 
-        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+        file_handler = logging.FileHandler(log_file, encoding="utf-8")
         file_handler.setLevel(level)
         file_handler.setFormatter(formatter)
         logging.root.addHandler(file_handler)
@@ -76,7 +76,9 @@ def setup_logger(
     _logging_initialized = True
 
     # Log initialization message
-    logging.info(f"Logging initialized. Level: {log_level}, File: {_log_file_path if log_to_file else 'disabled'}")
+    logging.info(
+        f"Logging initialized. Level: {log_level}, File: {_log_file_path if log_to_file else 'disabled'}"
+    )
 
 
 def get_logger(name: str) -> logging.Logger:

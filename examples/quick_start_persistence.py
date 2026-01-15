@@ -5,8 +5,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from memory import MemoryConfig, MemoryManager
 from llm.base import LLMMessage
+from memory import MemoryConfig, MemoryManager
 
 
 # Mock LLM for demo (replace with real LLM in production)
@@ -31,35 +31,27 @@ def main():
 
     # Option 1: Create new session (persistence is automatic)
     print("\n1️⃣  Creating new session (automatically persisted)...")
-    manager = MemoryManager(
-        config=MemoryConfig(),
-        llm=llm,
-        db_path="data/my_app.db"
-    )
+    manager = MemoryManager(config=MemoryConfig(), llm=llm, db_path="data/my_app.db")
     session_id = manager.session_id
     print(f"   Session ID: {session_id}")
 
     # Add messages
     manager.add_message(LLMMessage(role="user", content="Hello!"))
     manager.add_message(LLMMessage(role="assistant", content="Hi there!"))
-    print(f"   ✓ Added 2 messages")
+    print("   ✓ Added 2 messages")
 
     # Save memory state (normally done automatically after agent.run())
     manager.save_memory()
-    print(f"   ✓ Saved to database")
+    print("   ✓ Saved to database")
 
     # Option 2: Load existing session
     print(f"\n2️⃣  Loading session {session_id[:8]}...")
-    manager2 = MemoryManager.from_session(
-        session_id=session_id,
-        llm=llm,
-        db_path="data/my_app.db"
-    )
+    manager2 = MemoryManager.from_session(session_id=session_id, llm=llm, db_path="data/my_app.db")
     print(f"   ✓ Loaded {manager2.short_term.count()} messages")
 
     # Continue conversation
     manager2.add_message(LLMMessage(role="user", content="How are you?"))
-    print(f"   ✓ Continued conversation")
+    print("   ✓ Continued conversation")
 
     # View sessions
     print("\n3️⃣  Viewing all sessions...")
@@ -68,7 +60,7 @@ def main():
         print(f"   • {s['id'][:8]}... - {s['message_count']} messages")
 
     print("\n✅ Done! View sessions with:")
-    print(f"   python tools/session_manager.py list --db data/my_app.db")
+    print("   python tools/session_manager.py list --db data/my_app.db")
     print(f"   python tools/session_manager.py show {session_id} --db data/my_app.db\n")
 
 

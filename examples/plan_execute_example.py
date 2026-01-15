@@ -1,14 +1,16 @@
 """Example usage of Plan-and-Execute Agent."""
-import sys
+
 import os
+import sys
 
 # Add parent directory to path to import modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config import Config
 from agent.plan_execute_agent import PlanExecuteAgent
+from config import Config
+from llm import LiteLLMLLM
 from tools.calculator import CalculatorTool
-from tools.file_ops import FileReadTool, FileWriteTool, FileSearchTool
+from tools.file_ops import FileReadTool, FileSearchTool, FileWriteTool
 from tools.web_search import WebSearchTool
 
 
@@ -23,14 +25,20 @@ def main():
         Config.validate()
     except ValueError as e:
         print(f"Error: {e}")
-        print("Please set ANTHROPIC_API_KEY in your .env file")
+        print("Please configure your .env file (see .env.example)")
         return
+
+    llm = LiteLLMLLM(
+        model=Config.LITELLM_MODEL,
+        api_base=Config.LITELLM_API_BASE,
+        retry_config=Config.get_retry_config(),
+        drop_params=Config.LITELLM_DROP_PARAMS,
+        timeout=Config.LITELLM_TIMEOUT,
+    )
 
     # Initialize agent with tools
     agent = PlanExecuteAgent(
-        api_key=Config.ANTHROPIC_API_KEY,
-        model=Config.MODEL,
-        max_iterations=10,
+        llm=llm,
         tools=[
             CalculatorTool(),
             FileReadTool(),
@@ -38,6 +46,7 @@ def main():
             FileSearchTool(),
             WebSearchTool(),
         ],
+        max_iterations=10,
     )
 
     # Example 1: Multi-step calculation and file writing

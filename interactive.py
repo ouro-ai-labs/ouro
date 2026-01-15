@@ -1,13 +1,15 @@
 """Interactive multi-turn conversation mode for the agent."""
+
 import json
 from datetime import datetime
 from pathlib import Path
+
 from prompt_toolkit import prompt
 from prompt_toolkit.styles import Style
 
 from config import Config
-from utils import get_log_file_path, terminal_ui
 from memory.store import MemoryStore
+from utils import get_log_file_path, terminal_ui
 
 
 def run_interactive_mode(agent, mode: str):
@@ -19,35 +21,38 @@ def run_interactive_mode(agent, mode: str):
     """
     terminal_ui.print_header(
         "🤖 Agentic Loop System - Interactive Mode",
-        subtitle="Multi-turn conversation with AI Agent"
+        subtitle="Multi-turn conversation with AI Agent",
     )
 
     # Display configuration
     config_dict = {
-        "LLM Provider": Config.LITELLM_MODEL.split('/')[0].upper() if '/' in Config.LITELLM_MODEL else "UNKNOWN",
+        "LLM Provider": (
+            Config.LITELLM_MODEL.split("/")[0].upper() if "/" in Config.LITELLM_MODEL else "UNKNOWN"
+        ),
         "Model": Config.LITELLM_MODEL,
         "Mode": mode.upper(),
-        "Commands": "/help, /clear, /stats, /history, /dump-memory, /exit"
+        "Commands": "/help, /clear, /stats, /history, /dump-memory, /exit",
     }
     terminal_ui.print_config(config_dict)
 
-    terminal_ui.console.print("\n[bold green]Interactive mode started. Type your message or use commands.[/bold green]")
+    terminal_ui.console.print(
+        "\n[bold green]Interactive mode started. Type your message or use commands.[/bold green]"
+    )
     terminal_ui.console.print("[dim]Tip: Use /help to see available commands[/dim]\n")
 
     # Define prompt style for better visual feedback
-    prompt_style = Style.from_dict({
-        'prompt': '#00ffff bold',  # Cyan bold for "You:"
-    })
+    prompt_style = Style.from_dict(
+        {
+            "prompt": "#00ffff bold",  # Cyan bold for "You:"
+        }
+    )
 
     conversation_count = 0
 
     while True:
         try:
             # Get user input using prompt_toolkit for better Unicode support
-            user_input = prompt(
-                [('class:prompt', 'You: ')],
-                style=prompt_style
-            ).strip()
+            user_input = prompt([("class:prompt", "You: ")], style=prompt_style).strip()
 
             # Handle empty input
             if not user_input:
@@ -59,7 +64,9 @@ def run_interactive_mode(agent, mode: str):
                 command = command_parts[0].lower()
 
                 if command == "/exit" or command == "/quit":
-                    terminal_ui.console.print("\n[bold yellow]Exiting interactive mode. Goodbye![/bold yellow]")
+                    terminal_ui.console.print(
+                        "\n[bold yellow]Exiting interactive mode. Goodbye![/bold yellow]"
+                    )
                     break
 
                 elif command == "/help":
@@ -69,7 +76,9 @@ def run_interactive_mode(agent, mode: str):
                 elif command == "/clear":
                     agent.memory.reset()
                     conversation_count = 0
-                    terminal_ui.console.print("\n[bold green]✓ Memory cleared. Starting fresh conversation.[/bold green]\n")
+                    terminal_ui.console.print(
+                        "\n[bold green]✓ Memory cleared. Starting fresh conversation.[/bold green]\n"
+                    )
                     continue
 
                 elif command == "/stats":
@@ -82,7 +91,9 @@ def run_interactive_mode(agent, mode: str):
 
                 elif command == "/dump-memory":
                     if len(command_parts) < 2:
-                        terminal_ui.console.print("[bold red]Error:[/bold red] Please provide a session ID")
+                        terminal_ui.console.print(
+                            "[bold red]Error:[/bold red] Please provide a session ID"
+                        )
                         terminal_ui.console.print("[dim]Usage: /dump-memory <session_id>[/dim]\n")
                     else:
                         session_id = command_parts[1]
@@ -108,17 +119,23 @@ def run_interactive_mode(agent, mode: str):
                 terminal_ui.console.print()
 
             except KeyboardInterrupt:
-                terminal_ui.console.print("\n[bold yellow]Task interrupted by user.[/bold yellow]\n")
+                terminal_ui.console.print(
+                    "\n[bold yellow]Task interrupted by user.[/bold yellow]\n"
+                )
                 continue
             except Exception as e:
                 terminal_ui.console.print(f"\n[bold red]Error:[/bold red] {str(e)}\n")
                 continue
 
         except KeyboardInterrupt:
-            terminal_ui.console.print("\n\n[bold yellow]Interrupted. Type /exit to quit or continue chatting.[/bold yellow]\n")
+            terminal_ui.console.print(
+                "\n\n[bold yellow]Interrupted. Type /exit to quit or continue chatting.[/bold yellow]\n"
+            )
             continue
         except EOFError:
-            terminal_ui.console.print("\n[bold yellow]Exiting interactive mode. Goodbye![/bold yellow]")
+            terminal_ui.console.print(
+                "\n[bold yellow]Exiting interactive mode. Goodbye![/bold yellow]"
+            )
             break
 
     # Show final statistics
@@ -136,10 +153,18 @@ def _show_help():
     """Display help message with available commands."""
     terminal_ui.console.print("\n[bold]Available Commands:[/bold]")
     terminal_ui.console.print("  [cyan]/help[/cyan]             - Show this help message")
-    terminal_ui.console.print("  [cyan]/clear[/cyan]            - Clear conversation memory and start fresh")
-    terminal_ui.console.print("  [cyan]/stats[/cyan]            - Show memory and token usage statistics")
-    terminal_ui.console.print("  [cyan]/history[/cyan]          - List all saved conversation sessions")
-    terminal_ui.console.print("  [cyan]/dump-memory <id>[/cyan] - Export a session's memory to a JSON file")
+    terminal_ui.console.print(
+        "  [cyan]/clear[/cyan]            - Clear conversation memory and start fresh"
+    )
+    terminal_ui.console.print(
+        "  [cyan]/stats[/cyan]            - Show memory and token usage statistics"
+    )
+    terminal_ui.console.print(
+        "  [cyan]/history[/cyan]          - List all saved conversation sessions"
+    )
+    terminal_ui.console.print(
+        "  [cyan]/dump-memory <id>[/cyan] - Export a session's memory to a JSON file"
+    )
     terminal_ui.console.print("  [cyan]/exit[/cyan]             - Exit interactive mode")
     terminal_ui.console.print("  [cyan]/quit[/cyan]             - Same as /exit\n")
 
@@ -161,7 +186,9 @@ def _show_history():
 
         if not sessions:
             terminal_ui.console.print("\n[yellow]No saved sessions found.[/yellow]")
-            terminal_ui.console.print("[dim]Sessions will be saved when using persistent memory mode.[/dim]\n")
+            terminal_ui.console.print(
+                "[dim]Sessions will be saved when using persistent memory mode.[/dim]\n"
+            )
             return
 
         terminal_ui.console.print("\n[bold]📚 Saved Sessions (showing most recent 20):[/bold]\n")
@@ -185,7 +212,9 @@ def _show_history():
 
         terminal_ui.console.print(table)
         terminal_ui.console.print()
-        terminal_ui.console.print("[dim]Tip: Use /dump-memory <session_id> to export a session's memory[/dim]\n")
+        terminal_ui.console.print(
+            "[dim]Tip: Use /dump-memory <session_id> to export a session's memory[/dim]\n"
+        )
 
     except Exception as e:
         terminal_ui.console.print(f"\n[bold red]Error loading sessions:[/bold red] {str(e)}\n")
@@ -205,7 +234,9 @@ def _dump_memory(session_id: str):
         session_data = store.load_session(session_id)
 
         if not session_data:
-            terminal_ui.console.print(f"\n[bold red]Error:[/bold red] Session {session_id} not found\n")
+            terminal_ui.console.print(
+                f"\n[bold red]Error:[/bold red] Session {session_id} not found\n"
+            )
             return
 
         # Prepare export data
@@ -218,8 +249,7 @@ def _dump_memory(session_id: str):
                 for msg in session_data["system_messages"]
             ],
             "messages": [
-                {"role": msg.role, "content": msg.content}
-                for msg in session_data["messages"]
+                {"role": msg.role, "content": msg.content} for msg in session_data["messages"]
             ],
             "summaries": [
                 {
@@ -230,8 +260,7 @@ def _dump_memory(session_id: str):
                     "compression_ratio": s.compression_ratio,
                     "token_savings": s.token_savings,
                     "preserved_messages": [
-                        {"role": msg.role, "content": msg.content}
-                        for msg in s.preserved_messages
+                        {"role": msg.role, "content": msg.content} for msg in s.preserved_messages
                     ],
                     "metadata": s.metadata,
                 }
@@ -253,11 +282,11 @@ def _dump_memory(session_id: str):
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(export_data, f, indent=2, ensure_ascii=False, default=str)
 
-        terminal_ui.console.print(f"\n[bold green]✓ Memory dumped successfully![/bold green]")
+        terminal_ui.console.print("\n[bold green]✓ Memory dumped successfully![/bold green]")
         terminal_ui.console.print(f"[dim]Location:[/dim] {output_path}")
 
         # Show summary
-        terminal_ui.console.print(f"\n[bold]Summary:[/bold]")
+        terminal_ui.console.print("\n[bold]Summary:[/bold]")
         terminal_ui.console.print(f"  Session ID: {session_id}")
         terminal_ui.console.print(f"  Messages: {len(export_data['messages'])}")
         terminal_ui.console.print(f"  System Messages: {len(export_data['system_messages'])}")

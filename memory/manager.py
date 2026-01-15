@@ -1,16 +1,20 @@
 """Core memory manager that orchestrates all memory operations."""
-from typing import List, Optional, Dict, Any
+
 import logging
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from llm.base import LLMMessage
 
-from .types import MemoryConfig, CompressedMemory, CompressionStrategy
-from .short_term import ShortTermMemory
 from .compressor import WorkingMemoryCompressor
-from .token_tracker import TokenTracker
+from .short_term import ShortTermMemory
 from .store import MemoryStore
+from .token_tracker import TokenTracker
+from .types import CompressedMemory, CompressionStrategy, MemoryConfig
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from llm import LiteLLMLLM
 
 
 class MemoryManager:
@@ -22,7 +26,7 @@ class MemoryManager:
         llm: "LiteLLMLLM",
         store: Optional[MemoryStore] = None,
         session_id: Optional[str] = None,
-        db_path: str = "data/memory.db"
+        db_path: str = "data/memory.db",
     ):
         """Initialize memory manager.
 
@@ -67,9 +71,9 @@ class MemoryManager:
     def from_session(
         cls,
         session_id: str,
-        llm: "BaseLLM",
+        llm: "LiteLLMLLM",
         store: Optional[MemoryStore] = None,
-        db_path: str = "data/memory.db"
+        db_path: str = "data/memory.db",
     ) -> "MemoryManager":
         """Load a MemoryManager from a saved session.
 
@@ -95,12 +99,7 @@ class MemoryManager:
         config = session_data["config"] or MemoryConfig()
 
         # Create manager
-        manager = cls(
-            config=config,
-            llm=llm,
-            store=store,
-            session_id=session_id
-        )
+        manager = cls(config=config, llm=llm, store=store, session_id=session_id)
 
         # Restore state
         manager.system_messages = session_data["system_messages"]
@@ -251,7 +250,7 @@ class MemoryManager:
                 messages,
                 strategy=strategy,
                 target_tokens=self._calculate_target_tokens(),
-                orphaned_tool_use_ids=orphaned_tool_use_ids
+                orphaned_tool_use_ids=orphaned_tool_use_ids,
             )
 
             # Track compression results
@@ -293,6 +292,9 @@ class MemoryManager:
         Returns:
             Tuple of (should_compress, reason)
         """
+        if not self.config.enable_compression:
+            return False, "compression_disabled"
+
         # Hard limit: must compress
         if self.current_tokens > self.config.compression_threshold:
             return True, f"hard_limit ({self.current_tokens} > {self.config.compression_threshold})"
@@ -440,7 +442,8 @@ class MemoryManager:
             "compression_count": self.compression_count,
             "total_savings": self.token_tracker.compression_savings,
             "compression_cost": self.token_tracker.compression_cost,
-            "net_savings": self.token_tracker.compression_savings - self.token_tracker.compression_cost,
+            "net_savings": self.token_tracker.compression_savings
+            - self.token_tracker.compression_cost,
             "short_term_count": self.short_term.count(),
             "summary_count": len(self.summaries),
             "total_cost": self.token_tracker.get_total_cost(self.llm.model),
@@ -471,7 +474,7 @@ class MemoryManager:
             session_id=self.session_id,
             system_messages=self.system_messages,
             messages=messages,
-            summaries=self.summaries
+            summaries=self.summaries,
         )
         logger.info(f"Saved memory state for session {self.session_id}")
 

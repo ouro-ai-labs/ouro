@@ -406,40 +406,14 @@ class MyProviderLLM(BaseLLM):
 
 ### 2. Update Configuration
 
-Add provider configuration to `config.py`:
+This repo is configured via LiteLLM (`LITELLM_MODEL` in `.env`). For most providers, **no code changes** are required:
 
-```python
-# config.py
-MY_PROVIDER_API_KEY = os.getenv("MY_PROVIDER_API_KEY")
-MY_PROVIDER_BASE_URL = os.getenv("MY_PROVIDER_BASE_URL")
-
-SUPPORTED_PROVIDERS = ["anthropic", "openai", "gemini", "my_provider"]
-
-@classmethod
-def get_api_key(cls) -> str:
-    if cls.LLM_PROVIDER == "my_provider":
-        return cls.MY_PROVIDER_API_KEY
-    # ... existing providers
-
-@classmethod
-def get_default_model(cls) -> str:
-    if cls.LLM_PROVIDER == "my_provider":
-        return os.getenv("MODEL", "default-model-v1")
-    # ... existing providers
+```bash
+LITELLM_MODEL=my_provider/my-model
+MY_PROVIDER_API_KEY=...
 ```
 
-### 3. Register in Factory
-
-Update `llm/__init__.py`:
-
-```python
-from .my_provider_llm import MyProviderLLM
-
-def create_llm(provider: str, api_key: str, model: str, **kwargs) -> BaseLLM:
-    if provider == "my_provider":
-        return MyProviderLLM(api_key, model, **kwargs)
-    # ... existing providers
-```
+If a provider is not supported by LiteLLM, implement a custom `BaseLLM` adapter under `llm/` and instantiate it directly in your app code (avoid adding more branching to `config.py`).
 
 ### 4. Update .env.example
 
@@ -479,14 +453,16 @@ if __name__ == "__main__":
 ```python
 # test_my_agent.py
 from agent.my_custom_agent import MyCustomAgent
-from llm import create_llm
+from llm import LiteLLMLLM
 from config import Config
 
 def test_my_agent():
-    llm = create_llm(
-        provider=Config.LLM_PROVIDER,
-        api_key=Config.get_api_key(),
-        model=Config.get_default_model()
+    llm = LiteLLMLLM(
+        model=Config.LITELLM_MODEL,
+        api_base=Config.LITELLM_API_BASE,
+        drop_params=Config.LITELLM_DROP_PARAMS,
+        timeout=Config.LITELLM_TIMEOUT,
+        retry_config=Config.get_retry_config(),
     )
 
     agent = MyCustomAgent(llm=llm)

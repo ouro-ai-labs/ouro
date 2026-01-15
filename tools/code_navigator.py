@@ -8,12 +8,27 @@ This tool provides intelligent code navigation capabilities:
 """
 
 import ast
-import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-from collections import defaultdict
+from typing import Any, Dict, List, Optional, TypedDict
 
 from tools.base import BaseTool
+
+
+class _FunctionResult(TypedDict):
+    file: str
+    line: int
+    signature: str
+    docstring: str
+    decorators: List[str]
+
+
+class _ClassResult(TypedDict):
+    file: str
+    line: int
+    bases: List[str]
+    methods: List[str]
+    docstring: str
+    decorators: List[str]
 
 
 class CodeNavigatorTool(BaseTool):
@@ -74,26 +89,20 @@ WHEN TO USE GREP INSTEAD:
         return {
             "target": {
                 "type": "string",
-                "description": "What to search for: function name, class name, or file path (for show_structure)"
+                "description": "What to search for: function name, class name, or file path (for show_structure)",
             },
             "search_type": {
                 "type": "string",
                 "description": "Type of search: find_function, find_class, show_structure, or find_usages",
-                "enum": ["find_function", "find_class", "show_structure", "find_usages"]
+                "enum": ["find_function", "find_class", "show_structure", "find_usages"],
             },
             "path": {
                 "type": "string",
-                "description": "Optional: limit search to specific directory (default: current directory)"
-            }
+                "description": "Optional: limit search to specific directory (default: current directory)",
+            },
         }
 
-    def execute(
-        self,
-        target: str,
-        search_type: str,
-        path: str = ".",
-        **kwargs
-    ) -> str:
+    def execute(self, target: str, search_type: str, path: str = ".", **kwargs) -> str:
         """Execute code navigation search."""
         try:
             base_path = Path(path)
@@ -116,11 +125,11 @@ WHEN TO USE GREP INSTEAD:
 
     def _find_function(self, name: str, base_path: Path) -> str:
         """Find all function definitions matching the name."""
-        results = []
+        results: List[_FunctionResult] = []
 
         for py_file in base_path.rglob("*.py"):
             try:
-                content = py_file.read_text(encoding='utf-8')
+                content = py_file.read_text(encoding="utf-8")
                 tree = ast.parse(content, filename=str(py_file))
 
                 for node in ast.walk(tree):
@@ -134,7 +143,7 @@ WHEN TO USE GREP INSTEAD:
                             try:
                                 return_type = ast.unparse(node.returns)
                                 signature += f" -> {return_type}"
-                            except:
+                            except Exception:
                                 pass
 
                         # Get docstring
@@ -143,13 +152,15 @@ WHEN TO USE GREP INSTEAD:
                         # Get decorator names
                         decorators = [self._format_decorator(d) for d in node.decorator_list]
 
-                        results.append({
-                            "file": str(py_file.relative_to(base_path)),
-                            "line": node.lineno,
-                            "signature": signature,
-                            "docstring": docstring or "(no docstring)",
-                            "decorators": decorators
-                        })
+                        results.append(
+                            {
+                                "file": str(py_file.relative_to(base_path)),
+                                "line": node.lineno,
+                                "signature": signature,
+                                "docstring": docstring or "(no docstring)",
+                                "decorators": decorators,
+                            }
+                        )
             except SyntaxError:
                 # Skip files with syntax errors
                 continue
@@ -164,24 +175,24 @@ WHEN TO USE GREP INSTEAD:
         output_parts = [f"Found {len(results)} function(s) named '{name}':\n"]
         for r in results:
             output_parts.append(f"📍 {r['file']}:{r['line']}")
-            if r['decorators']:
+            if r["decorators"]:
                 output_parts.append(f"   Decorators: {', '.join(r['decorators'])}")
             output_parts.append(f"   {r['signature']}")
             # Truncate long docstrings
-            doc = r['docstring']
+            doc = r["docstring"]
             if len(doc) > 100:
                 doc = doc[:100] + "..."
-            output_parts.append(f"   \"{doc}\"\n")
+            output_parts.append(f'   "{doc}"\n')
 
         return "\n".join(output_parts)
 
     def _find_class(self, name: str, base_path: Path) -> str:
         """Find all class definitions matching the name."""
-        results = []
+        results: List[_ClassResult] = []
 
         for py_file in base_path.rglob("*.py"):
             try:
-                content = py_file.read_text(encoding='utf-8')
+                content = py_file.read_text(encoding="utf-8")
                 tree = ast.parse(content, filename=str(py_file))
 
                 for node in ast.walk(tree):
@@ -201,14 +212,16 @@ WHEN TO USE GREP INSTEAD:
                         # Get decorator names
                         decorators = [self._format_decorator(d) for d in node.decorator_list]
 
-                        results.append({
-                            "file": str(py_file.relative_to(base_path)),
-                            "line": node.lineno,
-                            "bases": bases,
-                            "methods": methods,
-                            "docstring": docstring or "(no docstring)",
-                            "decorators": decorators
-                        })
+                        results.append(
+                            {
+                                "file": str(py_file.relative_to(base_path)),
+                                "line": node.lineno,
+                                "bases": bases,
+                                "methods": methods,
+                                "docstring": docstring or "(no docstring)",
+                                "decorators": decorators,
+                            }
+                        )
             except SyntaxError:
                 continue
             except Exception:
@@ -221,18 +234,22 @@ WHEN TO USE GREP INSTEAD:
         output_parts = [f"Found {len(results)} class(es) named '{name}':\n"]
         for r in results:
             output_parts.append(f"📍 {r['file']}:{r['line']}")
-            output_parts.append(f"   class {name}({', '.join(r['bases']) if r['bases'] else 'object'})")
-            if r['decorators']:
+            output_parts.append(
+                f"   class {name}({', '.join(r['bases']) if r['bases'] else 'object'})"
+            )
+            if r["decorators"]:
                 output_parts.append(f"   Decorators: {', '.join(r['decorators'])}")
 
-            doc = r['docstring']
+            doc = r["docstring"]
             if len(doc) > 100:
                 doc = doc[:100] + "..."
-            output_parts.append(f"   \"{doc}\"")
+            output_parts.append(f'   "{doc}"')
 
-            if r['methods']:
-                output_parts.append(f"   Methods ({len(r['methods'])}): {', '.join(r['methods'][:10])}")
-                if len(r['methods']) > 10:
+            if r["methods"]:
+                output_parts.append(
+                    f"   Methods ({len(r['methods'])}): {', '.join(r['methods'][:10])}"
+                )
+                if len(r["methods"]) > 10:
                     output_parts.append(f"            ... and {len(r['methods']) - 10} more")
             output_parts.append("")
 
@@ -245,7 +262,7 @@ WHEN TO USE GREP INSTEAD:
             return f"Error: File does not exist: {file_path}"
 
         try:
-            content = path.read_text(encoding='utf-8')
+            content = path.read_text(encoding="utf-8")
             tree = ast.parse(content, filename=str(path))
 
             structure = {
@@ -258,42 +275,50 @@ WHEN TO USE GREP INSTEAD:
             for node in ast.iter_child_nodes(tree):
                 if isinstance(node, ast.Import):
                     for alias in node.names:
-                        structure["imports"].append({
-                            "line": node.lineno,
-                            "type": "import",
-                            "name": alias.name,
-                            "as": alias.asname
-                        })
+                        structure["imports"].append(
+                            {
+                                "line": node.lineno,
+                                "type": "import",
+                                "name": alias.name,
+                                "as": alias.asname,
+                            }
+                        )
                 elif isinstance(node, ast.ImportFrom):
                     for alias in node.names:
-                        structure["imports"].append({
-                            "line": node.lineno,
-                            "type": "from",
-                            "module": node.module or "",
-                            "name": alias.name,
-                            "as": alias.asname
-                        })
+                        structure["imports"].append(
+                            {
+                                "line": node.lineno,
+                                "type": "from",
+                                "module": node.module or "",
+                                "name": alias.name,
+                                "as": alias.asname,
+                            }
+                        )
                 elif isinstance(node, ast.ClassDef):
                     methods = [
                         {"name": item.name, "line": item.lineno}
                         for item in node.body
                         if isinstance(item, ast.FunctionDef)
                     ]
-                    structure["classes"].append({
-                        "line": node.lineno,
-                        "name": node.name,
-                        "bases": [self._format_base_class(b) for b in node.bases],
-                        "methods": methods,
-                        "docstring": ast.get_docstring(node)
-                    })
+                    structure["classes"].append(
+                        {
+                            "line": node.lineno,
+                            "name": node.name,
+                            "bases": [self._format_base_class(b) for b in node.bases],
+                            "methods": methods,
+                            "docstring": ast.get_docstring(node),
+                        }
+                    )
                 elif isinstance(node, ast.FunctionDef):
                     args = self._format_function_args(node.args)
-                    structure["functions"].append({
-                        "line": node.lineno,
-                        "name": node.name,
-                        "args": args,
-                        "docstring": ast.get_docstring(node)
-                    })
+                    structure["functions"].append(
+                        {
+                            "line": node.lineno,
+                            "name": node.name,
+                            "args": args,
+                            "docstring": ast.get_docstring(node),
+                        }
+                    )
 
             # Format output
             output_parts = [f"Structure of {file_path}:\n"]
@@ -304,11 +329,11 @@ WHEN TO USE GREP INSTEAD:
                 for imp in structure["imports"][:20]:  # Limit to 20 imports
                     if imp["type"] == "import":
                         line = f"   Line {imp['line']}: import {imp['name']}"
-                        if imp['as']:
+                        if imp["as"]:
                             line += f" as {imp['as']}"
                     else:
                         line = f"   Line {imp['line']}: from {imp['module']} import {imp['name']}"
-                        if imp['as']:
+                        if imp["as"]:
                             line += f" as {imp['as']}"
                     output_parts.append(line)
                 if len(structure["imports"]) > 20:
@@ -319,16 +344,16 @@ WHEN TO USE GREP INSTEAD:
             if structure["classes"]:
                 output_parts.append("📘 CLASSES:")
                 for cls in structure["classes"]:
-                    bases_str = f"({', '.join(cls['bases'])})" if cls['bases'] else ""
+                    bases_str = f"({', '.join(cls['bases'])})" if cls["bases"] else ""
                     output_parts.append(f"   Line {cls['line']}: class {cls['name']}{bases_str}")
-                    if cls['docstring']:
-                        doc = cls['docstring']
+                    if cls["docstring"]:
+                        doc = cls["docstring"]
                         if len(doc) > 60:
                             doc = doc[:60] + "..."
-                        output_parts.append(f"      \"{doc}\"")
-                    if cls['methods']:
-                        methods_str = ', '.join(m['name'] for m in cls['methods'][:5])
-                        if len(cls['methods']) > 5:
+                        output_parts.append(f'      "{doc}"')
+                    if cls["methods"]:
+                        methods_str = ", ".join(m["name"] for m in cls["methods"][:5])
+                        if len(cls["methods"]) > 5:
                             methods_str += f", ... (+{len(cls['methods']) - 5} more)"
                         output_parts.append(f"      Methods: {methods_str}")
                     output_parts.append("")
@@ -337,12 +362,14 @@ WHEN TO USE GREP INSTEAD:
             if structure["functions"]:
                 output_parts.append("🔧 FUNCTIONS:")
                 for func in structure["functions"]:
-                    output_parts.append(f"   Line {func['line']}: def {func['name']}({func['args']})")
-                    if func['docstring']:
-                        doc = func['docstring']
+                    output_parts.append(
+                        f"   Line {func['line']}: def {func['name']}({func['args']})"
+                    )
+                    if func["docstring"]:
+                        doc = func["docstring"]
                         if len(doc) > 60:
                             doc = doc[:60] + "..."
-                        output_parts.append(f"      \"{doc}\"")
+                        output_parts.append(f'      "{doc}"')
                 output_parts.append("")
 
             if not structure["imports"] and not structure["classes"] and not structure["functions"]:
@@ -361,7 +388,7 @@ WHEN TO USE GREP INSTEAD:
 
         for py_file in base_path.rglob("*.py"):
             try:
-                content = py_file.read_text(encoding='utf-8')
+                content = py_file.read_text(encoding="utf-8")
                 lines = content.splitlines()
                 tree = ast.parse(content, filename=str(py_file))
 
@@ -374,24 +401,28 @@ WHEN TO USE GREP INSTEAD:
                             line_num = node.lineno
                             context = lines[line_num - 1].strip() if line_num <= len(lines) else ""
 
-                            results.append({
-                                "file": str(py_file.relative_to(Path.cwd())),
-                                "line": line_num,
-                                "type": "function_call",
-                                "context": context
-                            })
+                            results.append(
+                                {
+                                    "file": str(py_file.relative_to(Path.cwd())),
+                                    "line": line_num,
+                                    "type": "function_call",
+                                    "context": context,
+                                }
+                            )
 
                     # Name references (variables, attributes)
                     elif isinstance(node, ast.Name) and node.id == name:
                         line_num = node.lineno
                         context = lines[line_num - 1].strip() if line_num <= len(lines) else ""
 
-                        results.append({
-                            "file": str(py_file.relative_to(base_path)),
-                            "line": line_num,
-                            "type": "name_reference",
-                            "context": context
-                        })
+                        results.append(
+                            {
+                                "file": str(py_file.relative_to(base_path)),
+                                "line": line_num,
+                                "type": "name_reference",
+                                "context": context,
+                            }
+                        )
 
             except SyntaxError:
                 continue
@@ -405,7 +436,7 @@ WHEN TO USE GREP INSTEAD:
         seen = set()
         unique_results = []
         for r in results:
-            key = (r['file'], r['line'])
+            key = (r["file"], r["line"])
             if key not in seen:
                 seen.add(key)
                 unique_results.append(r)
@@ -423,7 +454,7 @@ WHEN TO USE GREP INSTEAD:
         for r in unique_results:
             output_parts.append(f"📍 {r['file']}:{r['line']}")
             # Truncate long contexts
-            context = r['context']
+            context = r["context"]
             if len(context) > 80:
                 context = context[:80] + "..."
             output_parts.append(f"   {context}\n")
@@ -466,14 +497,14 @@ WHEN TO USE GREP INSTEAD:
         """Format a base class node as string."""
         try:
             return ast.unparse(node)
-        except:
+        except Exception:
             return "?"
 
     def _format_decorator(self, node: ast.expr) -> str:
         """Format a decorator node as string."""
         try:
             return "@" + ast.unparse(node)
-        except:
+        except Exception:
             return "@?"
 
     def _get_call_name(self, node: ast.expr) -> Optional[str]:

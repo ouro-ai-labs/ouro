@@ -1,14 +1,16 @@
 """Base agent class for all agent types."""
-from abc import ABC, abstractmethod
-from typing import List, Optional, TYPE_CHECKING
 
-from .tool_executor import ToolExecutor
-from .todo import TodoList
+from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING, List, Optional
+
+from llm import LLMMessage, LLMResponse, ToolResult
+from memory import MemoryConfig, MemoryManager
 from tools.base import BaseTool
 from tools.todo import TodoTool
-from llm import LLMMessage, LLMResponse, ToolResult
-from memory import MemoryManager, MemoryConfig
 from utils import get_logger, terminal_ui
+
+from .todo import TodoList
+from .tool_executor import ToolExecutor
 
 if TYPE_CHECKING:
     from llm import LiteLLMLLM
@@ -62,10 +64,7 @@ class BaseAgent(ABC):
         pass
 
     def _call_llm(
-        self,
-        messages: List[LLMMessage],
-        tools: Optional[List] = None,
-        **kwargs
+        self, messages: List[LLMMessage], tools: Optional[List] = None, **kwargs
     ) -> LLMResponse:
         """Helper to call LLM with consistent parameters.
 
@@ -77,12 +76,7 @@ class BaseAgent(ABC):
         Returns:
             LLMResponse object
         """
-        return self.llm.call(
-            messages=messages,
-            tools=tools,
-            max_tokens=4096,
-            **kwargs
-        )
+        return self.llm.call(messages=messages, tools=tools, max_tokens=4096, **kwargs)
 
     def _extract_text(self, response: LLMResponse) -> str:
         """Extract text from LLM response.
@@ -102,7 +96,7 @@ class BaseAgent(ABC):
         max_iterations: int,
         use_memory: bool = True,
         save_to_memory: bool = True,
-        verbose: bool = True
+        verbose: bool = True,
     ) -> str:
         """Execute a ReAct (Reasoning + Acting) loop.
 
@@ -143,18 +137,24 @@ class BaseAgent(ABC):
                     if response.usage:
                         actual_tokens = {
                             "input": response.usage.get("input_tokens", 0),
-                            "output": response.usage.get("output_tokens", 0)
+                            "output": response.usage.get("output_tokens", 0),
                         }
                     self.memory.add_message(assistant_msg, actual_tokens=actual_tokens)
 
                     # Log compression info if it happened
                     if self.memory.was_compressed_last_iteration:
-                        logger.debug(f"Memory compressed: saved {self.memory.last_compression_savings} tokens")
+                        logger.debug(
+                            f"Memory compressed: saved {self.memory.last_compression_savings} tokens"
+                        )
             else:
                 # For local messages (mini-loop), still track token usage
                 if response.usage:
-                    self.memory.token_tracker.add_input_tokens(response.usage.get("input_tokens", 0))
-                    self.memory.token_tracker.add_output_tokens(response.usage.get("output_tokens", 0))
+                    self.memory.token_tracker.add_input_tokens(
+                        response.usage.get("input_tokens", 0)
+                    )
+                    self.memory.token_tracker.add_output_tokens(
+                        response.usage.get("output_tokens", 0)
+                    )
                 messages.append(assistant_msg)
 
             # Check if we're done (no tool calls)
@@ -183,13 +183,11 @@ class BaseAgent(ABC):
 
                     # Truncate overly large results to prevent context overflow
                     MAX_TOOL_RESULT_LENGTH = 8000  # characters
-                    truncated = False
                     if len(result) > MAX_TOOL_RESULT_LENGTH:
-                        truncated = True
                         truncated_length = MAX_TOOL_RESULT_LENGTH
                         result = (
-                            result[:truncated_length] +
-                            f"\n\n[... Output truncated. Showing first {truncated_length} characters of {len(result)} total. "
+                            result[:truncated_length]
+                            + f"\n\n[... Output truncated. Showing first {truncated_length} characters of {len(result)} total. "
                             f"Use grep_content or glob_files for more targeted searches instead of reading large files.]"
                         )
                         if verbose:
@@ -200,10 +198,7 @@ class BaseAgent(ABC):
                     # Log result (truncated)
                     logger.debug(f"Tool result: {result[:200]}{'...' if len(result) > 200 else ''}")
 
-                    tool_results.append(ToolResult(
-                        tool_call_id=tc.id,
-                        content=result
-                    ))
+                    tool_results.append(ToolResult(tool_call_id=tc.id, content=result))
 
                 # Format tool results and add to context
                 result_message = self.llm.format_tool_results(tool_results)
@@ -215,10 +210,7 @@ class BaseAgent(ABC):
         return "Max iterations reached without completion."
 
     def delegate_subtask(
-        self,
-        subtask_description: str,
-        max_iterations: int = 5,
-        include_context: bool = False
+        self, subtask_description: str, max_iterations: int = 5, include_context: bool = False
     ) -> str:
         """Delegate a complex subtask to an isolated execution context.
 
@@ -236,7 +228,9 @@ class BaseAgent(ABC):
         Returns:
             Compressed summary of subtask execution result
         """
-        logger.info(f"🔀 Delegating subtask (max {max_iterations} iterations): {subtask_description[:100]}...")
+        logger.info(
+            f"🔀 Delegating subtask (max {max_iterations} iterations): {subtask_description[:100]}..."
+        )
 
         # Build sub-agent system prompt
         sub_system_prompt = """<role>
@@ -271,6 +265,7 @@ Execute this subtask NOW and provide concrete results."""
         if include_context:
             try:
                 from .context import format_context_prompt
+
                 context = format_context_prompt()
                 sub_system_prompt = context + "\n\n" + sub_system_prompt
             except Exception as e:
@@ -282,7 +277,7 @@ Execute this subtask NOW and provide concrete results."""
         # Create isolated message context
         sub_messages = [
             LLMMessage(role="system", content=sub_system_prompt),
-            LLMMessage(role="user", content=f"Execute the subtask: {subtask_description}")
+            LLMMessage(role="user", content=f"Execute the subtask: {subtask_description}"),
         ]
 
         # Get tools (same as main agent, but sub-agent has its own todo list via tool)
@@ -296,20 +291,22 @@ Execute this subtask NOW and provide concrete results."""
                 max_iterations=max_iterations,
                 use_memory=False,  # KEY: Don't use main memory
                 save_to_memory=False,  # KEY: Don't save to main memory
-                verbose=True  # Still show progress
+                verbose=True,  # Still show progress
             )
 
             # Compress result for main agent
             max_result_length = 2000  # characters
             if len(result) > max_result_length:
                 compressed_result = (
-                    result[:max_result_length] +
-                    f"\n\n[Result truncated. Original length: {len(result)} chars]"
+                    result[:max_result_length]
+                    + f"\n\n[Result truncated. Original length: {len(result)} chars]"
                 )
             else:
                 compressed_result = result
 
-            logger.info(f"✅ Subtask completed. Result length: {len(result)} → {len(compressed_result)} chars")
+            logger.info(
+                f"✅ Subtask completed. Result length: {len(result)} → {len(compressed_result)} chars"
+            )
 
             return f"Subtask execution result:\n{compressed_result}"
 

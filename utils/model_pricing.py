@@ -10,7 +10,6 @@ MODEL_PRICING = {
     "o1-mini": {"input": 1.10, "output": 4.40},
     "o3": {"input": 2.00, "output": 8.00},
     "o3-mini": {"input": 0.40, "output": 1.60},
-
     # --- Anthropic ---
     "claude-4-5-opus": {"input": 5.00, "output": 25.00},
     "claude-4-5-sonnet": {"input": 3.00, "output": 15.00},
@@ -19,7 +18,6 @@ MODEL_PRICING = {
     "claude-3-5-sonnet-20241022": {"input": 3.00, "output": 15.00},
     "claude-3-5-haiku-20241022": {"input": 0.80, "output": 4.00},
     "claude-3-opus-20240229": {"input": 15.00, "output": 75.00},
-
     # --- Google Gemini ---
     "gemini-3-pro": {"input": 2.00, "output": 12.00},
     "gemini-3-flash": {"input": 0.50, "output": 3.00},
@@ -27,19 +25,15 @@ MODEL_PRICING = {
     "gemini-2-5-flash": {"input": 0.30, "output": 2.50},
     "gemini-1-5-pro": {"input": 1.25, "output": 5.00},
     "gemini-1-5-flash": {"input": 0.075, "output": 0.30},
-
     # --- DeepSeek ---
     "deepseek-v3": {"input": 0.14, "output": 0.28},
     "deepseek-reasoner": {"input": 0.55, "output": 2.19},
-
     # --- xAI (Grok) ---
     "grok-4": {"input": 3.00, "output": 15.00},
     "grok-4-fast": {"input": 0.20, "output": 0.50},
-
     # --- Mistral ---
     "mistral-large-2": {"input": 2.00, "output": 6.00},
     "mistral-small-3": {"input": 0.10, "output": 0.30},
-
     # --- Default ---
     "default": {"input": 0.55, "output": 2.19},
 }

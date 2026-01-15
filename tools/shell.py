@@ -1,6 +1,7 @@
 """Shell command execution tool."""
-from typing import Dict, Any
+
 import subprocess
+from typing import Any, Dict
 
 from .base import BaseTool
 

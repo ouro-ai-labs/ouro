@@ -4,12 +4,12 @@ This module provides intelligent memory management with automatic compression,
 token tracking, cost optimization, and optional persistence.
 """
 
-from .types import MemoryConfig, CompressedMemory, CompressionStrategy
+from .compressor import WorkingMemoryCompressor
 from .manager import MemoryManager
 from .short_term import ShortTermMemory
-from .compressor import WorkingMemoryCompressor
-from .token_tracker import TokenTracker
 from .store import MemoryStore
+from .token_tracker import TokenTracker
+from .types import CompressedMemory, CompressionStrategy, MemoryConfig
 
 __all__ = [
     "MemoryConfig",

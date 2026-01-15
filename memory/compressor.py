@@ -1,11 +1,16 @@
 """Memory compression using LLM-based summarization."""
-from typing import List, Tuple
-from llm.base import LLMMessage
-import logging
 
-from .types import CompressedMemory, MemoryConfig, CompressionStrategy
+import logging
+from typing import TYPE_CHECKING, List, Optional, Set, Tuple
+
+from llm.base import LLMMessage
+
+from .types import CompressedMemory, CompressionStrategy, MemoryConfig
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from llm import LiteLLMLLM
 
 
 class WorkingMemoryCompressor:
@@ -27,7 +32,7 @@ Original messages ({count} messages, ~{tokens} tokens):
 
 {messages}
 
-Provide a concise but comprehensive summary that captures the essential information. Be specific and include concrete details. Target length: {target_tokens} tokens."""
+    Provide a concise but comprehensive summary that captures the essential information. Be specific and include concrete details. Target length: {target_tokens} tokens."""
 
     def __init__(self, llm: "LiteLLMLLM", config: MemoryConfig):
         """Initialize compressor.
@@ -43,8 +48,8 @@ Provide a concise but comprehensive summary that captures the essential informat
         self,
         messages: List[LLMMessage],
         strategy: str = CompressionStrategy.SLIDING_WINDOW,
-        target_tokens: int = None,
-        orphaned_tool_use_ids: set = None,
+        target_tokens: Optional[int] = None,
+        orphaned_tool_use_ids: Optional[Set[str]] = None,
     ) -> CompressedMemory:
         """Compress messages using specified strategy.
 
@@ -115,7 +120,9 @@ Provide a concise but comprehensive summary that captures the essential informat
             summary = self.llm.extract_text(response)
 
             # Calculate compression metrics
-            compressed_tokens = self._estimate_tokens([LLMMessage(role="assistant", content=summary)])
+            compressed_tokens = self._estimate_tokens(
+                [LLMMessage(role="assistant", content=summary)]
+            )
             compression_ratio = compressed_tokens / original_tokens if original_tokens > 0 else 0
 
             return CompressedMemory(
@@ -196,9 +203,13 @@ Provide a concise but comprehensive summary that captures the essential informat
                 response = self.llm.call(messages=[prompt], max_tokens=available_for_summary * 2)
                 summary = self.llm.extract_text(response)
 
-                summary_tokens = self._estimate_tokens([LLMMessage(role="assistant", content=summary)])
+                summary_tokens = self._estimate_tokens(
+                    [LLMMessage(role="assistant", content=summary)]
+                )
                 compressed_tokens = preserved_tokens + summary_tokens
-                compression_ratio = compressed_tokens / original_tokens if original_tokens > 0 else 0
+                compression_ratio = (
+                    compressed_tokens / original_tokens if original_tokens > 0 else 0
+                )
 
                 return CompressedMemory(
                     summary=summary,

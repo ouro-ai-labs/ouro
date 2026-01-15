@@ -1,8 +1,10 @@
 """Token counting and cost tracking for memory management."""
-from typing import Dict, Optional
+
+import logging
+from typing import Dict
+
 from llm.base import LLMMessage
 from utils.model_pricing import MODEL_PRICING
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +123,9 @@ class TokenTracker:
         """Record tokens spent on compression."""
         self.compression_cost += cost
 
-    def calculate_cost(self, model: str, input_tokens: int = None, output_tokens: int = None) -> float:
+    def calculate_cost(
+        self, model: str, input_tokens: int = None, output_tokens: int = None
+    ) -> float:
         """Calculate cost for given token usage.
 
         Args:
@@ -145,7 +149,9 @@ class TokenTracker:
                 break
 
         if not pricing:
-            logger.info(f"No pricing found for model {model}, using default pricing (DeepSeek-Reasoner equivalent)")
+            logger.info(
+                f"No pricing found for model {model}, using default pricing (DeepSeek-Reasoner equivalent)"
+            )
             # Fallback to default pricing (using reasonable mid-tier estimate)
             pricing = self.PRICING["default"]
 
@@ -178,8 +184,12 @@ class TokenTracker:
         net_tokens = self.compression_savings - self.compression_cost
 
         # Calculate cost of saved tokens
-        saved_cost = self.calculate_cost(model, input_tokens=self.compression_savings, output_tokens=0)
-        compression_cost = self.calculate_cost(model, input_tokens=0, output_tokens=self.compression_cost)
+        saved_cost = self.calculate_cost(
+            model, input_tokens=self.compression_savings, output_tokens=0
+        )
+        compression_cost = self.calculate_cost(
+            model, input_tokens=0, output_tokens=self.compression_cost
+        )
         net_cost = saved_cost - compression_cost
 
         # Calculate percentage

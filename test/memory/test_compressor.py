@@ -1,8 +1,8 @@
 """Unit tests for WorkingMemoryCompressor."""
-import pytest
-from memory.compressor import WorkingMemoryCompressor
-from memory.types import MemoryConfig, CompressionStrategy
+
 from llm.base import LLMMessage
+from memory.compressor import WorkingMemoryCompressor
+from memory.types import CompressionStrategy, MemoryConfig
 
 
 class TestCompressorBasics:
@@ -47,9 +47,7 @@ class TestCompressionStrategies:
         compressor = WorkingMemoryCompressor(mock_llm, config)
 
         result = compressor.compress(
-            simple_messages,
-            strategy=CompressionStrategy.SLIDING_WINDOW,
-            target_tokens=100
+            simple_messages, strategy=CompressionStrategy.SLIDING_WINDOW, target_tokens=100
         )
 
         assert result is not None
@@ -63,10 +61,7 @@ class TestCompressionStrategies:
         config = MemoryConfig()
         compressor = WorkingMemoryCompressor(mock_llm, config)
 
-        result = compressor.compress(
-            simple_messages,
-            strategy=CompressionStrategy.DELETION
-        )
+        result = compressor.compress(simple_messages, strategy=CompressionStrategy.DELETION)
 
         assert result is not None
         assert result.summary == ""
@@ -80,9 +75,7 @@ class TestCompressionStrategies:
         compressor = WorkingMemoryCompressor(mock_llm, config)
 
         result = compressor.compress(
-            tool_use_messages,
-            strategy=CompressionStrategy.SELECTIVE,
-            target_tokens=200
+            tool_use_messages, strategy=CompressionStrategy.SELECTIVE, target_tokens=200
         )
 
         assert result is not None
@@ -102,9 +95,7 @@ class TestCompressionStrategies:
         ]
 
         result = compressor.compress(
-            messages,
-            strategy=CompressionStrategy.SELECTIVE,
-            target_tokens=100
+            messages, strategy=CompressionStrategy.SELECTIVE, target_tokens=100
         )
 
         # System message should be preserved
@@ -138,20 +129,31 @@ class TestToolPairDetection:
 
         messages = []
         for i in range(3):
-            messages.extend([
-                LLMMessage(
-                    role="assistant",
-                    content=[
-                        {"type": "tool_use", "id": f"tool_{i}", "name": f"tool_{i}", "input": {}}
-                    ]
-                ),
-                LLMMessage(
-                    role="user",
-                    content=[
-                        {"type": "tool_result", "tool_use_id": f"tool_{i}", "content": f"result_{i}"}
-                    ]
-                ),
-            ])
+            messages.extend(
+                [
+                    LLMMessage(
+                        role="assistant",
+                        content=[
+                            {
+                                "type": "tool_use",
+                                "id": f"tool_{i}",
+                                "name": f"tool_{i}",
+                                "input": {},
+                            }
+                        ],
+                    ),
+                    LLMMessage(
+                        role="user",
+                        content=[
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": f"tool_{i}",
+                                "content": f"result_{i}",
+                            }
+                        ],
+                    ),
+                ]
+            )
 
         pairs, orphaned = compressor._find_tool_pairs(messages)
         assert len(pairs) == 3
@@ -228,7 +230,10 @@ class TestProtectedTools:
             if isinstance(msg.content, list):
                 for block in msg.content:
                     if isinstance(block, dict):
-                        if block.get("type") == "tool_use" and block.get("name") == "manage_todo_list":
+                        if (
+                            block.get("type") == "tool_use"
+                            and block.get("name") == "manage_todo_list"
+                        ):
                             found_protected = True
                             break
 
@@ -309,13 +314,15 @@ class TestMessageSeparation:
         # CRITICAL: Tool pairs should not be split between preserved and compressed
         # If a tool_use is preserved, its result should be preserved
         for tool_id in preserved_tool_use_ids:
-            assert tool_id in preserved_tool_result_ids, \
-                f"Tool use {tool_id} is preserved but its result is not"
+            assert (
+                tool_id in preserved_tool_result_ids
+            ), f"Tool use {tool_id} is preserved but its result is not"
 
         # If a tool_result is preserved, its use should be preserved
         for tool_id in preserved_tool_result_ids:
-            assert tool_id in preserved_tool_use_ids, \
-                f"Tool result for {tool_id} is preserved but its use is not"
+            assert (
+                tool_id in preserved_tool_use_ids
+            ), f"Tool result for {tool_id} is preserved but its use is not"
 
 
 class TestTokenEstimation:
@@ -364,8 +371,8 @@ class TestTokenEstimation:
             role="assistant",
             content=[
                 {"type": "text", "text": "Hello"},
-                {"type": "tool_use", "id": "t1", "name": "tool", "input": {}}
-            ]
+                {"type": "tool_use", "id": "t1", "name": "tool", "input": {}},
+            ],
         )
 
         text = compressor._extract_text_content(msg)
@@ -381,9 +388,7 @@ class TestCompressionMetrics:
         compressor = WorkingMemoryCompressor(mock_llm, config)
 
         result = compressor.compress(
-            simple_messages,
-            strategy=CompressionStrategy.SLIDING_WINDOW,
-            target_tokens=50
+            simple_messages, strategy=CompressionStrategy.SLIDING_WINDOW, target_tokens=50
         )
 
         assert result.compression_ratio > 0
@@ -396,10 +401,7 @@ class TestCompressionMetrics:
         config = MemoryConfig()
         compressor = WorkingMemoryCompressor(mock_llm, config)
 
-        result = compressor.compress(
-            simple_messages,
-            strategy=CompressionStrategy.SLIDING_WINDOW
-        )
+        result = compressor.compress(simple_messages, strategy=CompressionStrategy.SLIDING_WINDOW)
 
         savings = result.token_savings
         assert savings >= 0
@@ -410,10 +412,7 @@ class TestCompressionMetrics:
         config = MemoryConfig()
         compressor = WorkingMemoryCompressor(mock_llm, config)
 
-        result = compressor.compress(
-            simple_messages,
-            strategy=CompressionStrategy.SLIDING_WINDOW
-        )
+        result = compressor.compress(simple_messages, strategy=CompressionStrategy.SLIDING_WINDOW)
 
         percentage = result.savings_percentage
         assert 0 <= percentage <= 100
@@ -434,10 +433,7 @@ class TestCompressionErrors:
         mock_llm.call = error_call
 
         # Should handle error gracefully
-        result = compressor.compress(
-            simple_messages,
-            strategy=CompressionStrategy.SLIDING_WINDOW
-        )
+        result = compressor.compress(simple_messages, strategy=CompressionStrategy.SLIDING_WINDOW)
 
         assert result is not None
         # Should fallback to preserving key messages
@@ -450,10 +446,7 @@ class TestCompressionErrors:
         compressor = WorkingMemoryCompressor(mock_llm, config)
 
         # Use invalid strategy name
-        result = compressor.compress(
-            simple_messages,
-            strategy="invalid_strategy"
-        )
+        result = compressor.compress(simple_messages, strategy="invalid_strategy")
 
         # Should fallback to sliding window
         assert result is not None

@@ -1,4 +1,5 @@
 """Advanced file operation tools inspired by Claude Code."""
+
 import re
 from pathlib import Path
 from typing import Any, Dict
@@ -30,12 +31,12 @@ Returns sorted list of matching file paths."""
         return {
             "pattern": {
                 "type": "string",
-                "description": "Glob pattern to match files (e.g., '**/*.py', 'src/**/*.js')"
+                "description": "Glob pattern to match files (e.g., '**/*.py', 'src/**/*.js')",
             },
             "path": {
                 "type": "string",
-                "description": "Base directory to search in (default: current directory)"
-            }
+                "description": "Base directory to search in (default: current directory)",
+            },
         }
 
     def execute(self, pattern: str, path: str = ".") -> str:
@@ -100,35 +101,32 @@ Examples:
     @property
     def parameters(self) -> Dict[str, Any]:
         return {
-            "pattern": {
-                "type": "string",
-                "description": "Regex pattern to search for"
-            },
+            "pattern": {"type": "string", "description": "Regex pattern to search for"},
             "path": {
                 "type": "string",
-                "description": "Directory to search in (default: current directory)"
+                "description": "Directory to search in (default: current directory)",
             },
             "mode": {
                 "type": "string",
-                "description": "Output mode: files_only, with_context, or count (default: files_only)"
+                "description": "Output mode: files_only, with_context, or count (default: files_only)",
             },
             "case_sensitive": {
                 "type": "boolean",
-                "description": "Whether search is case sensitive (default: true)"
+                "description": "Whether search is case sensitive (default: true)",
             },
             "file_pattern": {
                 "type": "string",
-                "description": "Optional glob pattern to filter files before content search (e.g., '**/*.py', 'src/**/*.js')"
+                "description": "Optional glob pattern to filter files before content search (e.g., '**/*.py', 'src/**/*.js')",
             },
             "exclude_patterns": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Optional list of glob patterns to exclude (e.g., ['**/*.pyc', 'node_modules/**'])"
+                "description": "Optional list of glob patterns to exclude (e.g., ['**/*.pyc', 'node_modules/**'])",
             },
             "max_matches_per_file": {
                 "type": "integer",
-                "description": "Maximum matches to show per file in with_context mode (default: 5)"
-            }
+                "description": "Maximum matches to show per file in with_context mode (default: 5)",
+            },
         }
 
     def execute(
@@ -139,7 +137,7 @@ Examples:
         case_sensitive: bool = True,
         file_pattern: str = None,
         exclude_patterns: list = None,
-        max_matches_per_file: int = 5
+        max_matches_per_file: int = 5,
     ) -> str:
         """Search for pattern in files with optional file filtering."""
         try:
@@ -154,7 +152,21 @@ Examples:
                 return f"Error: Path does not exist: {path}"
 
             # Default exclusions if not specified
-            default_excludes = ['*.pyc', '*.so', '*.dylib', '*.dll', '*.exe', '*.bin', '*.jpg', '*.png', '*.gif', '*.pdf', '*.zip', '*.tar', '*.gz']
+            default_excludes = [
+                "*.pyc",
+                "*.so",
+                "*.dylib",
+                "*.dll",
+                "*.exe",
+                "*.bin",
+                "*.jpg",
+                "*.png",
+                "*.gif",
+                "*.pdf",
+                "*.zip",
+                "*.tar",
+                "*.gz",
+            ]
 
             # Determine files to search
             if file_pattern:
@@ -196,7 +208,7 @@ Examples:
                 files_searched += 1
 
                 try:
-                    content = file_path.read_text(encoding='utf-8')
+                    content = file_path.read_text(encoding="utf-8")
                     matches = list(regex.finditer(content))
 
                     if not matches:
@@ -209,7 +221,7 @@ Examples:
                     elif mode == "with_context":
                         lines = content.splitlines()
                         for match in matches[:max_matches_per_file]:
-                            line_no = content[:match.start()].count('\n') + 1
+                            line_no = content[: match.start()].count("\n") + 1
                             if line_no <= len(lines):
                                 results.append(f"{file_path}:{line_no}: {lines[line_no-1].strip()}")
                 except (UnicodeDecodeError, PermissionError):
@@ -221,7 +233,9 @@ Examples:
                     break
 
             if not results:
-                return f"No matches found for pattern '{pattern}' in {files_searched} files searched"
+                return (
+                    f"No matches found for pattern '{pattern}' in {files_searched} files searched"
+                )
 
             return "\n".join(results)
         except Exception as e:
@@ -251,30 +265,27 @@ IMPORTANT: Use this for small, targeted edits to save tokens."""
     @property
     def parameters(self) -> Dict[str, Any]:
         return {
-            "file_path": {
-                "type": "string",
-                "description": "Path to the file to edit"
-            },
+            "file_path": {"type": "string", "description": "Path to the file to edit"},
             "operation": {
                 "type": "string",
-                "description": "Operation to perform: replace, append, or insert_at_line"
+                "description": "Operation to perform: replace, append, or insert_at_line",
             },
             "old_text": {
                 "type": "string",
-                "description": "Text to find and replace (for replace operation)"
+                "description": "Text to find and replace (for replace operation)",
             },
             "new_text": {
                 "type": "string",
-                "description": "New text to insert (for replace operation)"
+                "description": "New text to insert (for replace operation)",
             },
             "text": {
                 "type": "string",
-                "description": "Text to add (for append or insert_at_line operations)"
+                "description": "Text to add (for append or insert_at_line operations)",
             },
             "line_number": {
                 "type": "integer",
-                "description": "Line number to insert at (for insert_at_line operation, 1-indexed)"
-            }
+                "description": "Line number to insert at (for insert_at_line operation, 1-indexed)",
+            },
         }
 
     def execute(
@@ -285,7 +296,7 @@ IMPORTANT: Use this for small, targeted edits to save tokens."""
         new_text: str = "",
         text: str = "",
         line_number: int = 0,
-        **kwargs
+        **kwargs,
     ) -> str:
         """Perform surgical file edit."""
         try:
@@ -298,21 +309,21 @@ IMPORTANT: Use this for small, targeted edits to save tokens."""
                 if not old_text:
                     return "Error: old_text parameter is required for replace operation"
 
-                content = path.read_text(encoding='utf-8')
+                content = path.read_text(encoding="utf-8")
 
                 if old_text not in content:
                     return f"Error: Text not found in {file_path}"
 
                 # Replace only the first occurrence
                 content = content.replace(old_text, new_text, 1)
-                path.write_text(content, encoding='utf-8')
+                path.write_text(content, encoding="utf-8")
                 return f"Successfully replaced text in {file_path}"
 
             elif operation == "append":
                 if not text:
                     return "Error: text parameter is required for append operation"
 
-                with path.open("a", encoding='utf-8') as f:
+                with path.open("a", encoding="utf-8") as f:
                     f.write(text)
                 return f"Successfully appended to {file_path}"
 
@@ -322,17 +333,17 @@ IMPORTANT: Use this for small, targeted edits to save tokens."""
                 if line_number <= 0:
                     return "Error: line_number must be positive (1-indexed)"
 
-                lines = path.read_text(encoding='utf-8').splitlines(keepends=True)
+                lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
 
                 # Insert at the specified line (1-indexed)
                 if line_number > len(lines) + 1:
                     return f"Error: line_number {line_number} is beyond file length {len(lines)}"
 
                 # Ensure text ends with newline if inserting in middle
-                insert_text = text if text.endswith('\n') else text + '\n'
+                insert_text = text if text.endswith("\n") else text + "\n"
                 lines.insert(line_number - 1, insert_text)
 
-                path.write_text(''.join(lines), encoding='utf-8')
+                path.write_text("".join(lines), encoding="utf-8")
                 return f"Successfully inserted text at line {line_number} in {file_path}"
 
             else:

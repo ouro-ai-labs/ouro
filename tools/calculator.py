@@ -1,7 +1,8 @@
 """Calculator tool for executing Python code."""
-from typing import Dict, Any
+
 import io
 import sys
+from typing import Any, Dict
 
 from .base import BaseTool
 

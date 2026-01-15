@@ -1,5 +1,6 @@
 """Delegation tool for sub-agent task execution."""
-from typing import Dict, Any
+
+from typing import Any, Dict
 
 from .base import BaseTool
 
@@ -56,16 +57,16 @@ Input parameters:
         return {
             "subtask_description": {
                 "type": "string",
-                "description": "Clear, detailed description of the subtask to execute"
+                "description": "Clear, detailed description of the subtask to execute",
             },
             "max_iterations": {
                 "type": "integer",
-                "description": "Maximum iterations for subtask execution (default: 5)"
+                "description": "Maximum iterations for subtask execution (default: 5)",
             },
             "include_context": {
                 "type": "boolean",
-                "description": "Include system context (git, env info) for sub-agent (default: false)"
-            }
+                "description": "Include system context (git, env info) for sub-agent (default: false)",
+            },
         }
 
     def to_anthropic_schema(self) -> Dict[str, Any]:
@@ -81,10 +82,7 @@ Input parameters:
         }
 
     def execute(
-        self,
-        subtask_description: str,
-        max_iterations: int = 5,
-        include_context: bool = False
+        self, subtask_description: str, max_iterations: int = 5, include_context: bool = False
     ) -> str:
         """Execute subtask delegation.
 
@@ -99,5 +97,5 @@ Input parameters:
         return self.agent.delegate_subtask(
             subtask_description=subtask_description,
             max_iterations=max_iterations,
-            include_context=include_context
+            include_context=include_context,
         )

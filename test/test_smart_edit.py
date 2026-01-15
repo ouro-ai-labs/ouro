@@ -11,7 +11,7 @@ from tools.smart_edit import SmartEditTool
 @pytest.fixture
 def temp_file():
     """Create a temporary file for testing."""
-    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.py') as f:
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".py") as f:
         content = '''def calculate(x, y):
     """Calculate sum of x and y."""
     result = x + y
@@ -31,7 +31,7 @@ class Calculator:
 
     # Cleanup
     temp_path.unlink(missing_ok=True)
-    backup_path = temp_path.with_suffix(temp_path.suffix + '.bak')
+    backup_path = temp_path.with_suffix(temp_path.suffix + ".bak")
     backup_path.unlink(missing_ok=True)
 
 
@@ -51,7 +51,7 @@ class TestDiffReplace:
             mode="diff_replace",
             old_code="result = x + y",
             new_code="result = x + y  # computed sum",
-            create_backup=False
+            create_backup=False,
         )
 
         assert "Successfully edited" in result
@@ -64,10 +64,10 @@ class TestDiffReplace:
         result = tool.execute(
             file_path=str(temp_file),
             mode="diff_replace",
-            old_code="def calculate(x, y):\n\"\"\"Calculate sum of x and y.\"\"\"\nresult = x + y",
-            new_code="def calculate(x, y):\n    \"\"\"Calculate sum of x and y.\"\"\"\n    result = x + y  # updated\n    print(f'Result: {result}')",
+            old_code='def calculate(x, y):\n"""Calculate sum of x and y."""\nresult = x + y',
+            new_code='def calculate(x, y):\n    """Calculate sum of x and y."""\n    result = x + y  # updated\n    print(f\'Result: {result}\')',
             fuzzy_match=True,
-            create_backup=False
+            create_backup=False,
         )
 
         assert "Successfully edited" in result or "Fuzzy match" in result
@@ -82,7 +82,7 @@ class TestDiffReplace:
             old_code="nonexistent code",
             new_code="new code",
             fuzzy_match=False,
-            create_backup=False
+            create_backup=False,
         )
 
         assert "Error" in result
@@ -95,11 +95,11 @@ class TestDiffReplace:
             mode="diff_replace",
             old_code="result = x + y",
             new_code="result = x + y  # backup test",
-            create_backup=True
+            create_backup=True,
         )
 
         assert "Created backup" in result
-        backup_path = temp_file.with_suffix(temp_file.suffix + '.bak')
+        backup_path = temp_file.with_suffix(temp_file.suffix + ".bak")
         assert backup_path.exists()
 
         # Verify backup has original content
@@ -117,7 +117,7 @@ class TestDiffReplace:
             old_code="result = x + y",
             new_code="result = x + y  # dry run test",
             dry_run=True,
-            create_backup=False
+            create_backup=False,
         )
 
         assert "DRY RUN" in result
@@ -136,7 +136,7 @@ class TestSmartInsert:
             anchor="class Calculator:",
             code="    # New calculator class",
             position="after",
-            create_backup=False
+            create_backup=False,
         )
 
         assert "Successfully inserted" in result
@@ -156,7 +156,7 @@ class TestSmartInsert:
             anchor="def calculate",
             code="# Helper function\n",
             position="before",
-            create_backup=False
+            create_backup=False,
         )
 
         assert "Successfully inserted" in result
@@ -171,7 +171,7 @@ class TestSmartInsert:
             anchor="nonexistent anchor",
             code="new code",
             position="after",
-            create_backup=False
+            create_backup=False,
         )
 
         assert "Error" in result
@@ -190,7 +190,7 @@ class TestBlockEdit:
             start_line=2,
             end_line=4,
             new_code='    """New docstring."""\n    return x + y  # simplified\n',
-            create_backup=False
+            create_backup=False,
         )
 
         assert "Successfully edited lines" in result
@@ -206,7 +206,7 @@ class TestBlockEdit:
             start_line=100,
             end_line=200,
             new_code="new content",
-            create_backup=False
+            create_backup=False,
         )
 
         assert "Error" in result
@@ -221,7 +221,7 @@ class TestBlockEdit:
             start_line=5,
             end_line=2,
             new_code="new content",
-            create_backup=False
+            create_backup=False,
         )
 
         assert "Error" in result
@@ -233,7 +233,7 @@ class TestBlockEdit:
             start_line=-1,
             end_line=5,
             new_code="new content",
-            create_backup=False
+            create_backup=False,
         )
 
         assert "Error" in result
@@ -250,7 +250,7 @@ class TestDiffPreview:
             old_code="result = x + y",
             new_code="result = x + y  # with comment",
             show_diff=True,
-            create_backup=False
+            create_backup=False,
         )
 
         assert "Diff preview" in result
@@ -266,7 +266,7 @@ class TestDiffPreview:
             new_code="result = x + y  # no preview",
             show_diff=False,
             dry_run=False,
-            create_backup=False
+            create_backup=False,
         )
 
         # Diff should not be in output when show_diff=False and dry_run=False
@@ -283,7 +283,7 @@ class TestErrorHandling:
             file_path="/nonexistent/file.py",
             mode="diff_replace",
             old_code="code",
-            new_code="new code"
+            new_code="new code",
         )
 
         assert "Error" in result
@@ -292,21 +292,13 @@ class TestErrorHandling:
     def test_missing_required_params(self, tool, temp_file):
         """Test error for missing required parameters."""
         # diff_replace without old_code
-        result = tool.execute(
-            file_path=str(temp_file),
-            mode="diff_replace",
-            new_code="new code"
-        )
+        result = tool.execute(file_path=str(temp_file), mode="diff_replace", new_code="new code")
 
         assert "Error" in result
         assert "old_code" in result.lower()
 
         # smart_insert without anchor
-        result = tool.execute(
-            file_path=str(temp_file),
-            mode="smart_insert",
-            code="new code"
-        )
+        result = tool.execute(file_path=str(temp_file), mode="smart_insert", code="new code")
 
         assert "Error" in result
 
@@ -323,7 +315,7 @@ class TestFuzzyMatching:
             old_code="completely different code that doesn't exist",
             new_code="new code",
             fuzzy_match=True,
-            create_backup=False
+            create_backup=False,
         )
 
         assert "Error" in result or "not find" in result.lower()
@@ -337,7 +329,7 @@ class TestFuzzyMatching:
             old_code='def calculate(x,y):\n    """Calculate sum of x and y."""\n    result=x+y\n    return result',
             new_code='def calculate(x, y):\n    """Calculate sum of x and y."""\n    result = x + y + 1\n    return result',
             fuzzy_match=True,
-            create_backup=False
+            create_backup=False,
         )
 
         # Should show fuzzy match info if similarity < 99%

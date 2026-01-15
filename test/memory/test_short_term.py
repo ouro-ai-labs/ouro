@@ -1,7 +1,7 @@
 """Unit tests for ShortTermMemory."""
-import pytest
-from memory.short_term import ShortTermMemory
+
 from llm.base import LLMMessage
+from memory.short_term import ShortTermMemory
 
 
 class TestShortTermMemoryBasics:
@@ -272,7 +272,7 @@ class TestShortTermMemoryEdgeCases:
             content=[
                 {"type": "text", "text": "Hello"},
                 {"type": "tool_use", "id": "t1", "name": "tool", "input": {"key": "value"}},
-            ]
+            ],
         )
 
         stm.add_message(complex_msg)

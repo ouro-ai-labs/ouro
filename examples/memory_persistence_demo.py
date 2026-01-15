@@ -1,12 +1,13 @@
 """Demo: Using memory persistence with sessions."""
+
 import sys
 from pathlib import Path
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from memory import MemoryConfig, MemoryManager
 from llm.base import LLMMessage
+from memory import MemoryConfig, MemoryManager
 
 
 class MockLLM:
@@ -37,16 +38,9 @@ def demo_create_session():
     llm = MockLLM()
 
     # Create manager (persistence is automatic)
-    config = MemoryConfig(
-        short_term_message_count=5,
-        target_working_memory_tokens=100
-    )
+    config = MemoryConfig(short_term_message_count=5, target_working_memory_tokens=100)
 
-    manager = MemoryManager(
-        config=config,
-        llm=llm,
-        db_path="data/demo_memory.db"
-    )
+    manager = MemoryManager(config=config, llm=llm, db_path="data/demo_memory.db")
 
     session_id = manager.session_id
     print(f"\n✅ Created session: {session_id}")
@@ -68,11 +62,11 @@ def demo_create_session():
 
     # Save memory state (normally done automatically after agent.run())
     manager.save_memory()
-    print(f"\n💾 Saved memory to database")
+    print("\n💾 Saved memory to database")
 
     # Get stats
     stats = manager.store.get_session_stats(session_id)
-    print(f"\n📊 Session Stats:")
+    print("\n📊 Session Stats:")
     print(f"  Messages: {stats['message_count']}")
     print(f"  System Messages: {stats['system_message_count']}")
     print(f"  Compressions: {stats['compression_count']}")
@@ -91,19 +85,17 @@ def demo_load_session(session_id: str):
 
     # Load session
     manager = MemoryManager.from_session(
-        session_id=session_id,
-        llm=llm,
-        db_path="data/demo_memory.db"
+        session_id=session_id, llm=llm, db_path="data/demo_memory.db"
     )
 
-    print(f"\n✅ Loaded session with:")
+    print("\n✅ Loaded session with:")
     print(f"  {len(manager.system_messages)} system messages")
     print(f"  {manager.short_term.count()} messages in short-term")
     print(f"  {len(manager.summaries)} summaries")
     print(f"  {manager.current_tokens} current tokens")
 
     # Add more messages
-    print(f"\n📝 Adding more messages...")
+    print("\n📝 Adding more messages...")
     new_messages = [
         LLMMessage(role="user", content="What about Spain?"),
         LLMMessage(role="assistant", content="The capital of Spain is Madrid."),
@@ -115,11 +107,11 @@ def demo_load_session(session_id: str):
 
     # Save memory state
     manager.save_memory()
-    print(f"\n💾 Saved memory to database")
+    print("\n💾 Saved memory to database")
 
     # Get updated stats
     stats = manager.store.get_session_stats(session_id)
-    print(f"\n📊 Updated Stats:")
+    print("\n📊 Updated Stats:")
     print(f"  Messages: {stats['message_count']}")
     print(f"  Compressions: {stats['compression_count']}")
 
@@ -132,6 +124,7 @@ def demo_list_sessions():
 
     # Create a temporary manager to access the store
     from memory.store import MemoryStore
+
     store = MemoryStore(db_path="data/demo_memory.db")
     sessions = store.list_sessions(limit=10)
 
@@ -160,7 +153,7 @@ def main():
     print("\n" + "=" * 80)
     print("✅ Demo complete!")
     print("\nTo view sessions, run:")
-    print(f"  python tools/session_manager.py list --db data/demo_memory.db")
+    print("  python tools/session_manager.py list --db data/demo_memory.db")
     print(f"  python tools/session_manager.py show {session_id} --db data/demo_memory.db")
     print("=" * 80 + "\n")
 

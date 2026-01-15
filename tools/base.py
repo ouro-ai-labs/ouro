@@ -1,4 +1,5 @@
 """Base tool interface for all agent tools."""
+
 from abc import ABC, abstractmethod
 from typing import Any, Dict
 
@@ -33,10 +34,7 @@ class BaseTool(ABC):
         """Convert to Anthropic tool schema format."""
         params = self.parameters
         # Parameters without a 'default' value are required
-        required = [
-            key for key, value in params.items()
-            if "default" not in value
-        ]
+        required = [key for key, value in params.items() if "default" not in value]
 
         return {
             "name": self.name,

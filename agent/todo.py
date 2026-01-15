@@ -1,11 +1,13 @@
 """Todo list management for agents to track complex multi-step tasks."""
+
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional
+from typing import Dict, List
 
 
 class TodoStatus(Enum):
     """Status of a todo item."""
+
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
@@ -14,23 +16,20 @@ class TodoStatus(Enum):
 @dataclass
 class TodoItem:
     """A single todo item."""
+
     content: str  # Imperative form: "Fix authentication bug"
     activeForm: str  # Present continuous form: "Fixing authentication bug"
     status: TodoStatus
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
-        return {
-            "content": self.content,
-            "activeForm": self.activeForm,
-            "status": self.status.value
-        }
+        return {"content": self.content, "activeForm": self.activeForm, "status": self.status.value}
 
 
 class TodoList:
     """Manages a list of todo items for an agent."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._items: List[TodoItem] = []
 
     def add(self, content: str, activeForm: str) -> str:
@@ -46,11 +45,7 @@ class TodoList:
         if not content or not activeForm:
             return "Error: Both content and activeForm are required"
 
-        item = TodoItem(
-            content=content,
-            activeForm=activeForm,
-            status=TodoStatus.PENDING
-        )
+        item = TodoItem(content=content, activeForm=activeForm, status=TodoStatus.PENDING)
         self._items.append(item)
         return f"Added todo #{len(self._items)}: {content}"
 
@@ -74,9 +69,15 @@ class TodoList:
 
         # Check the ONE in_progress rule
         if new_status == TodoStatus.IN_PROGRESS:
-            in_progress_count = sum(1 for item in self._items if item.status == TodoStatus.IN_PROGRESS)
+            in_progress_count = sum(
+                1 for item in self._items if item.status == TodoStatus.IN_PROGRESS
+            )
             if in_progress_count > 0:
-                in_progress_items = [i+1 for i, item in enumerate(self._items) if item.status == TodoStatus.IN_PROGRESS]
+                in_progress_items = [
+                    i + 1
+                    for i, item in enumerate(self._items)
+                    if item.status == TodoStatus.IN_PROGRESS
+                ]
                 return f"Error: Task #{in_progress_items[0]} is already in_progress. Complete it first before starting another task."
 
         item = self._items[index - 1]
@@ -114,7 +115,7 @@ class TodoList:
             status_symbol = {
                 TodoStatus.PENDING: "⏳",
                 TodoStatus.IN_PROGRESS: "🔄",
-                TodoStatus.COMPLETED: "✅"
+                TodoStatus.COMPLETED: "✅",
             }[item.status]
 
             status_text = item.activeForm if item.status == TodoStatus.IN_PROGRESS else item.content
@@ -125,17 +126,19 @@ class TodoList:
         in_progress = sum(1 for item in self._items if item.status == TodoStatus.IN_PROGRESS)
         completed = sum(1 for item in self._items if item.status == TodoStatus.COMPLETED)
 
-        lines.append(f"\nSummary: {completed} completed, {in_progress} in progress, {pending} pending")
+        lines.append(
+            f"\nSummary: {completed} completed, {in_progress} in progress, {pending} pending"
+        )
 
         return "\n".join(lines)
 
-    def get_summary(self) -> dict:
+    def get_summary(self) -> Dict[str, int]:
         """Get summary statistics."""
         return {
             "total": len(self._items),
             "pending": sum(1 for item in self._items if item.status == TodoStatus.PENDING),
             "in_progress": sum(1 for item in self._items if item.status == TodoStatus.IN_PROGRESS),
-            "completed": sum(1 for item in self._items if item.status == TodoStatus.COMPLETED)
+            "completed": sum(1 for item in self._items if item.status == TodoStatus.COMPLETED),
         }
 
     def clear_completed(self) -> str:

@@ -92,9 +92,8 @@ What would you like me to help you with?
 
 ```bash
 # Set in .env:
-LLM_PROVIDER=openai
 OPENAI_API_KEY=your_key_here
-MODEL=gpt-4o
+LITELLM_MODEL=openai/gpt-4o
 
 # Run:
 python main.py --task "Your task here"
@@ -104,9 +103,8 @@ python main.py --task "Your task here"
 
 ```bash
 # Set in .env:
-LLM_PROVIDER=gemini
 GEMINI_API_KEY=your_key_here
-MODEL=gemini-1.5-flash
+LITELLM_MODEL=gemini/gemini-1.5-flash
 
 # Run:
 python main.py --task "Your task here"
@@ -116,9 +114,8 @@ python main.py --task "Your task here"
 
 ```bash
 # Set in .env:
-LLM_PROVIDER=anthropic
 ANTHROPIC_API_KEY=your_key_here
-MODEL=claude-3-5-sonnet-20241022
+LITELLM_MODEL=anthropic/claude-3-5-sonnet-20241022
 
 # Run:
 python main.py --task "Your task here"
@@ -129,19 +126,19 @@ python main.py --task "Your task here"
 ### Listing Files
 
 ```bash
-python main.py --enable-shell --task "List all Python files in the current directory"
+python main.py --task "List all Python files in the current directory"
 ```
 
 ### Git Operations
 
 ```bash
-python main.py --enable-shell --task "Check git status and show recent commits"
+python main.py --task "Check git status and show recent commits"
 ```
 
 ### System Information
 
 ```bash
-python main.py --enable-shell --task "Show disk usage and available space"
+python main.py --task "Show disk usage and available space"
 ```
 
 ## Comparing ReAct vs Plan-Execute
@@ -190,13 +187,8 @@ The system will automatically retry with exponential backoff.
 If a task requires a tool that's not available:
 
 ```bash
-# Without --enable-shell, this will fail gracefully:
+# Example:
 python main.py --task "Run ls command"
-```
-
-Output:
-```
-Error: Shell tool is not enabled. Use --enable-shell to enable it.
 ```
 
 ## Memory Management Examples
@@ -229,19 +221,18 @@ See [Memory Management](memory-management.md) for more details.
 
 ```python
 from agent.react_agent import ReActAgent
-from llm import create_llm
+from llm import LiteLLMLLM
+from llm.retry import RetryConfig
 from tools import CalculatorTool, FileReadTool
 from config import Config
 
 # Create custom LLM with retry config
-llm = create_llm(
-    provider="anthropic",
-    api_key=Config.ANTHROPIC_API_KEY,
-    model="claude-3-5-sonnet-20241022",
-    retry_config=RetryConfig(
-        max_retries=10,
-        initial_delay=2.0
-    )
+llm = LiteLLMLLM(
+    model=Config.LITELLM_MODEL,
+    api_base=Config.LITELLM_API_BASE,
+    drop_params=Config.LITELLM_DROP_PARAMS,
+    timeout=Config.LITELLM_TIMEOUT,
+    retry_config=RetryConfig(max_retries=10, initial_delay=2.0, max_delay=60.0),
 )
 
 # Create agent with specific tools
@@ -315,7 +306,7 @@ MEMORY_ENABLED=true
 MEMORY_COMPRESSION_THRESHOLD=40000
 
 # Use more efficient models:
-MODEL=gpt-4o-mini  # or gemini-1.5-flash, claude-3-5-haiku
+LITELLM_MODEL=openai/gpt-4o-mini  # or gemini/gemini-1.5-flash, anthropic/claude-3-5-haiku-20241022
 ```
 
 ### API Errors

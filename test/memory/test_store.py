@@ -1,12 +1,14 @@
 """Unit tests for MemoryStore (database persistence)."""
-import pytest
-import tempfile
+
 import os
+import tempfile
 from pathlib import Path
 
-from memory.store import MemoryStore
-from memory.types import MemoryConfig, CompressedMemory
+import pytest
+
 from llm.base import LLMMessage
+from memory.store import MemoryStore
+from memory.types import CompressedMemory
 
 
 @pytest.fixture
@@ -21,7 +23,7 @@ def temp_db():
     # Cleanup
     try:
         os.unlink(path)
-    except:
+    except OSError:
         pass
 
 
@@ -112,8 +114,8 @@ class TestMessageStorage:
             role="assistant",
             content=[
                 {"type": "text", "text": "I'll use a tool"},
-                {"type": "tool_use", "id": "tool_1", "name": "calculator", "input": {}}
-            ]
+                {"type": "tool_use", "id": "tool_1", "name": "calculator", "input": {}},
+            ],
         )
 
         store.save_message(session_id, msg, tokens=20)
@@ -133,9 +135,7 @@ class TestBatchSave:
         session_id = store.create_session()
 
         # Create memory components
-        system_messages = [
-            LLMMessage(role="system", content="You are helpful")
-        ]
+        system_messages = [LLMMessage(role="system", content="You are helpful")]
 
         messages = [
             LLMMessage(role="user", content="Hello"),
@@ -150,7 +150,7 @@ class TestBatchSave:
                 original_message_count=5,
                 original_tokens=500,
                 compressed_tokens=150,
-                compression_ratio=0.3
+                compression_ratio=0.3,
             )
         ]
 
@@ -177,7 +177,7 @@ class TestBatchSave:
             session_id,
             [LLMMessage(role="system", content="First")],
             [LLMMessage(role="user", content="Message 1")],
-            []
+            [],
         )
 
         # Second save (should replace, not append)
@@ -185,7 +185,7 @@ class TestBatchSave:
             session_id,
             [LLMMessage(role="system", content="Second")],
             [LLMMessage(role="user", content="Message 2")],
-            []
+            [],
         )
 
         # Load and verify - should only have second save's content
@@ -205,14 +205,12 @@ class TestSummaryStorage:
 
         summary = CompressedMemory(
             summary="This is a summary",
-            preserved_messages=[
-                LLMMessage(role="user", content="Important message")
-            ],
+            preserved_messages=[LLMMessage(role="user", content="Important message")],
             original_message_count=10,
             original_tokens=1000,
             compressed_tokens=300,
             compression_ratio=0.3,
-            metadata={"strategy": "selective"}
+            metadata={"strategy": "selective"},
         )
 
         store.save_summary(session_id, summary)
@@ -239,7 +237,7 @@ class TestSummaryStorage:
                 original_message_count=5,
                 original_tokens=500,
                 compressed_tokens=150,
-                compression_ratio=0.3
+                compression_ratio=0.3,
             )
             store.save_summary(session_id, summary)
 
@@ -297,7 +295,7 @@ class TestSessionRetrieval:
             original_message_count=5,
             original_tokens=500,
             compressed_tokens=150,
-            compression_ratio=0.3
+            compression_ratio=0.3,
         )
         store.save_summary(session_id, summary)
 
@@ -339,7 +337,6 @@ class TestSessionManagement:
         assert not success
 
 
-
 class TestIntegration:
     """Integration tests for complete workflows."""
 
@@ -350,22 +347,16 @@ class TestIntegration:
 
         # Add system message
         store.save_message(
-            session_id,
-            LLMMessage(role="system", content="You are helpful"),
-            tokens=0
+            session_id, LLMMessage(role="system", content="You are helpful"), tokens=0
         )
 
         # Add conversation
         for i in range(10):
             store.save_message(
-                session_id,
-                LLMMessage(role="user", content=f"Question {i}"),
-                tokens=5
+                session_id, LLMMessage(role="user", content=f"Question {i}"), tokens=5
             )
             store.save_message(
-                session_id,
-                LLMMessage(role="assistant", content=f"Answer {i}"),
-                tokens=10
+                session_id, LLMMessage(role="assistant", content=f"Answer {i}"), tokens=10
             )
 
         # Add summaries
@@ -376,7 +367,7 @@ class TestIntegration:
                 original_message_count=5,
                 original_tokens=75,
                 compressed_tokens=25,
-                compression_ratio=0.33
+                compression_ratio=0.33,
             )
             store.save_summary(session_id, summary)
 

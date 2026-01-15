@@ -1,12 +1,15 @@
 """LiteLLM adapter for unified LLM access across 100+ providers."""
-from typing import List, Dict, Any, Optional
+
 import json
 import logging
+from typing import Any, Dict, List, Optional
+
 import litellm
 
-from .base import LLMMessage, LLMResponse, ToolCall, ToolResult
-from .retry import with_retry, RetryConfig
 from utils import get_logger
+
+from .base import LLMMessage, LLMResponse, ToolCall, ToolResult
+from .retry import RetryConfig, with_retry
 
 logger = get_logger(__name__)
 
@@ -37,17 +40,15 @@ class LiteLLMLLM:
         self.provider = model.split("/")[0] if "/" in model else "unknown"
 
         # Extract configuration from kwargs
-        self.api_key = kwargs.pop('api_key', None)
-        self.api_base = kwargs.pop('api_base', None)
-        self.drop_params = kwargs.pop('drop_params', True)
-        self.timeout = kwargs.pop('timeout', 600)
+        self.api_key = kwargs.pop("api_key", None)
+        self.api_base = kwargs.pop("api_base", None)
+        self.drop_params = kwargs.pop("drop_params", True)
+        self.timeout = kwargs.pop("timeout", 600)
 
         # Configure retry behavior
-        self.retry_config = kwargs.pop('retry_config', RetryConfig(
-            max_retries=3,
-            initial_delay=1.0,
-            max_delay=60.0
-        ))
+        self.retry_config = kwargs.pop(
+            "retry_config", RetryConfig(max_retries=3, initial_delay=1.0, max_delay=60.0)
+        )
 
         # Configure LiteLLM global settings
         litellm.drop_params = self.drop_params
@@ -71,7 +72,7 @@ class LiteLLMLLM:
         messages: List[LLMMessage],
         tools: Optional[List[Dict[str, Any]]] = None,
         max_tokens: int = 4096,
-        **kwargs
+        **kwargs,
     ) -> LLMResponse:
         """Call LLM via LiteLLM with automatic retry.
 
@@ -111,11 +112,13 @@ class LiteLLMLLM:
         call_params.update(kwargs)
 
         # Make API call with retry logic
-        logger.debug(f"Calling LiteLLM with model: {self.model}, messages: {len(litellm_messages)}, tools: {len(tools) if tools else 0}")
+        logger.debug(
+            f"Calling LiteLLM with model: {self.model}, messages: {len(litellm_messages)}, tools: {len(tools) if tools else 0}"
+        )
         response = self._make_api_call(**call_params)
 
         # Log token usage
-        if hasattr(response, 'usage') and response.usage:
+        if hasattr(response, "usage") and response.usage:
             usage = response.usage
             logger.debug(
                 f"Token Usage: Input={usage.get('prompt_tokens', 0)}, "
@@ -133,41 +136,26 @@ class LiteLLMLLM:
         for msg in messages:
             # Handle system messages
             if msg.role == "system":
-                litellm_messages.append({
-                    "role": "system",
-                    "content": msg.content
-                })
+                litellm_messages.append({"role": "system", "content": msg.content})
 
             # Handle user messages
             elif msg.role == "user":
                 if isinstance(msg.content, str):
-                    litellm_messages.append({
-                        "role": "user",
-                        "content": msg.content
-                    })
+                    litellm_messages.append({"role": "user", "content": msg.content})
                 elif isinstance(msg.content, list):
                     # Handle tool results (Anthropic format)
                     content = self._convert_tool_results_to_text(msg.content)
-                    litellm_messages.append({
-                        "role": "user",
-                        "content": content
-                    })
+                    litellm_messages.append({"role": "user", "content": content})
 
             # Handle assistant messages
             elif msg.role == "assistant":
                 if isinstance(msg.content, str):
-                    litellm_messages.append({
-                        "role": "assistant",
-                        "content": msg.content
-                    })
+                    litellm_messages.append({"role": "assistant", "content": msg.content})
                 else:
                     # Handle complex content (tool calls, etc.)
                     content = self._extract_assistant_content(msg.content)
                     if content:
-                        litellm_messages.append({
-                            "role": "assistant",
-                            "content": content
-                        })
+                        litellm_messages.append({"role": "assistant", "content": content})
 
         return litellm_messages
 
@@ -177,8 +165,8 @@ class LiteLLMLLM:
         results = []
         for block in content:
             if isinstance(block, dict) and block.get("type") == "tool_result":
-                tool_id = block.get('tool_use_id', 'unknown')
-                tool_content = block.get('content', '')
+                tool_id = block.get("tool_use_id", "unknown")
+                tool_content = block.get("content", "")
                 results.append(f"Tool result (ID: {tool_id}):\n{tool_content}")
         return "\n\n".join(results) if results else str(content)
 
@@ -206,14 +194,16 @@ class LiteLLMLLM:
         """Convert Anthropic tool format to OpenAI format."""
         openai_tools = []
         for tool in tools:
-            openai_tools.append({
-                "type": "function",
-                "function": {
-                    "name": tool["name"],
-                    "description": tool["description"],
-                    "parameters": tool["input_schema"]
+            openai_tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool["name"],
+                        "description": tool["description"],
+                        "parameters": tool["input_schema"],
+                    },
                 }
-            })
+            )
         return openai_tools
 
     def _convert_response(self, response) -> LLMResponse:
@@ -234,22 +224,18 @@ class LiteLLMLLM:
 
         # Extract token usage
         usage_dict = None
-        if hasattr(response, 'usage') and response.usage:
+        if hasattr(response, "usage") and response.usage:
             usage_dict = {
                 "input_tokens": response.usage.get("prompt_tokens", 0),
-                "output_tokens": response.usage.get("completion_tokens", 0)
+                "output_tokens": response.usage.get("completion_tokens", 0),
             }
 
-        return LLMResponse(
-            message=message,
-            stop_reason=stop_reason,
-            usage=usage_dict
-        )
+        return LLMResponse(message=message, stop_reason=stop_reason, usage=usage_dict)
 
     def extract_text(self, response: LLMResponse) -> str:
         """Extract text from LiteLLM response."""
         message = response.message
-        return message.content if hasattr(message, 'content') and message.content else ""
+        return message.content if hasattr(message, "content") and message.content else ""
 
     def extract_tool_calls(self, response: LLMResponse) -> List[ToolCall]:
         """Extract tool calls from LiteLLM response."""
@@ -258,11 +244,11 @@ class LiteLLMLLM:
 
         if hasattr(message, "tool_calls") and message.tool_calls:
             for tc in message.tool_calls:
-                tool_calls.append(ToolCall(
-                    id=tc.id,
-                    name=tc.function.name,
-                    arguments=json.loads(tc.function.arguments)
-                ))
+                tool_calls.append(
+                    ToolCall(
+                        id=tc.id, name=tc.function.name, arguments=json.loads(tc.function.arguments)
+                    )
+                )
         else:
             logger.debug(f"No tool calls found in the response. {message}")
 
@@ -274,11 +260,13 @@ class LiteLLMLLM:
         # Format as Anthropic-style for compatibility with existing code
         content = []
         for result in results:
-            content.append({
-                "type": "tool_result",
-                "tool_use_id": result.tool_call_id,
-                "content": result.content
-            })
+            content.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": result.tool_call_id,
+                    "content": result.content,
+                }
+            )
 
         return LLMMessage(role="user", content=content)
 

@@ -3,14 +3,15 @@
 This example shows how memory automatically compresses conversations
 to reduce token usage and costs.
 """
-import sys
+
 import os
+import sys
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from memory import MemoryConfig, MemoryManager
 from llm import LLMMessage
+from memory import MemoryConfig, MemoryManager
 
 
 class MockLLM:
@@ -22,6 +23,7 @@ class MockLLM:
 
     def call(self, messages, tools=None, max_tokens=4096, **kwargs):
         """Mock LLM call that returns a summary."""
+
         # Return a mock summary
         class MockResponse:
             content = "This is a summary of the conversation so far."
@@ -51,19 +53,17 @@ def main():
     mock_llm = MockLLM()
     memory = MemoryManager(config, mock_llm)
 
-    print(f"\nConfiguration:")
+    print("\nConfiguration:")
     print(f"  Target tokens: {config.target_working_memory_tokens}")
     print(f"  Compression threshold: {config.compression_threshold}")
     print(f"  Short-term size: {config.short_term_message_count}")
 
     # Add system message
-    print(f"\n1. Adding system message...")
-    memory.add_message(
-        LLMMessage(role="system", content="You are a helpful assistant.")
-    )
+    print("\n1. Adding system message...")
+    memory.add_message(LLMMessage(role="system", content="You are a helpful assistant."))
 
     # Simulate a conversation
-    print(f"\n2. Simulating conversation with 15 messages...")
+    print("\n2. Simulating conversation with 15 messages...")
     for i in range(15):
         # User message
         user_msg = f"This is user message {i+1}. " + "Some content. " * 20
@@ -75,12 +75,10 @@ def main():
 
         # Show compression events
         if memory.was_compressed_last_iteration:
-            print(
-                f"   💾 Compression triggered! Saved {memory.last_compression_savings} tokens"
-            )
+            print(f"   💾 Compression triggered! Saved {memory.last_compression_savings} tokens")
 
     # Get final statistics
-    print(f"\n3. Final Memory Statistics:")
+    print("\n3. Final Memory Statistics:")
     print("=" * 60)
     stats = memory.get_stats()
 
@@ -95,7 +93,7 @@ def main():
     print(f"Summaries: {stats['summary_count']}")
 
     # Show context structure
-    print(f"\n4. Context Structure:")
+    print("\n4. Context Structure:")
     print("=" * 60)
     context = memory.get_context_for_llm()
     print(f"Total messages in context: {len(context)}")
@@ -104,7 +102,7 @@ def main():
         content_preview = str(msg.content)[:50] + "..."
         print(f"  [{i+1}] {role}: {content_preview}")
 
-    print(f"\n✅ Demo complete!")
+    print("\n✅ Demo complete!")
     print(
         f"\nKey takeaway: Original {stats['total_input_tokens'] + stats['total_output_tokens']} tokens "
         f"compressed to ~{stats['current_tokens']} tokens in context"

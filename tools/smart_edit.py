@@ -77,60 +77,51 @@ IMPORTANT:
     @property
     def parameters(self) -> Dict[str, Any]:
         return {
-            "file_path": {
-                "type": "string",
-                "description": "Path to the file to edit"
-            },
+            "file_path": {"type": "string", "description": "Path to the file to edit"},
             "mode": {
                 "type": "string",
                 "description": "Edit mode: diff_replace, smart_insert, or block_edit",
-                "enum": ["diff_replace", "smart_insert", "block_edit"]
+                "enum": ["diff_replace", "smart_insert", "block_edit"],
             },
             "old_code": {
                 "type": "string",
-                "description": "Code to find and replace (diff_replace mode). Can be approximate - fuzzy matching will find it."
+                "description": "Code to find and replace (diff_replace mode). Can be approximate - fuzzy matching will find it.",
             },
-            "new_code": {
-                "type": "string",
-                "description": "New code to insert (diff_replace mode)"
-            },
+            "new_code": {"type": "string", "description": "New code to insert (diff_replace mode)"},
             "anchor": {
                 "type": "string",
-                "description": "Anchor line to insert relative to (smart_insert mode)"
+                "description": "Anchor line to insert relative to (smart_insert mode)",
             },
-            "code": {
-                "type": "string",
-                "description": "Code to insert (smart_insert mode)"
-            },
+            "code": {"type": "string", "description": "Code to insert (smart_insert mode)"},
             "position": {
                 "type": "string",
                 "description": "Where to insert: 'before' or 'after' anchor (smart_insert mode)",
-                "enum": ["before", "after"]
+                "enum": ["before", "after"],
             },
             "start_line": {
                 "type": "integer",
-                "description": "Starting line number (block_edit mode, 1-indexed)"
+                "description": "Starting line number (block_edit mode, 1-indexed)",
             },
             "end_line": {
                 "type": "integer",
-                "description": "Ending line number (block_edit mode, 1-indexed, inclusive)"
+                "description": "Ending line number (block_edit mode, 1-indexed, inclusive)",
             },
             "fuzzy_match": {
                 "type": "boolean",
-                "description": "Enable fuzzy matching for whitespace differences (default: true)"
+                "description": "Enable fuzzy matching for whitespace differences (default: true)",
             },
             "dry_run": {
                 "type": "boolean",
-                "description": "Preview changes without applying (default: false)"
+                "description": "Preview changes without applying (default: false)",
             },
             "create_backup": {
                 "type": "boolean",
-                "description": "Create .bak backup file (default: true)"
+                "description": "Create .bak backup file (default: true)",
             },
             "show_diff": {
                 "type": "boolean",
-                "description": "Show diff preview even when not dry_run (default: true)"
-            }
+                "description": "Show diff preview even when not dry_run (default: true)",
+            },
         }
 
     def execute(
@@ -148,7 +139,7 @@ IMPORTANT:
         dry_run: bool = False,
         create_backup: bool = True,
         show_diff: bool = True,
-        **kwargs
+        **kwargs,
     ) -> str:
         """Execute smart edit operation."""
         try:
@@ -159,23 +150,41 @@ IMPORTANT:
                 return f"Error: File does not exist: {file_path}"
 
             # Read original content
-            original_content = path.read_text(encoding='utf-8')
+            original_content = path.read_text(encoding="utf-8")
 
             # Execute the appropriate edit mode
             if mode == "diff_replace":
                 result = self._diff_replace(
-                    path, original_content, old_code, new_code,
-                    fuzzy_match, dry_run, create_backup, show_diff
+                    path,
+                    original_content,
+                    old_code,
+                    new_code,
+                    fuzzy_match,
+                    dry_run,
+                    create_backup,
+                    show_diff,
                 )
             elif mode == "smart_insert":
                 result = self._smart_insert(
-                    path, original_content, anchor, code, position,
-                    dry_run, create_backup, show_diff
+                    path,
+                    original_content,
+                    anchor,
+                    code,
+                    position,
+                    dry_run,
+                    create_backup,
+                    show_diff,
                 )
             elif mode == "block_edit":
                 result = self._block_edit(
-                    path, original_content, start_line, end_line, new_code,
-                    dry_run, create_backup, show_diff
+                    path,
+                    original_content,
+                    start_line,
+                    end_line,
+                    new_code,
+                    dry_run,
+                    create_backup,
+                    show_diff,
                 )
             else:
                 return f"Error: Unknown mode '{mode}'. Supported: diff_replace, smart_insert, block_edit"
@@ -194,7 +203,7 @@ IMPORTANT:
         fuzzy_match: bool,
         dry_run: bool,
         create_backup: bool,
-        show_diff: bool
+        show_diff: bool,
     ) -> str:
         """Replace code with fuzzy matching."""
         if not old_code:
@@ -222,19 +231,10 @@ IMPORTANT:
             return f"Error: Exact match not found and fuzzy_match is disabled.\n\nSearched for:\n{old_code[:200]}..."
 
         # Create new content with replacement
-        new_content = (
-            original_content[:match_start] +
-            new_code +
-            original_content[match_end:]
-        )
+        new_content = original_content[:match_start] + new_code + original_content[match_end:]
 
         # Generate diff for preview
-        diff = self._generate_diff(
-            original_content,
-            new_content,
-            str(path),
-            context_lines=3
-        )
+        diff = self._generate_diff(original_content, new_content, str(path), context_lines=3)
 
         # Show diff if requested
         output_parts = []
@@ -255,7 +255,7 @@ IMPORTANT:
 
         # Apply changes
         try:
-            path.write_text(new_content, encoding='utf-8')
+            path.write_text(new_content, encoding="utf-8")
             output_parts.append(f"✓ Successfully edited {path}")
             return "\n".join(output_parts)
         except Exception as e:
@@ -276,7 +276,7 @@ IMPORTANT:
         position: str,
         dry_run: bool,
         create_backup: bool,
-        show_diff: bool
+        show_diff: bool,
     ) -> str:
         """Insert code relative to an anchor line."""
         if not anchor:
@@ -297,8 +297,8 @@ IMPORTANT:
             return f"Error: Anchor line not found: {anchor}"
 
         # Ensure code ends with newline
-        if not code.endswith('\n'):
-            code += '\n'
+        if not code.endswith("\n"):
+            code += "\n"
 
         # Insert at appropriate position
         if position == "before":
@@ -306,7 +306,7 @@ IMPORTANT:
         else:  # after
             lines.insert(anchor_idx + 1, code)
 
-        new_content = ''.join(lines)
+        new_content = "".join(lines)
 
         # Generate and show diff
         output_parts = []
@@ -323,7 +323,7 @@ IMPORTANT:
             backup_path = self._create_backup(path)
             output_parts.append(f"Created backup: {backup_path}")
 
-        path.write_text(new_content, encoding='utf-8')
+        path.write_text(new_content, encoding="utf-8")
         output_parts.append(f"✓ Successfully inserted code {position} anchor in {path}")
         return "\n".join(output_parts)
 
@@ -336,7 +336,7 @@ IMPORTANT:
         new_content_block: str,
         dry_run: bool,
         create_backup: bool,
-        show_diff: bool
+        show_diff: bool,
     ) -> str:
         """Edit a block of lines."""
         if start_line <= 0 or end_line <= 0:
@@ -350,16 +350,12 @@ IMPORTANT:
             return f"Error: line range {start_line}-{end_line} exceeds file length {len(lines)}"
 
         # Ensure new content ends with newline
-        if not new_content_block.endswith('\n'):
-            new_content_block += '\n'
+        if not new_content_block.endswith("\n"):
+            new_content_block += "\n"
 
         # Replace the block
-        new_lines = (
-            lines[:start_line-1] +
-            [new_content_block] +
-            lines[end_line:]
-        )
-        new_content = ''.join(new_lines)
+        new_lines = lines[: start_line - 1] + [new_content_block] + lines[end_line:]
+        new_content = "".join(new_lines)
 
         # Generate and show diff
         output_parts = []
@@ -376,15 +372,11 @@ IMPORTANT:
             backup_path = self._create_backup(path)
             output_parts.append(f"Created backup: {backup_path}")
 
-        path.write_text(new_content, encoding='utf-8')
+        path.write_text(new_content, encoding="utf-8")
         output_parts.append(f"✓ Successfully edited lines {start_line}-{end_line} in {path}")
         return "\n".join(output_parts)
 
-    def _fuzzy_find(
-        self,
-        target: str,
-        text: str
-    ) -> Optional[Tuple[int, int, float]]:
+    def _fuzzy_find(self, target: str, text: str) -> Optional[Tuple[int, int, float]]:
         """
         Find target in text using fuzzy matching.
 
@@ -406,8 +398,8 @@ IMPORTANT:
                 break
 
             for i in range(len(text_lines) - window_size + 1):
-                window = text_lines[i:i+window_size]
-                window_text = '\n'.join(window)
+                window = text_lines[i : i + window_size]
+                window_text = "\n".join(window)
                 window_normalized = self._normalize_whitespace(window_text)
 
                 # Calculate similarity
@@ -415,7 +407,7 @@ IMPORTANT:
 
                 if ratio > best_ratio and ratio >= self.fuzzy_threshold:
                     # Found better match - calculate actual character positions
-                    char_start = len('\n'.join(text_lines[:i]))
+                    char_start = len("\n".join(text_lines[:i]))
                     if i > 0:
                         char_start += 1  # Account for newline
                     char_end = char_start + len(window_text)
@@ -432,16 +424,12 @@ IMPORTANT:
         lines = []
         for line in text.splitlines():
             # Strip leading/trailing whitespace but keep structure
-            normalized = ' '.join(line.split())
+            normalized = " ".join(line.split())
             lines.append(normalized)
-        return '\n'.join(lines)
+        return "\n".join(lines)
 
     def _generate_diff(
-        self,
-        old_content: str,
-        new_content: str,
-        filename: str,
-        context_lines: int = 3
+        self, old_content: str, new_content: str, filename: str, context_lines: int = 3
     ) -> str:
         """Generate unified diff between old and new content."""
         old_lines = old_content.splitlines(keepends=True)
@@ -452,14 +440,14 @@ IMPORTANT:
             new_lines,
             fromfile=f"{filename} (original)",
             tofile=f"{filename} (modified)",
-            lineterm='',
-            n=context_lines
+            lineterm="",
+            n=context_lines,
         )
 
-        return ''.join(diff_lines)
+        return "".join(diff_lines)
 
     def _create_backup(self, path: Path) -> Path:
         """Create a backup file with .bak extension."""
-        backup_path = path.with_suffix(path.suffix + '.bak')
+        backup_path = path.with_suffix(path.suffix + ".bak")
         shutil.copy2(path, backup_path)
         return backup_path

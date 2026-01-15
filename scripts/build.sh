@@ -5,17 +5,19 @@ set -e  # Exit on error
 
 echo "🔨 Building AgenticLoop package..."
 
+source ./scripts/_env.sh
+
 # Clean previous builds
 echo "Cleaning previous builds..."
 rm -rf build/ dist/ *.egg-info
 
 # Install build tools
 echo "Installing build tools..."
-python3 -m pip install --upgrade build twine
+uv pip install --python "$PYTHON" --upgrade build twine
 
 # Build the package
 echo "Building package..."
-python3 -m build
+"$PYTHON" -m build
 
 echo "✅ Build complete! Distribution files are in dist/"
 ls -lh dist/

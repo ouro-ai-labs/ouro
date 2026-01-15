@@ -1,9 +1,10 @@
 """ReAct (Reasoning + Acting) agent implementation."""
+
 from llm import LLMMessage
+from utils import terminal_ui
 
 from .base import BaseAgent
 from .context import format_context_prompt
-from utils import terminal_ui
 
 
 class ReActAgent(BaseAgent):
@@ -138,7 +139,7 @@ DO NOT delegate simple operations that can be done in 1-2 tool calls.
             try:
                 context = format_context_prompt()
                 system_content = context + "\n" + system_content
-            except Exception as e:
+            except Exception:
                 # If context gathering fails, continue without it
                 pass
 
@@ -157,7 +158,7 @@ DO NOT delegate simple operations that can be done in 1-2 tool calls.
             max_iterations=self.max_iterations,
             use_memory=True,
             save_to_memory=True,
-            verbose=True
+            verbose=True,
         )
 
         self._print_memory_stats()

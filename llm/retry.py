@@ -1,12 +1,14 @@
 """Retry utilities for LLM API calls with exponential backoff."""
-import time
+
 import random
-from typing import Callable, TypeVar, Any
+import time
 from functools import wraps
+from typing import Callable, TypeVar
+
 from utils import get_logger
 
 logger = get_logger(__name__)
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class RetryConfig:
@@ -18,7 +20,7 @@ class RetryConfig:
         initial_delay: float = 1.0,
         max_delay: float = 60.0,
         exponential_base: float = 2.0,
-        jitter: bool = True
+        jitter: bool = True,
     ):
         """Initialize retry configuration.
 
@@ -45,10 +47,7 @@ class RetryConfig:
             Delay in seconds
         """
         # Calculate exponential backoff
-        delay = min(
-            self.initial_delay * (self.exponential_base ** attempt),
-            self.max_delay
-        )
+        delay = min(self.initial_delay * (self.exponential_base**attempt), self.max_delay)
 
         # Add jitter to avoid thundering herd
         if self.jitter:
@@ -67,15 +66,14 @@ def is_rate_limit_error(error: Exception) -> bool:
         True if this is a rate limit error
     """
     error_str = str(error).lower()
-    error_type = type(error).__name__
 
     # Common rate limit indicators
     rate_limit_indicators = [
-        '429',
-        'rate limit',
-        'quota',
-        'too many requests',
-        'resourceexhausted',
+        "429",
+        "rate limit",
+        "quota",
+        "too many requests",
+        "resourceexhausted",
     ]
 
     return any(indicator in error_str for indicator in rate_limit_indicators)
@@ -103,13 +101,13 @@ def is_retryable_error(error: Exception) -> bool:
 
     # Other retryable errors
     retryable_indicators = [
-        'timeout',
-        'connection',
-        'server error',
-        '500',
-        '502',
-        '503',
-        '504',
+        "timeout",
+        "connection",
+        "server error",
+        "500",
+        "502",
+        "503",
+        "504",
     ]
 
     return any(indicator in error_str for indicator in retryable_indicators)
@@ -124,12 +122,13 @@ def with_retry(config: RetryConfig = None):
     Returns:
         Decorator function
     """
+
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @wraps(func)
         def wrapper(*args, **kwargs) -> T:
             # Try to get config from instance (self) if available
             retry_config = config
-            if retry_config is None and args and hasattr(args[0], 'retry_config'):
+            if retry_config is None and args and hasattr(args[0], "retry_config"):
                 retry_config = args[0].retry_config
             if retry_config is None:
                 retry_config = RetryConfig()
@@ -156,7 +155,9 @@ def with_retry(config: RetryConfig = None):
                     # Log retry attempt
                     error_type = "Rate limit" if is_rate_limit_error(e) else "Retryable"
                     logger.warning(f"{error_type} error: {str(e)}")
-                    logger.warning(f"Retrying in {delay:.1f}s... (attempt {attempt + 1}/{retry_config.max_retries})")
+                    logger.warning(
+                        f"Retrying in {delay:.1f}s... (attempt {attempt + 1}/{retry_config.max_retries})"
+                    )
 
                     # Wait before retry
                     time.sleep(delay)
@@ -165,15 +166,11 @@ def with_retry(config: RetryConfig = None):
             raise last_error
 
         return wrapper
+
     return decorator
 
 
-def retry_with_backoff(
-    func: Callable[..., T],
-    *args,
-    config: RetryConfig = None,
-    **kwargs
-) -> T:
+def retry_with_backoff(func: Callable[..., T], *args, config: RetryConfig = None, **kwargs) -> T:
     """Execute a function with retry logic.
 
     Args:

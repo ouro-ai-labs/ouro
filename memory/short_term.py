@@ -1,7 +1,10 @@
 """Short-term memory management with fixed-size window."""
-from typing import List
+
 from collections import deque
+from typing import List
+
 from llm.base import LLMMessage
+
 
 class ShortTermMemory:
     """Manages recent messages in a fixed-size sliding window."""

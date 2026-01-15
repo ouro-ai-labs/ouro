@@ -3,10 +3,10 @@
 This module provides comprehensive git tools for version control operations,
 enabling agents to interact with git repositories effectively.
 """
-import subprocess
+
 import os
-from typing import Dict, Any, List, Optional
-from pathlib import Path
+import subprocess
+from typing import Any, Dict, List, Optional
 
 from .base import BaseTool
 
@@ -67,7 +67,7 @@ Use this to understand the current state before making changes."""
         return {
             "path": {
                 "type": "string",
-                "description": "Path to git repository (default: current directory)"
+                "description": "Path to git repository (default: current directory)",
             }
         }
 
@@ -104,21 +104,18 @@ Examples:
             "mode": {
                 "type": "string",
                 "description": "Diff mode: staged, unstaged, files, or commits",
-                "enum": ["staged", "unstaged", "files", "commits"]
+                "enum": ["staged", "unstaged", "files", "commits"],
             },
             "files": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Specific files to diff (for 'files' mode)"
+                "description": "Specific files to diff (for 'files' mode)",
             },
             "commit_range": {
                 "type": "string",
-                "description": "Commit range like 'HEAD~1..HEAD' or 'branch1..branch2' (for 'commits' mode)"
+                "description": "Commit range like 'HEAD~1..HEAD' or 'branch1..branch2' (for 'commits' mode)",
             },
-            "path": {
-                "type": "string",
-                "description": "Path to git repository"
-            }
+            "path": {"type": "string", "description": "Path to git repository"},
         }
 
     def execute(
@@ -127,7 +124,7 @@ Examples:
         files: Optional[List[str]] = None,
         commit_range: str = "",
         path: str = ".",
-        **kwargs
+        **kwargs,
     ) -> str:
         """Execute git diff command."""
         args = ["diff"]
@@ -170,12 +167,9 @@ Always check git_status first to see what you're staging."""
             "files": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Files to stage (e.g., ['file.py'], ['.'], ['-A'])"
+                "description": "Files to stage (e.g., ['file.py'], ['.'], ['-A'])",
             },
-            "path": {
-                "type": "string",
-                "description": "Path to git repository"
-            }
+            "path": {"type": "string", "description": "Path to git repository"},
         }
 
     def execute(self, files: List[str], path: str = ".", **kwargs) -> str:
@@ -223,19 +217,13 @@ Example message format:
     @property
     def parameters(self) -> Dict[str, Any]:
         return {
-            "message": {
-                "type": "string",
-                "description": "Commit message (required)"
-            },
+            "message": {"type": "string", "description": "Commit message (required)"},
             "verify": {
                 "type": "boolean",
                 "description": "Run pre-commit hooks (default: false)",
-                "default": False
+                "default": False,
             },
-            "path": {
-                "type": "string",
-                "description": "Path to git repository"
-            }
+            "path": {"type": "string", "description": "Path to git repository"},
         }
 
     def execute(self, message: str, verify: bool = False, path: str = ".", **kwargs) -> str:
@@ -271,24 +259,10 @@ Returns commit hash, author, date, and message."""
     @property
     def parameters(self) -> Dict[str, Any]:
         return {
-            "limit": {
-                "type": "integer",
-                "description": "Number of commits to show",
-                "default": 10
-            },
-            "oneline": {
-                "type": "boolean",
-                "description": "Use compact format",
-                "default": True
-            },
-            "branch": {
-                "type": "string",
-                "description": "Specific branch (optional)"
-            },
-            "path": {
-                "type": "string",
-                "description": "Path to git repository"
-            }
+            "limit": {"type": "integer", "description": "Number of commits to show", "default": 10},
+            "oneline": {"type": "boolean", "description": "Use compact format", "default": True},
+            "branch": {"type": "string", "description": "Specific branch (optional)"},
+            "path": {"type": "string", "description": "Path to git repository"},
         }
 
     def execute(
@@ -297,7 +271,7 @@ Returns commit hash, author, date, and message."""
         oneline: bool = True,
         branch: Optional[str] = None,
         path: str = ".",
-        **kwargs
+        **kwargs,
     ) -> str:
         """Execute git log command."""
         args = ["log"]
@@ -343,21 +317,18 @@ Examples:
                 "type": "string",
                 "description": "Operation: list, create, delete, or current",
                 "enum": ["list", "create", "delete", "current"],
-                "default": "list"
+                "default": "list",
             },
             "branch": {
                 "type": "string",
-                "description": "Branch name (for create/delete operations)"
+                "description": "Branch name (for create/delete operations)",
             },
             "force": {
                 "type": "boolean",
                 "description": "Force delete (default: false)",
-                "default": False
+                "default": False,
             },
-            "path": {
-                "type": "string",
-                "description": "Path to git repository"
-            }
+            "path": {"type": "string", "description": "Path to git repository"},
         }
 
     def execute(
@@ -366,7 +337,7 @@ Examples:
         branch: Optional[str] = None,
         force: bool = False,
         path: str = ".",
-        **kwargs
+        **kwargs,
     ) -> str:
         """Execute git branch command."""
         if operation == "list":
@@ -419,26 +390,11 @@ Examples:
     @property
     def parameters(self) -> Dict[str, Any]:
         return {
-            "branch": {
-                "type": "string",
-                "description": "Switch to existing branch"
-            },
-            "new_branch": {
-                "type": "string",
-                "description": "Create and switch to new branch"
-            },
-            "file": {
-                "type": "string",
-                "description": "Restore specific file from HEAD"
-            },
-            "commit": {
-                "type": "string",
-                "description": "Checkout specific commit/tag"
-            },
-            "path": {
-                "type": "string",
-                "description": "Path to git repository"
-            }
+            "branch": {"type": "string", "description": "Switch to existing branch"},
+            "new_branch": {"type": "string", "description": "Create and switch to new branch"},
+            "file": {"type": "string", "description": "Restore specific file from HEAD"},
+            "commit": {"type": "string", "description": "Checkout specific commit/tag"},
+            "path": {"type": "string", "description": "Path to git repository"},
         }
 
     def execute(
@@ -448,7 +404,7 @@ Examples:
         file: Optional[str] = None,
         commit: Optional[str] = None,
         path: str = ".",
-        **kwargs
+        **kwargs,
     ) -> str:
         """Execute git checkout command."""
         args = ["checkout"]
@@ -499,26 +455,20 @@ WARNING: Force push can overwrite remote history. Use only when you know what yo
             "remote": {
                 "type": "string",
                 "description": "Remote name (default: origin)",
-                "default": "origin"
+                "default": "origin",
             },
-            "branch": {
-                "type": "string",
-                "description": "Branch to push (default: current branch)"
-            },
+            "branch": {"type": "string", "description": "Branch to push (default: current branch)"},
             "force": {
                 "type": "boolean",
                 "description": "Force push (WARNING: rewrites history)",
-                "default": False
+                "default": False,
             },
             "set_upstream": {
                 "type": "boolean",
                 "description": "Set upstream tracking",
-                "default": False
+                "default": False,
             },
-            "path": {
-                "type": "string",
-                "description": "Path to git repository"
-            }
+            "path": {"type": "string", "description": "Path to git repository"},
         }
 
     def execute(
@@ -528,7 +478,7 @@ WARNING: Force push can overwrite remote history. Use only when you know what yo
         force: bool = False,
         set_upstream: bool = False,
         path: str = ".",
-        **kwargs
+        **kwargs,
     ) -> str:
         """Execute git push command."""
         args = ["push"]
@@ -575,21 +525,15 @@ Options:
             "remote": {
                 "type": "string",
                 "description": "Remote name (default: origin)",
-                "default": "origin"
+                "default": "origin",
             },
-            "branch": {
-                "type": "string",
-                "description": "Branch to pull (default: current branch)"
-            },
+            "branch": {"type": "string", "description": "Branch to pull (default: current branch)"},
             "rebase": {
                 "type": "boolean",
                 "description": "Use rebase instead of merge",
-                "default": False
+                "default": False,
             },
-            "path": {
-                "type": "string",
-                "description": "Path to git repository"
-            }
+            "path": {"type": "string", "description": "Path to git repository"},
         }
 
     def execute(
@@ -598,7 +542,7 @@ Options:
         branch: Optional[str] = None,
         rebase: bool = False,
         path: str = ".",
-        **kwargs
+        **kwargs,
     ) -> str:
         """Execute git pull command."""
         args = ["pull"]
@@ -644,20 +588,11 @@ Operations:
             "operation": {
                 "type": "string",
                 "description": "Operation: list, add, remove, get-url, set-url",
-                "enum": ["list", "add", "remove", "get-url", "set-url"]
+                "enum": ["list", "add", "remove", "get-url", "set-url"],
             },
-            "name": {
-                "type": "string",
-                "description": "Remote name"
-            },
-            "url": {
-                "type": "string",
-                "description": "Remote URL (for add/set-url)"
-            },
-            "path": {
-                "type": "string",
-                "description": "Path to git repository"
-            }
+            "name": {"type": "string", "description": "Remote name"},
+            "url": {"type": "string", "description": "Remote URL (for add/set-url)"},
+            "path": {"type": "string", "description": "Path to git repository"},
         }
 
     def execute(
@@ -666,7 +601,7 @@ Operations:
         name: Optional[str] = None,
         url: Optional[str] = None,
         path: str = ".",
-        **kwargs
+        **kwargs,
     ) -> str:
         """Execute git remote command."""
         args = ["remote"]
@@ -727,24 +662,14 @@ Useful for temporarily saving work to switch branches."""
             "operation": {
                 "type": "string",
                 "description": "Operation: push, list, pop, drop",
-                "enum": ["push", "list", "pop", "drop"]
+                "enum": ["push", "list", "pop", "drop"],
             },
-            "message": {
-                "type": "string",
-                "description": "Stash message (for push)"
-            },
-            "path": {
-                "type": "string",
-                "description": "Path to git repository"
-            }
+            "message": {"type": "string", "description": "Stash message (for push)"},
+            "path": {"type": "string", "description": "Path to git repository"},
         }
 
     def execute(
-        self,
-        operation: str = "push",
-        message: Optional[str] = None,
-        path: str = ".",
-        **kwargs
+        self, operation: str = "push", message: Optional[str] = None, path: str = ".", **kwargs
     ) -> str:
         """Execute git stash command."""
         args = ["stash"]
@@ -796,22 +721,19 @@ Always use dry_run first to see what will be deleted."""
             "dry_run": {
                 "type": "boolean",
                 "description": "Show what would be removed without deleting",
-                "default": True
+                "default": True,
             },
             "force": {
                 "type": "boolean",
                 "description": "Actually remove files (DANGEROUS)",
-                "default": False
+                "default": False,
             },
             "directories": {
                 "type": "boolean",
                 "description": "Remove untracked directories too",
-                "default": False
+                "default": False,
             },
-            "path": {
-                "type": "string",
-                "description": "Path to git repository"
-            }
+            "path": {"type": "string", "description": "Path to git repository"},
         }
 
     def execute(
@@ -820,7 +742,7 @@ Always use dry_run first to see what will be deleted."""
         force: bool = False,
         directories: bool = False,
         path: str = ".",
-        **kwargs
+        **kwargs,
     ) -> str:
         """Execute git clean command."""
         if not force and not dry_run:

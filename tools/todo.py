@@ -1,4 +1,5 @@
 """Todo list tool for agents to manage complex multi-step tasks."""
+
 from typing import Any, Dict
 
 from agent.todo import TodoList
@@ -53,24 +54,24 @@ EXAMPLES:
         return {
             "operation": {
                 "type": "string",
-                "description": "Operation to perform: add, update, list, remove, or clear_completed"
+                "description": "Operation to perform: add, update, list, remove, or clear_completed",
             },
             "content": {
                 "type": "string",
-                "description": "Todo content in imperative form (for add operation)"
+                "description": "Todo content in imperative form (for add operation)",
             },
             "activeForm": {
                 "type": "string",
-                "description": "Todo content in present continuous form (for add operation)"
+                "description": "Todo content in present continuous form (for add operation)",
             },
             "index": {
                 "type": "integer",
-                "description": "1-indexed position of todo item (for update/remove operations)"
+                "description": "1-indexed position of todo item (for update/remove operations)",
             },
             "status": {
                 "type": "string",
-                "description": "New status: pending, in_progress, or completed (for update operation)"
-            }
+                "description": "New status: pending, in_progress, or completed (for update operation)",
+            },
         }
 
     def execute(
@@ -80,7 +81,7 @@ EXAMPLES:
         activeForm: str = "",
         index: int = 0,
         status: str = "",
-        **kwargs
+        **kwargs,
     ) -> str:
         """Execute todo list operation.
 

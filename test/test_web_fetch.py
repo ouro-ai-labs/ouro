@@ -1,11 +1,12 @@
 """Tests for WebFetchTool."""
+
 import json
 import types
 
 import pytest
 from requests.structures import CaseInsensitiveDict
 
-from tools.web_fetch import WebFetchTool, MAX_RESPONSE_BYTES
+from tools.web_fetch import MAX_RESPONSE_BYTES, WebFetchTool
 
 
 class FakeResponse:
@@ -36,7 +37,9 @@ def build_tool(monkeypatch, responses):
         return responses[url]
 
     monkeypatch.setattr(tool, "_request", types.MethodType(fake_request, tool))
-    monkeypatch.setattr(tool, "_resolve_host", types.MethodType(lambda _self, _host, _port: ["93.184.216.34"], tool))
+    monkeypatch.setattr(
+        tool, "_resolve_host", types.MethodType(lambda _self, _host, _port: ["93.184.216.34"], tool)
+    )
     return tool
 
 

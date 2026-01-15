@@ -1,8 +1,8 @@
 """Unit tests for MemoryManager."""
-import pytest
+
+from llm.base import LLMMessage
 from memory import MemoryConfig, MemoryManager
 from memory.types import CompressionStrategy
-from llm.base import LLMMessage
 
 
 class TestMemoryManagerBasics:
@@ -225,8 +225,9 @@ class TestToolCallMatching:
                             tool_result_ids.add(block.get("tool_use_id"))
 
         # Every tool_use should have a matching tool_result
-        assert tool_use_ids == tool_result_ids, \
-            f"Mismatched tool calls: tool_use_ids={tool_use_ids}, tool_result_ids={tool_result_ids}"
+        assert (
+            tool_use_ids == tool_result_ids
+        ), f"Mismatched tool calls: tool_use_ids={tool_use_ids}, tool_result_ids={tool_result_ids}"
 
     def test_mismatched_tool_calls_detected(self, mock_llm, mismatched_tool_messages):
         """Test behavior with mismatched tool_use/tool_result pairs."""
@@ -264,7 +265,9 @@ class TestToolCallMatching:
         if tool_use_ids != tool_result_ids:
             missing_results = tool_use_ids - tool_result_ids
             missing_uses = tool_result_ids - tool_use_ids
-            print(f"Detected mismatch - missing results: {missing_results}, missing uses: {missing_uses}")
+            print(
+                f"Detected mismatch - missing results: {missing_results}, missing uses: {missing_uses}"
+            )
 
     def test_protected_tool_always_preserved(self, mock_llm, protected_tool_messages):
         """Test that protected tools (like manage_todo_list) are always preserved."""
@@ -293,7 +296,10 @@ class TestToolCallMatching:
                 if isinstance(msg.content, list):
                     for block in msg.content:
                         if isinstance(block, dict):
-                            if block.get("type") == "tool_use" and block.get("name") == "manage_todo_list":
+                            if (
+                                block.get("type") == "tool_use"
+                                and block.get("name") == "manage_todo_list"
+                            ):
                                 found_protected = True
                                 break
 
@@ -310,31 +316,33 @@ class TestToolCallMatching:
         # Create multiple tool pairs
         messages = []
         for i in range(3):
-            messages.extend([
-                LLMMessage(role="user", content=f"Request {i}"),
-                LLMMessage(
-                    role="assistant",
-                    content=[
-                        {
-                            "type": "tool_use",
-                            "id": f"tool_{i}",
-                            "name": f"tool_{i}",
-                            "input": {}
-                        }
-                    ]
-                ),
-                LLMMessage(
-                    role="user",
-                    content=[
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": f"tool_{i}",
-                            "content": f"result_{i}"
-                        }
-                    ]
-                ),
-                LLMMessage(role="assistant", content=f"Response {i}"),
-            ])
+            messages.extend(
+                [
+                    LLMMessage(role="user", content=f"Request {i}"),
+                    LLMMessage(
+                        role="assistant",
+                        content=[
+                            {
+                                "type": "tool_use",
+                                "id": f"tool_{i}",
+                                "name": f"tool_{i}",
+                                "input": {},
+                            }
+                        ],
+                    ),
+                    LLMMessage(
+                        role="user",
+                        content=[
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": f"tool_{i}",
+                                "content": f"result_{i}",
+                            }
+                        ],
+                    ),
+                    LLMMessage(role="assistant", content=f"Response {i}"),
+                ]
+            )
 
         for msg in messages:
             manager.add_message(msg)
@@ -406,12 +414,12 @@ class TestEdgeCases:
                 role="assistant",
                 content=[
                     {"type": "text", "text": "Response with tool"},
-                    {"type": "tool_use", "id": "t1", "name": "tool", "input": {}}
-                ]
+                    {"type": "tool_use", "id": "t1", "name": "tool", "input": {}},
+                ],
             ),
             LLMMessage(
                 role="user",
-                content=[{"type": "tool_result", "tool_use_id": "t1", "content": "result"}]
+                content=[{"type": "tool_result", "tool_use_id": "t1", "content": "result"}],
             ),
             LLMMessage(role="assistant", content="Final response"),
         ]

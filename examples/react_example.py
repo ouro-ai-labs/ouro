@@ -1,12 +1,14 @@
 """Example usage of ReAct Agent."""
-import sys
+
 import os
+import sys
 
 # Add parent directory to path to import modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config import Config
 from agent.react_agent import ReActAgent
+from config import Config
+from llm import LiteLLMLLM
 from tools.calculator import CalculatorTool
 from tools.file_ops import FileReadTool, FileWriteTool
 from tools.web_search import WebSearchTool
@@ -23,20 +25,27 @@ def main():
         Config.validate()
     except ValueError as e:
         print(f"Error: {e}")
-        print("Please set ANTHROPIC_API_KEY in your .env file")
+        print("Please configure your .env file (see .env.example)")
         return
+
+    llm = LiteLLMLLM(
+        model=Config.LITELLM_MODEL,
+        api_base=Config.LITELLM_API_BASE,
+        retry_config=Config.get_retry_config(),
+        drop_params=Config.LITELLM_DROP_PARAMS,
+        timeout=Config.LITELLM_TIMEOUT,
+    )
 
     # Initialize agent with tools
     agent = ReActAgent(
-        api_key=Config.ANTHROPIC_API_KEY,
-        model=Config.MODEL,
-        max_iterations=10,
+        llm=llm,
         tools=[
             CalculatorTool(),
             FileReadTool(),
             FileWriteTool(),
             WebSearchTool(),
         ],
+        max_iterations=10,
     )
 
     # Example 1: Simple calculation
@@ -54,9 +63,7 @@ def main():
 
     # Example 3: Web search
     print("\n\n--- Example 3: Web Search ---")
-    result3 = agent.run(
-        "Search for 'Python agentic frameworks' and tell me the top 3 results"
-    )
+    result3 = agent.run("Search for 'Python agentic frameworks' and tell me the top 3 results")
     print(f"\nResult: {result3}")
 
     print("\n" + "=" * 60)

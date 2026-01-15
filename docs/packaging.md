@@ -6,18 +6,19 @@ This guide explains how to package and distribute AgenticLoop.
 
 ### Install for Development
 
-```bash
-# Install in editable mode
-./scripts/install_local.sh
+Prerequisites: Python 3.12+ and `uv` (https://github.com/astral-sh/uv).
 
-# Or manually
-pip install -e .
+```bash
+# Bootstrap dev environment (creates .venv, installs deps)
+./scripts/bootstrap.sh
 ```
 
-Now you can use it globally:
+Note: development workflow requires `uv` (https://github.com/astral-sh/uv).
+
+Now you can use it (after activating `.venv` or via `./.venv/bin/aloop`):
 ```bash
 aloop --help
-aloop interactive
+aloop
 ```
 
 ## 🚀 Publishing to PyPI
@@ -25,7 +26,7 @@ aloop interactive
 ### 1. Build the Package
 
 ```bash
-./scripts/build.sh
+./scripts/dev.sh build
 ```
 
 This creates distribution files in `dist/`:
@@ -39,7 +40,7 @@ This creates distribution files in `dist/`:
 pip install dist/agentic_loop-0.1.0-py3-none-any.whl
 
 # Test it
-AgenticLoop interactive
+aloop
 ```
 
 ### 3. Publish to Test PyPI (Recommended First)
@@ -49,7 +50,7 @@ AgenticLoop interactive
 # Get API token from account settings
 
 # Upload to test PyPI
-twine upload --repository testpypi dist/*
+./scripts/dev.sh publish --test
 
 # Install from test PyPI
 pip install --index-url https://test.pypi.org/simple/ AgenticLoop
@@ -62,7 +63,7 @@ pip install --index-url https://test.pypi.org/simple/ AgenticLoop
 # Get API token
 
 # Upload
-./scripts/publish.sh
+./scripts/dev.sh publish
 
 # Now anyone can install
 pip install AgenticLoop
@@ -83,12 +84,12 @@ docker build -t AgenticLoop:latest .
 docker run -it --rm \
   -e ANTHROPIC_API_KEY=your_key \
   -v $(pwd)/data:/app/data \
-  AgenticLoop interactive
+  AgenticLoop --mode react
 
 # Single task
 docker run --rm \
   -e ANTHROPIC_API_KEY=your_key \
-  AgenticLoop --mode react "Analyze this code"
+  AgenticLoop --mode react --task "Analyze this code"
 ```
 
 ### Publish Docker Image
@@ -134,10 +135,10 @@ Before publishing a new version:
 - [ ] Update version in `pyproject.toml`
 - [ ] Update CHANGELOG.md
 - [ ] Run tests: `pytest`
-- [ ] Build package: `./scripts/build.sh`
+- [ ] Build package: `./scripts/dev.sh build`
 - [ ] Test locally: `pip install dist/*.whl`
 - [ ] Create git tag: `git tag v0.1.0 && git push --tags`
-- [ ] Publish to PyPI: `./scripts/publish.sh`
+- [ ] Publish to PyPI: `./scripts/dev.sh publish`
 - [ ] Create GitHub release with changelog
 
 ## 🔧 Troubleshooting
@@ -169,15 +170,15 @@ pip install AgenticLoop -c constraints.txt
 
 | Method | Command | Use Case |
 |--------|---------|----------|
-| **Local Dev** | `pip install -e .` | Development, testing |
+| **Local Dev** | `./scripts/bootstrap.sh` | Development, testing |
 | **PyPI** | `pip install AgenticLoop` | Public distribution |
-| **Docker** | `docker run AgenticLoop` | Containerized deployment |
+| **Docker** | `docker run AgenticLoop --mode react --task "..."` | Containerized deployment |
 | **Executable** | `./AgenticLoop` | Non-Python users |
 | **GitHub** | `pip install git+https://github.com/user/repo` | Direct from source |
 
 ## 🎯 Recommended Workflow
 
-1. **Development**: Use `pip install -e .`
-2. **Testing**: Build and test with `./scripts/build.sh`
+1. **Development**: Use `./scripts/bootstrap.sh`
+2. **Testing**: Build and test with `./scripts/dev.sh build`
 3. **Distribution**: Publish to PyPI
 4. **Users**: Install with `pip install AgenticLoop`

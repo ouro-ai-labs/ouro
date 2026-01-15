@@ -1,8 +1,5 @@
 """Tests for CodeNavigatorTool."""
 
-import tempfile
-from pathlib import Path
-
 import pytest
 
 from tools.code_navigator import CodeNavigatorTool
@@ -13,7 +10,8 @@ def sample_python_files(tmp_path):
     """Create sample Python files for testing."""
     # File 1: base.py with class and functions
     base_file = tmp_path / "base.py"
-    base_file.write_text('''"""Base module."""
+    base_file.write_text(
+        '''"""Base module."""
 import os
 from typing import List, Dict
 
@@ -40,11 +38,13 @@ def transform_task(task: str) -> str:
 def helper_function(x, y):
     """Helper for calculations."""
     return x + y
-''')
+'''
+    )
 
     # File 2: agent.py with subclass
     agent_file = tmp_path / "agent.py"
-    agent_file.write_text('''"""Agent implementation."""
+    agent_file.write_text(
+        '''"""Agent implementation."""
 from base import BaseAgent, transform_task
 
 class ReActAgent(BaseAgent):
@@ -62,11 +62,13 @@ class ReActAgent(BaseAgent):
     def _execute(self, task: str) -> str:
         """Execute with iterations."""
         return task
-''')
+'''
+    )
 
     # File 3: utils.py with utility functions
     utils_file = tmp_path / "utils.py"
-    utils_file.write_text('''"""Utility functions."""
+    utils_file.write_text(
+        '''"""Utility functions."""
 
 def transform_task(text: str) -> str:
     """Transform text."""
@@ -75,7 +77,8 @@ def transform_task(text: str) -> str:
 def calculate(a: int, b: int) -> int:
     """Calculate sum."""
     return a + b
-''')
+'''
+    )
 
     return tmp_path
 
@@ -92,9 +95,7 @@ class TestFindFunction:
     def test_find_single_function(self, tool, sample_python_files):
         """Test finding a function that exists once."""
         result = tool.execute(
-            target="helper_function",
-            search_type="find_function",
-            path=str(sample_python_files)
+            target="helper_function", search_type="find_function", path=str(sample_python_files)
         )
 
         assert "helper_function" in result
@@ -105,9 +106,7 @@ class TestFindFunction:
     def test_find_multiple_functions(self, tool, sample_python_files):
         """Test finding a function that exists in multiple files."""
         result = tool.execute(
-            target="transform_task",
-            search_type="find_function",
-            path=str(sample_python_files)
+            target="transform_task", search_type="find_function", path=str(sample_python_files)
         )
 
         assert "Found 2 function(s)" in result
@@ -119,7 +118,7 @@ class TestFindFunction:
         result = tool.execute(
             target="nonexistent_function",
             search_type="find_function",
-            path=str(sample_python_files)
+            path=str(sample_python_files),
         )
 
         assert "No function named" in result
@@ -128,9 +127,7 @@ class TestFindFunction:
     def test_function_with_type_hints(self, tool, sample_python_files):
         """Test that type hints are captured in signature."""
         result = tool.execute(
-            target="run",
-            search_type="find_function",
-            path=str(sample_python_files)
+            target="run", search_type="find_function", path=str(sample_python_files)
         )
 
         assert "task: str" in result
@@ -143,9 +140,7 @@ class TestFindClass:
     def test_find_class(self, tool, sample_python_files):
         """Test finding a class."""
         result = tool.execute(
-            target="BaseAgent",
-            search_type="find_class",
-            path=str(sample_python_files)
+            target="BaseAgent", search_type="find_class", path=str(sample_python_files)
         )
 
         assert "BaseAgent" in result
@@ -158,9 +153,7 @@ class TestFindClass:
     def test_find_subclass(self, tool, sample_python_files):
         """Test finding a subclass shows inheritance."""
         result = tool.execute(
-            target="ReActAgent",
-            search_type="find_class",
-            path=str(sample_python_files)
+            target="ReActAgent", search_type="find_class", path=str(sample_python_files)
         )
 
         assert "ReActAgent" in result
@@ -170,9 +163,7 @@ class TestFindClass:
     def test_class_not_found(self, tool, sample_python_files):
         """Test searching for non-existent class."""
         result = tool.execute(
-            target="NonExistentClass",
-            search_type="find_class",
-            path=str(sample_python_files)
+            target="NonExistentClass", search_type="find_class", path=str(sample_python_files)
         )
 
         assert "No class named" in result
@@ -184,10 +175,7 @@ class TestShowStructure:
     def test_show_structure(self, tool, sample_python_files):
         """Test showing file structure."""
         base_file = sample_python_files / "base.py"
-        result = tool.execute(
-            target=str(base_file),
-            search_type="show_structure"
-        )
+        result = tool.execute(target=str(base_file), search_type="show_structure")
 
         # Check for imports section
         assert "IMPORTS" in result
@@ -205,10 +193,7 @@ class TestShowStructure:
 
     def test_show_structure_nonexistent_file(self, tool):
         """Test show_structure on non-existent file."""
-        result = tool.execute(
-            target="/nonexistent/file.py",
-            search_type="show_structure"
-        )
+        result = tool.execute(target="/nonexistent/file.py", search_type="show_structure")
 
         assert "Error" in result
         assert "does not exist" in result
@@ -216,10 +201,7 @@ class TestShowStructure:
     def test_show_structure_with_line_numbers(self, tool, sample_python_files):
         """Test that line numbers are included."""
         base_file = sample_python_files / "base.py"
-        result = tool.execute(
-            target=str(base_file),
-            search_type="show_structure"
-        )
+        result = tool.execute(target=str(base_file), search_type="show_structure")
 
         assert "Line" in result
 
@@ -230,9 +212,7 @@ class TestFindUsages:
     def test_find_function_usages(self, tool, sample_python_files):
         """Test finding where a function is called."""
         result = tool.execute(
-            target="transform_task",
-            search_type="find_usages",
-            path=str(sample_python_files)
+            target="transform_task", search_type="find_usages", path=str(sample_python_files)
         )
 
         assert "transform_task" in result
@@ -242,9 +222,7 @@ class TestFindUsages:
     def test_find_class_usages(self, tool, sample_python_files):
         """Test finding where a class is used."""
         result = tool.execute(
-            target="BaseAgent",
-            search_type="find_usages",
-            path=str(sample_python_files)
+            target="BaseAgent", search_type="find_usages", path=str(sample_python_files)
         )
 
         # Should find import and inheritance
@@ -253,9 +231,7 @@ class TestFindUsages:
     def test_usages_not_found(self, tool, sample_python_files):
         """Test finding usages of something not used."""
         result = tool.execute(
-            target="never_used_function",
-            search_type="find_usages",
-            path=str(sample_python_files)
+            target="never_used_function", search_type="find_usages", path=str(sample_python_files)
         )
 
         assert "No usages" in result
@@ -267,9 +243,7 @@ class TestErrorHandling:
     def test_invalid_search_type(self, tool, sample_python_files):
         """Test invalid search type."""
         result = tool.execute(
-            target="something",
-            search_type="invalid_type",
-            path=str(sample_python_files)
+            target="something", search_type="invalid_type", path=str(sample_python_files)
         )
 
         assert "Error" in result
@@ -278,9 +252,7 @@ class TestErrorHandling:
     def test_invalid_path(self, tool):
         """Test with invalid path."""
         result = tool.execute(
-            target="something",
-            search_type="find_function",
-            path="/nonexistent/path"
+            target="something", search_type="find_function", path="/nonexistent/path"
         )
 
         assert "Error" in result
@@ -301,11 +273,7 @@ class TestPerformance:
         good_file.write_text("def working():\n    pass")
 
         # Should still find the working function
-        result = tool.execute(
-            target="working",
-            search_type="find_function",
-            path=str(tmp_path)
-        )
+        result = tool.execute(target="working", search_type="find_function", path=str(tmp_path))
 
         assert "working" in result
         assert "good.py" in result
@@ -318,11 +286,7 @@ class TestPerformance:
             file.write_text(f"def function_{i}():\n    pass")
 
         # Should find all functions quickly
-        result = tool.execute(
-            target="function_10",
-            search_type="find_function",
-            path=str(tmp_path)
-        )
+        result = tool.execute(target="function_10", search_type="find_function", path=str(tmp_path))
 
         assert "function_10" in result
 
@@ -333,9 +297,7 @@ class TestRealWorldScenarios:
     def test_find_init_method(self, tool, sample_python_files):
         """Test finding __init__ methods."""
         result = tool.execute(
-            target="__init__",
-            search_type="find_function",
-            path=str(sample_python_files)
+            target="__init__", search_type="find_function", path=str(sample_python_files)
         )
 
         assert "__init__" in result
@@ -344,9 +306,7 @@ class TestRealWorldScenarios:
     def test_private_methods(self, tool, sample_python_files):
         """Test finding private methods."""
         result = tool.execute(
-            target="_process",
-            search_type="find_function",
-            path=str(sample_python_files)
+            target="_process", search_type="find_function", path=str(sample_python_files)
         )
 
         assert "_process" in result

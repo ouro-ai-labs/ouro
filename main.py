@@ -1,33 +1,39 @@
 """Main entry point for the agentic loop system."""
+
 import argparse
 import warnings
-warnings.filterwarnings(
-    "ignore", 
-    message="Pydantic serializer warnings.*", 
-    category=UserWarning
-)
-from config import Config
-from llm import LiteLLMLLM
-from agent.react_agent import ReActAgent
+
 from agent.plan_execute_agent import PlanExecuteAgent
-from tools.file_ops import FileReadTool, FileWriteTool, FileSearchTool
-from tools.calculator import CalculatorTool
-from tools.shell import ShellTool
-from tools.web_search import WebSearchTool
-from tools.web_fetch import WebFetchTool
-from tools.advanced_file_ops import GlobTool, GrepTool, EditTool
-from tools.smart_edit import SmartEditTool
-from tools.code_navigator import CodeNavigatorTool
-from tools.todo import TodoTool
-from tools.delegation import DelegationTool
-from tools.git_tools import (
-    GitStatusTool, GitDiffTool, GitAddTool, GitCommitTool,
-    GitLogTool, GitBranchTool, GitCheckoutTool, GitPushTool,
-    GitPullTool, GitRemoteTool, GitStashTool, GitCleanTool
-)
-from agent.todo import TodoList
-from utils import setup_logger, get_log_file_path, terminal_ui
+from agent.react_agent import ReActAgent
+from config import Config
 from interactive import run_interactive_mode
+from llm import LiteLLMLLM
+from tools.advanced_file_ops import EditTool, GlobTool, GrepTool
+from tools.calculator import CalculatorTool
+from tools.code_navigator import CodeNavigatorTool
+from tools.delegation import DelegationTool
+from tools.file_ops import FileReadTool, FileSearchTool, FileWriteTool
+from tools.git_tools import (
+    GitAddTool,
+    GitBranchTool,
+    GitCheckoutTool,
+    GitCleanTool,
+    GitCommitTool,
+    GitDiffTool,
+    GitLogTool,
+    GitPullTool,
+    GitPushTool,
+    GitRemoteTool,
+    GitStashTool,
+    GitStatusTool,
+)
+from tools.shell import ShellTool
+from tools.smart_edit import SmartEditTool
+from tools.web_fetch import WebFetchTool
+from tools.web_search import WebSearchTool
+from utils import get_log_file_path, setup_logger, terminal_ui
+
+warnings.filterwarnings("ignore", message="Pydantic serializer warnings.*", category=UserWarning)
 
 
 def create_agent(mode: str = "react"):
@@ -74,7 +80,7 @@ def create_agent(mode: str = "react"):
         api_base=Config.LITELLM_API_BASE,
         retry_config=Config.get_retry_config(),
         drop_params=Config.LITELLM_DROP_PARAMS,
-        timeout=Config.LITELLM_TIMEOUT
+        timeout=Config.LITELLM_TIMEOUT,
     )
 
     # Create agent based on mode
@@ -103,9 +109,7 @@ def main():
     # Initialize logging
     setup_logger()
 
-    parser = argparse.ArgumentParser(
-        description="Run an AI agent with tool-calling capabilities"
-    )
+    parser = argparse.ArgumentParser(description="Run an AI agent with tool-calling capabilities")
     parser.add_argument(
         "--mode",
         "-m",
@@ -117,7 +121,7 @@ def main():
         "--task",
         "-t",
         type=str,
-        help="Task for the agent to complete (if not provided, enters interactive mode)"
+        help="Task for the agent to complete (if not provided, enters interactive mode)",
     )
 
     args = parser.parse_args()
@@ -142,15 +146,16 @@ def main():
 
     # Display header and config
     terminal_ui.print_header(
-        "🤖 Agentic Loop System",
-        subtitle="Intelligent AI Agent with Tool-Calling Capabilities"
+        "🤖 Agentic Loop System", subtitle="Intelligent AI Agent with Tool-Calling Capabilities"
     )
 
     config_dict = {
-        "LLM Provider": Config.LITELLM_MODEL.split('/')[0].upper() if '/' in Config.LITELLM_MODEL else "UNKNOWN",
+        "LLM Provider": (
+            Config.LITELLM_MODEL.split("/")[0].upper() if "/" in Config.LITELLM_MODEL else "UNKNOWN"
+        ),
         "Model": Config.LITELLM_MODEL,
         "Mode": args.mode.upper(),
-        "Task": task if len(task) < 100 else task[:97] + "..."
+        "Task": task if len(task) < 100 else task[:97] + "...",
     }
     terminal_ui.print_config(config_dict)
 

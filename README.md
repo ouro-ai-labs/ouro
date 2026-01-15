@@ -4,6 +4,10 @@ General AI Agent System
 
 ## Installation
 
+Prerequisites for development:
+- Python 3.12+
+- `uv` (https://github.com/astral-sh/uv)
+
 ### Option 1: Install from PyPI (Recommended - Coming Soon)
 
 ```bash
@@ -17,8 +21,8 @@ pip install AgenticLoop
 git clone https://github.com/yourusername/AgenticLoop.git
 cd AgenticLoop
 
-# Install in development mode
-pip install -e .
+# Bootstrap (recommended)
+./scripts/bootstrap.sh
 ```
 
 ### Option 3: Install from GitHub
@@ -31,10 +35,25 @@ pip install git+https://github.com/yourusername/AgenticLoop.git
 
 ```bash
 docker pull yourusername/AgenticLoop:latest
-docker run -it --rm -e ANTHROPIC_API_KEY=your_key AgenticLoop interactive
+docker run -it --rm -e ANTHROPIC_API_KEY=your_key AgenticLoop --mode react
 ```
 
 ## Quick Start
+
+For repo workflow (install/test/format/build/publish), see `AGENTS.md`.
+
+### 0. Install Dependencies (Recommended)
+
+```bash
+./scripts/bootstrap.sh
+```
+
+Optional (recommended): enable git hooks for consistent formatting/linting on commit:
+
+```bash
+source .venv/bin/activate
+pre-commit install
+```
 
 ### 1. Configuration
 
@@ -49,7 +68,7 @@ Edit `.env` file and configure your LLM provider:
 ```bash
 # LiteLLM Model Configuration (supports 100+ providers)
 # Format: provider/model_name
-LITELLM_MODEL=anthropic/claude-3-5-sonnet
+LITELLM_MODEL=anthropic/claude-3-5-sonnet-20241022
 
 # API Keys (set the key for your chosen provider)
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
@@ -67,6 +86,7 @@ LITELLM_TIMEOUT=600            # Request timeout in seconds
 MAX_ITERATIONS=100  # Maximum iteration loops
 
 # Memory Management
+MEMORY_ENABLED=true
 MEMORY_MAX_CONTEXT_TOKENS=100000
 MEMORY_TARGET_TOKENS=30000
 MEMORY_COMPRESSION_THRESHOLD=25000
@@ -87,7 +107,7 @@ LOG_TO_CONSOLE=false
 
 **Quick setup for different providers:**
 
-- **Anthropic Claude**: `LITELLM_MODEL=anthropic/claude-3-5-sonnet`
+- **Anthropic Claude**: `LITELLM_MODEL=anthropic/claude-3-5-sonnet-20241022`
 - **OpenAI GPT**: `LITELLM_MODEL=openai/gpt-4o`
 - **Google Gemini**: `LITELLM_MODEL=gemini/gemini-1.5-pro`
 - **Azure OpenAI**: `LITELLM_MODEL=azure/gpt-4`
@@ -105,10 +125,10 @@ See [LiteLLM Providers](https://docs.litellm.ai/docs/providers) for 100+ support
 aloop
 
 # Single task (ReAct mode)
-aloop --mode react "Calculate 123 * 456"
+aloop --mode react --task "Calculate 123 * 456"
 
 # Single task (Plan-Execute mode)
-aloop --mode plan "Build a web scraper"
+aloop --mode plan --task "Build a web scraper"
 
 # Show help
 aloop --help
@@ -166,7 +186,6 @@ See [Memory Management Documentation](docs/memory-management.md) for detailed in
 ```
 AgenticLoop/
 ├── README.md                    # This document
-├── requirements.txt             # Python dependencies
 ├── .env.example                 # Environment variables template
 ├── config.py                    # Configuration management
 ├── main.py                      # CLI entry point
@@ -225,7 +244,7 @@ See the full configuration template in `.env.example`. Key options:
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| `LITELLM_MODEL` | LiteLLM model (provider/model format) | `anthropic/claude-3-5-sonnet` |
+| `LITELLM_MODEL` | LiteLLM model (provider/model format) | `anthropic/claude-3-5-sonnet-20241022` |
 | `LITELLM_API_BASE` | Custom base URL for proxies | Empty |
 | `LITELLM_DROP_PARAMS` | Drop unsupported params | `true` |
 | `LITELLM_TIMEOUT` | Request timeout in seconds | `600` |
@@ -244,8 +263,9 @@ See [Configuration Guide](docs/configuration.md) for detailed options.
 Run basic tests:
 
 ```bash
-source venv/bin/activate
-python test_basic.py
+./scripts/bootstrap.sh
+source .venv/bin/activate
+./scripts/dev.sh test -q
 ```
 
 ## Learning Resources
@@ -288,14 +308,14 @@ See the [Packaging Guide](docs/packaging.md) for instructions on:
 
 Quick commands:
 ```bash
-# Install locally for development
-./scripts/install_local.sh
+# Bootstrap local dev environment (creates .venv, installs deps, initializes .env)
+./scripts/bootstrap.sh
 
 # Build distribution packages
-./scripts/build.sh
+./scripts/dev.sh build
 
 # Publish to PyPI
-./scripts/publish.sh
+./scripts/dev.sh publish
 ```
 
 ## Contributing

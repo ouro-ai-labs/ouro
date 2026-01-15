@@ -1,4 +1,5 @@
 """Web fetch tool for retrieving content from URLs."""
+
 from __future__ import annotations
 
 import ipaddress
@@ -6,13 +7,13 @@ import json
 import socket
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urljoin, urlparse
 
-import requests
-from requests.utils import get_encoding_from_headers
-from readability import Document
-from lxml import html as lxml_html
 import html2text
+import requests
+from lxml import html as lxml_html
+from readability import Document
+from requests.utils import get_encoding_from_headers
 
 from .base import BaseTool
 
@@ -245,7 +246,7 @@ class WebFetchTool(BaseTool):
         for info in infos:
             sockaddr = info[4]
             if sockaddr:
-                addresses.append(sockaddr[0])
+                addresses.append(str(sockaddr[0]))
         return list(dict.fromkeys(addresses))
 
     def _is_ip_allowed(self, ip: Union[ipaddress.IPv4Address, ipaddress.IPv6Address]) -> bool:
@@ -325,7 +326,9 @@ class WebFetchTool(BaseTool):
     def _request(
         self, session: requests.Session, url: str, headers: Dict[str, str], timeout: float
     ) -> requests.Response:
-        return session.get(url, headers=headers, timeout=timeout, stream=True, allow_redirects=False)
+        return session.get(
+            url, headers=headers, timeout=timeout, stream=True, allow_redirects=False
+        )
 
     def _read_response(self, response: requests.Response) -> bytes:
         content_length = response.headers.get("content-length")
@@ -417,4 +420,3 @@ class WebFetchTool(BaseTool):
         suffix = "\n\n[... output truncated ...]"
         cutoff = max(0, MAX_OUTPUT_CHARS - len(suffix))
         return output[:cutoff] + suffix, True, total
-

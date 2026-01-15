@@ -1,5 +1,7 @@
 """Pytest fixtures for memory module tests."""
+
 import pytest
+
 from llm.base import LLMMessage, LLMResponse
 
 
@@ -21,7 +23,7 @@ class MockLLM:
         return LLMResponse(
             message=self.response_text,
             stop_reason="end_turn",
-            usage={"input_tokens": 100, "output_tokens": 50}
+            usage={"input_tokens": 100, "output_tokens": 50},
         )
 
     def extract_text(self, response):
@@ -74,24 +76,14 @@ def tool_use_messages():
                     "type": "tool_use",
                     "id": "tool_1",
                     "name": "calculator",
-                    "input": {"expression": "2+2"}
-                }
-            ]
+                    "input": {"expression": "2+2"},
+                },
+            ],
         ),
         LLMMessage(
-            role="user",
-            content=[
-                {
-                    "type": "tool_result",
-                    "tool_use_id": "tool_1",
-                    "content": "4"
-                }
-            ]
+            role="user", content=[{"type": "tool_result", "tool_use_id": "tool_1", "content": "4"}]
         ),
-        LLMMessage(
-            role="assistant",
-            content="The result is 4."
-        ),
+        LLMMessage(role="assistant", content="The result is 4."),
     ]
 
 
@@ -108,24 +100,17 @@ def protected_tool_messages():
                     "type": "tool_use",
                     "id": "tool_todo_1",
                     "name": "manage_todo_list",
-                    "input": {"action": "add", "item": "Test item"}
-                }
-            ]
+                    "input": {"action": "add", "item": "Test item"},
+                },
+            ],
         ),
         LLMMessage(
             role="user",
             content=[
-                {
-                    "type": "tool_result",
-                    "tool_use_id": "tool_todo_1",
-                    "content": "Todo item added"
-                }
-            ]
+                {"type": "tool_result", "tool_use_id": "tool_todo_1", "content": "Todo item added"}
+            ],
         ),
-        LLMMessage(
-            role="assistant",
-            content="Todo item has been added."
-        ),
+        LLMMessage(role="assistant", content="Todo item has been added."),
     ]
 
 
@@ -136,36 +121,16 @@ def mismatched_tool_messages():
         LLMMessage(role="user", content="Do something"),
         LLMMessage(
             role="assistant",
-            content=[
-                {
-                    "type": "tool_use",
-                    "id": "tool_1",
-                    "name": "tool_a",
-                    "input": {}
-                }
-            ]
+            content=[{"type": "tool_use", "id": "tool_1", "name": "tool_a", "input": {}}],
         ),
         # Missing tool_result for tool_1
         LLMMessage(role="user", content="Another request"),
         LLMMessage(
             role="assistant",
-            content=[
-                {
-                    "type": "tool_use",
-                    "id": "tool_2",
-                    "name": "tool_b",
-                    "input": {}
-                }
-            ]
+            content=[{"type": "tool_use", "id": "tool_2", "name": "tool_b", "input": {}}],
         ),
         LLMMessage(
             role="user",
-            content=[
-                {
-                    "type": "tool_result",
-                    "tool_use_id": "tool_2",
-                    "content": "result"
-                }
-            ]
+            content=[{"type": "tool_result", "tool_use_id": "tool_2", "content": "result"}],
         ),
     ]

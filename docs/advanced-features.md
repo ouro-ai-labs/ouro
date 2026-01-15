@@ -38,13 +38,12 @@ RetryConfig(
 For APIs with strict rate limits:
 
 ```python
-from llm import create_llm, RetryConfig
-from config import Config
+from llm import LiteLLMLLM
+from llm.retry import RetryConfig
 
-llm = create_llm(
-    provider="gemini",
+llm = LiteLLMLLM(
+    model="gemini/gemini-1.5-flash",
     api_key="your_key",
-    model="gemini-1.5-flash",
     retry_config=RetryConfig(
         max_retries=10,        # More retries for free tier
         initial_delay=2.0,     # Start with 2s wait
@@ -160,14 +159,16 @@ See [Memory Management](memory-management.md) for complete documentation.
 Easy switching between LLM providers:
 
 ```python
+from llm import LiteLLMLLM
+
 # Anthropic
-llm = create_llm("anthropic", api_key, "claude-3-5-sonnet-20241022")
+llm = LiteLLMLLM(model="anthropic/claude-3-5-sonnet-20241022", api_key=api_key)
 
 # OpenAI
-llm = create_llm("openai", api_key, "gpt-4o")
+llm = LiteLLMLLM(model="openai/gpt-4o", api_key=api_key)
 
 # Gemini
-llm = create_llm("gemini", api_key, "gemini-1.5-pro")
+llm = LiteLLMLLM(model="gemini/gemini-1.5-pro", api_key=api_key)
 ```
 
 ### Provider Comparison
@@ -184,12 +185,12 @@ Use different providers for different tasks:
 
 ```python
 # Expensive model for planning
-planning_llm = create_llm("anthropic", key, "claude-3-opus-20240229")
+planning_llm = LiteLLMLLM(model="anthropic/claude-3-opus-20240229", api_key=key)
 planner = PlanExecuteAgent(llm=planning_llm)
 plan = planner._get_plan(task)
 
 # Cheap model for execution
-execution_llm = create_llm("gemini", key, "gemini-1.5-flash")
+execution_llm = LiteLLMLLM(model="gemini/gemini-1.5-flash", api_key=key)
 executor = ReActAgent(llm=execution_llm)
 results = [executor.run(step) for step in plan]
 ```
@@ -201,14 +202,8 @@ Support for proxies, Azure, and local deployments:
 ### Configuration
 
 ```bash
-# Proxy
-ANTHROPIC_BASE_URL=http://proxy.company.com/anthropic
-
-# Azure OpenAI
-OPENAI_BASE_URL=https://your-resource.openai.azure.com
-
-# Local deployment
-GEMINI_BASE_URL=http://localhost:8000/v1
+# Proxy / custom endpoint
+LITELLM_API_BASE=http://proxy.company.com
 ```
 
 ### Use Cases
@@ -223,10 +218,10 @@ GEMINI_BASE_URL=http://localhost:8000/v1
 
 ```bash
 # .env
-LLM_PROVIDER=openai
-OPENAI_API_KEY=your_azure_key
-OPENAI_BASE_URL=https://your-resource.openai.azure.com
-MODEL=gpt-4
+LITELLM_MODEL=azure/gpt-4
+AZURE_API_KEY=your_azure_key
+AZURE_API_BASE=https://your-resource.openai.azure.com
+AZURE_API_VERSION=2024-02-15-preview
 ```
 
 ## Agent Mode Comparison
@@ -353,11 +348,11 @@ Use different models by task complexity:
 ```python
 def get_optimal_llm(task_type: str):
     if task_type == "simple":
-        return create_llm("gemini", key, "gemini-1.5-flash")
+        return LiteLLMLLM(model="gemini/gemini-1.5-flash", api_key=key)
     elif task_type == "medium":
-        return create_llm("openai", key, "gpt-4o-mini")
+        return LiteLLMLLM(model="openai/gpt-4o-mini", api_key=key)
     else:
-        return create_llm("anthropic", key, "claude-3-5-sonnet-20241022")
+        return LiteLLMLLM(model="anthropic/claude-3-5-sonnet-20241022", api_key=key)
 ```
 
 ### Strategy 2: Memory Compression
@@ -406,13 +401,13 @@ Estimated costs for a 50-iteration task:
 ### Graceful Degradation
 
 ```python
-from llm import create_llm
+from llm import LiteLLMLLM
 
 try:
-    llm = create_llm("anthropic", api_key, "claude-3-5-sonnet-20241022")
+    llm = LiteLLMLLM(model="anthropic/claude-3-5-sonnet-20241022", api_key=api_key)
 except Exception as e:
     print(f"Failed to initialize Anthropic, falling back to OpenAI")
-    llm = create_llm("openai", api_key, "gpt-4o-mini")
+    llm = LiteLLMLLM(model="openai/gpt-4o-mini", api_key=api_key)
 ```
 
 ### Timeout Handling
@@ -437,16 +432,16 @@ finally:
 
 **Strategy 1**: Automatic retry (built-in)
 ```python
-llm = create_llm(provider, key, model)  # Auto-retry enabled
+llm = LiteLLMLLM(model=f"{provider}/{model}", api_key=key)  # Auto-retry enabled
 ```
 
 **Strategy 2**: Provider fallback
 ```python
 try:
-    llm = create_llm("anthropic", key1, model1)
+    llm = LiteLLMLLM(model=f"anthropic/{model1}", api_key=key1)
     result = agent.run(task)
 except RateLimitError:
-    llm = create_llm("openai", key2, model2)
+    llm = LiteLLMLLM(model=f"openai/{model2}", api_key=key2)
     result = agent.run(task)
 ```
 
@@ -527,12 +522,12 @@ class MonitoredAgent(ReActAgent):
 
 ```python
 # 1. Use Gemini Flash for initial search (cheap)
-search_llm = create_llm("gemini", key, "gemini-1.5-flash")
+search_llm = LiteLLMLLM(model="gemini/gemini-1.5-flash", api_key=key)
 searcher = ReActAgent(llm=search_llm, max_iterations=5)
 raw_data = searcher.run("Search for X")
 
 # 2. Use Claude Sonnet for analysis (quality)
-analysis_llm = create_llm("anthropic", key, "claude-3-5-sonnet-20241022")
+analysis_llm = LiteLLMLLM(model="anthropic/claude-3-5-sonnet-20241022", api_key=key)
 analyzer = PlanExecuteAgent(llm=analysis_llm)
 final_report = analyzer.run(f"Analyze this data: {raw_data}")
 ```
@@ -558,7 +553,7 @@ for i, task in enumerate(tasks):
 ```python
 # Try with cheap model first
 try:
-    cheap_llm = create_llm("gemini", key, "gemini-1.5-flash")
+    cheap_llm = LiteLLMLLM(model="gemini/gemini-1.5-flash", api_key=key)
     agent = ReActAgent(llm=cheap_llm, max_iterations=5)
     result = agent.run(task)
 
@@ -568,7 +563,7 @@ try:
 
 except (ValueError, Exception):
     print("Retrying with better model...")
-    better_llm = create_llm("anthropic", key, "claude-3-5-sonnet-20241022")
+    better_llm = LiteLLMLLM(model="anthropic/claude-3-5-sonnet-20241022", api_key=key)
     agent = ReActAgent(llm=better_llm, max_iterations=10)
     result = agent.run(task)
 ```

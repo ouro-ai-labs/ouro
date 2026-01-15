@@ -3,10 +3,10 @@
 These tests verify that different components work together correctly,
 especially focusing on edge cases and the tool_call/tool_result matching issue.
 """
-import pytest
+
+from llm.base import LLMMessage
 from memory import MemoryConfig, MemoryManager
 from memory.types import CompressionStrategy
-from llm.base import LLMMessage
 
 
 class TestToolCallResultIntegration:
@@ -26,22 +26,33 @@ class TestToolCallResultIntegration:
         # Add a sequence of tool calls
         messages = []
         for i in range(3):
-            messages.extend([
-                LLMMessage(role="user", content=f"Request {i}"),
-                LLMMessage(
-                    role="assistant",
-                    content=[
-                        {"type": "tool_use", "id": f"tool_{i}", "name": f"tool_{i}", "input": {}}
-                    ]
-                ),
-                LLMMessage(
-                    role="user",
-                    content=[
-                        {"type": "tool_result", "tool_use_id": f"tool_{i}", "content": f"result_{i}"}
-                    ]
-                ),
-                LLMMessage(role="assistant", content=f"Response {i}"),
-            ])
+            messages.extend(
+                [
+                    LLMMessage(role="user", content=f"Request {i}"),
+                    LLMMessage(
+                        role="assistant",
+                        content=[
+                            {
+                                "type": "tool_use",
+                                "id": f"tool_{i}",
+                                "name": f"tool_{i}",
+                                "input": {},
+                            }
+                        ],
+                    ),
+                    LLMMessage(
+                        role="user",
+                        content=[
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": f"tool_{i}",
+                                "content": f"result_{i}",
+                            }
+                        ],
+                    ),
+                    LLMMessage(role="assistant", content=f"Response {i}"),
+                ]
+            )
 
         # Add messages and trigger compression
         for msg in messages:
@@ -68,16 +79,25 @@ class TestToolCallResultIntegration:
                     LLMMessage(
                         role="assistant",
                         content=[
-                            {"type": "tool_use", "id": f"tool_{idx}", "name": f"tool_{idx}", "input": {}}
-                        ]
+                            {
+                                "type": "tool_use",
+                                "id": f"tool_{idx}",
+                                "name": f"tool_{idx}",
+                                "input": {},
+                            }
+                        ],
                     )
                 )
                 manager.add_message(
                     LLMMessage(
                         role="user",
                         content=[
-                            {"type": "tool_result", "tool_use_id": f"tool_{idx}", "content": f"result_{idx}"}
-                        ]
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": f"tool_{idx}",
+                                "content": f"result_{idx}",
+                            }
+                        ],
                     )
                 )
                 manager.add_message(LLMMessage(role="assistant", content=f"Response {idx}"))
@@ -99,7 +119,7 @@ class TestToolCallResultIntegration:
                 content=[
                     {"type": "tool_use", "id": "tool_1", "name": "tool_a", "input": {}},
                     {"type": "tool_use", "id": "tool_2", "name": "tool_b", "input": {}},
-                ]
+                ],
             )
         )
         # Results come back together
@@ -109,7 +129,7 @@ class TestToolCallResultIntegration:
                 content=[
                     {"type": "tool_result", "tool_use_id": "tool_1", "content": "result_1"},
                     {"type": "tool_result", "tool_use_id": "tool_2", "content": "result_2"},
-                ]
+                ],
             )
         )
         manager.add_message(LLMMessage(role="assistant", content="Final response"))
@@ -130,9 +150,7 @@ class TestToolCallResultIntegration:
         manager.add_message(
             LLMMessage(
                 role="assistant",
-                content=[
-                    {"type": "tool_use", "id": "orphan_tool", "name": "tool", "input": {}}
-                ]
+                content=[{"type": "tool_use", "id": "orphan_tool", "name": "tool", "input": {}}],
             )
         )
         # Missing tool_result!
@@ -173,7 +191,7 @@ class TestToolCallResultIntegration:
                 role="user",
                 content=[
                     {"type": "tool_result", "tool_use_id": "phantom_tool", "content": "result"}
-                ]
+                ],
             )
         )
 
@@ -213,8 +231,9 @@ class TestToolCallResultIntegration:
                         elif block.get("type") == "tool_result":
                             tool_result_ids.add(block.get("tool_use_id"))
 
-        assert tool_use_ids == tool_result_ids, \
-            f"Mismatched tools: use={tool_use_ids}, result={tool_result_ids}"
+        assert (
+            tool_use_ids == tool_result_ids
+        ), f"Mismatched tools: use={tool_use_ids}, result={tool_result_ids}"
 
 
 class TestCompressionIntegration:
@@ -231,7 +250,9 @@ class TestCompressionIntegration:
         # Simulate a long conversation
         for i in range(20):
             manager.add_message(LLMMessage(role="user", content=f"User message {i} " * 20))
-            manager.add_message(LLMMessage(role="assistant", content=f"Assistant response {i} " * 20))
+            manager.add_message(
+                LLMMessage(role="assistant", content=f"Assistant response {i} " * 20)
+            )
 
         stats = manager.get_stats()
 
@@ -262,14 +283,13 @@ class TestCompressionIntegration:
                 role="assistant",
                 content=[
                     {"type": "text", "text": "I'll use the tool"},
-                    {"type": "tool_use", "id": "t1", "name": "calculator", "input": {}}
-                ]
+                    {"type": "tool_use", "id": "t1", "name": "calculator", "input": {}},
+                ],
             )
         )
         manager.add_message(
             LLMMessage(
-                role="user",
-                content=[{"type": "tool_result", "tool_use_id": "t1", "content": "42"}]
+                role="user", content=[{"type": "tool_result", "tool_use_id": "t1", "content": "42"}]
             )
         )
 
@@ -369,13 +389,13 @@ class TestEdgeCaseIntegration:
         manager.add_message(
             LLMMessage(
                 role="assistant",
-                content=[{"type": "tool_use", "id": "t1", "name": "tool", "input": {}}]
+                content=[{"type": "tool_use", "id": "t1", "name": "tool", "input": {}}],
             )
         )
         manager.add_message(
             LLMMessage(
                 role="user",
-                content=[{"type": "tool_result", "tool_use_id": "t1", "content": "result"}]
+                content=[{"type": "tool_result", "tool_use_id": "t1", "content": "result"}],
             )
         )
 
@@ -397,7 +417,7 @@ class TestEdgeCaseIntegration:
                 content=[
                     {"type": "text", "text": ""},
                     {"type": "text", "text": "Actual content"},
-                ]
+                ],
             )
         )
 
@@ -448,7 +468,7 @@ class TestMemoryReset:
         """Test that manager can be reused after reset."""
         config = MemoryConfig(
             short_term_message_count=10,  # Large enough to avoid compression
-            target_working_memory_tokens=100000
+            target_working_memory_tokens=100000,
         )
         manager = MemoryManager(config, mock_llm)
 

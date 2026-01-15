@@ -1,11 +1,13 @@
 """Plan-and-Execute agent implementation."""
-from typing import List
+
 import re
+from typing import List
 
 from llm import LLMMessage
+from utils import terminal_ui
+
 from .base import BaseAgent
 from .context import format_context_prompt
-from utils import terminal_ui
 
 
 class PlanExecuteAgent(BaseAgent):
@@ -122,7 +124,9 @@ Provide your final answer to the user based on the execution results above.
 
         for i, step in enumerate(steps, 1):
             terminal_ui.console.print()
-            terminal_ui.console.print(f"[bold magenta]▶ Step {i}/{len(steps)}:[/bold magenta] [white]{step}[/white]")
+            terminal_ui.console.print(
+                f"[bold magenta]▶ Step {i}/{len(steps)}:[/bold magenta] [white]{step}[/white]"
+            )
             result = self._execute_step(step, i, step_results, task)
             step_results.append(f"Step {i}: {step}\nResult: {result}")
             terminal_ui.print_success(f"Step {i} completed")
@@ -165,7 +169,7 @@ Provide your final answer to the user based on the execution results above.
 
         messages = [
             LLMMessage(role="system", content=system_content),
-            LLMMessage(role="user", content=self.PLANNER_PROMPT.format(task=task))
+            LLMMessage(role="user", content=self.PLANNER_PROMPT.format(task=task)),
         ]
         response = self._call_llm(messages=messages)
 
@@ -197,9 +201,7 @@ Provide your final answer to the user based on the execution results above.
         messages = [
             LLMMessage(
                 role="user",
-                content=self.EXECUTOR_PROMPT.format(
-                    step_num=step_num, step=step, history=history
-                )
+                content=self.EXECUTOR_PROMPT.format(step_num=step_num, step=step, history=history),
             )
         ]
 
@@ -212,7 +214,7 @@ Provide your final answer to the user based on the execution results above.
             max_iterations=self.max_iterations,  # Limited iterations for each step
             use_memory=False,  # Use local messages list, not global memory
             save_to_memory=False,  # Don't auto-save to memory
-            verbose=False  # Quieter output for sub-steps
+            verbose=False,  # Quieter output for sub-steps
         )
 
         # Save step result summary to main memory
@@ -227,9 +229,7 @@ Provide your final answer to the user based on the execution results above.
         messages = [
             LLMMessage(
                 role="user",
-                content=self.SYNTHESIZER_PROMPT.format(
-                    results="\n\n".join(results), task=task
-                )
+                content=self.SYNTHESIZER_PROMPT.format(results="\n\n".join(results), task=task),
             )
         ]
         response = self._call_llm(messages=messages)

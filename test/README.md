@@ -11,10 +11,11 @@ This directory contains test files for the AgenticLoop project.
 
 ### Prerequisites
 
-Make sure you have installed all dependencies:
+Bootstrap a local dev environment (recommended):
 
 ```bash
-pip install -r requirements.txt
+./scripts/bootstrap.sh
+source .venv/bin/activate
 ```
 
 ### Run Individual Tests
@@ -22,11 +23,9 @@ pip install -r requirements.txt
 From the project root directory:
 
 ```bash
-# Run basic tests
-python3 test/test_basic.py
-
-# Run memory tests
-python3 test/test_memory.py
+# Run a subset (fast)
+python3 -m pytest test/test_basic.py -q
+python3 -m pytest test/memory/ -q
 ```
 
 ### Run All Tests
@@ -34,9 +33,6 @@ python3 test/test_memory.py
 ```bash
 # From project root
 python3 -m pytest test/
-
-# Or run all test files
-for test in test/test_*.py; do python3 "$test"; done
 ```
 
 ## Test Coverage
@@ -46,6 +42,6 @@ for test in test/test_*.py; do python3 "$test"; done
 
 ## Notes
 
-- Some tests may require environment variables (e.g., `ANTHROPIC_API_KEY`)
+- Live LLM integration tests are skipped by default (set `RUN_INTEGRATION_TESTS=1` to enable).
 - Set up your `.env` file before running tests that require API access
 - Memory tests use a mock LLM and don't require API keys

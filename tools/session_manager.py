@@ -9,9 +9,8 @@ Usage:
 """
 import argparse
 import sys
-import json
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -24,7 +23,7 @@ def format_timestamp(ts: str) -> str:
     try:
         dt = datetime.fromisoformat(ts)
         return dt.strftime("%Y-%m-%d %H:%M:%S")
-    except:
+    except ValueError:
         return ts
 
 
@@ -66,7 +65,7 @@ def show_session(store: MemoryStore, session_id: str, show_messages: bool = Fals
     print("=" * 100)
 
     # Stats
-    print(f"\n📊 Statistics:")
+    print("\n📊 Statistics:")
     print(f"  Created: {format_timestamp(stats['created_at'])}")
     print(f"  System Messages: {len(session_data['system_messages'])}")
     print(f"  Messages: {len(session_data['messages'])}")
@@ -112,26 +111,26 @@ def show_stats(store: MemoryStore, session_id: str):
     print(f"\n📊 Session Statistics: {session_id}")
     print("=" * 80)
 
-    print(f"\n⏰ Timing:")
+    print("\n⏰ Timing:")
     print(f"  Created: {format_timestamp(stats['created_at'])}")
 
-    print(f"\n📨 Messages:")
+    print("\n📨 Messages:")
     print(f"  System Messages: {stats['system_message_count']}")
     print(f"  Regular Messages: {stats['message_count']}")
     print(f"  Total Messages: {stats['system_message_count'] + stats['message_count']}")
 
-    print(f"\n🗜️  Compression:")
+    print("\n🗜️  Compression:")
     print(f"  Compressions: {stats['compression_count']}")
     print(f"  Summaries: {stats['summary_count']}")
 
-    print(f"\n🎫 Tokens:")
+    print("\n🎫 Tokens:")
     print(f"  Message Tokens: {stats['total_message_tokens']:,}")
     print(f"  Original Tokens (pre-compression): {stats['total_original_tokens']:,}")
     print(f"  Compressed Tokens: {stats['total_compressed_tokens']:,}")
     print(f"  Token Savings: {stats['token_savings']:,}")
 
-    if stats['total_original_tokens'] > 0:
-        savings_pct = (stats['token_savings'] / stats['total_original_tokens']) * 100
+    if stats["total_original_tokens"] > 0:
+        savings_pct = (stats["token_savings"] / stats["total_original_tokens"]) * 100
         print(f"  Savings Percentage: {savings_pct:.1f}%")
 
     print("=" * 80)
@@ -172,14 +171,14 @@ Examples:
 
   Delete a session:
     python tools/session_manager.py delete <session_id>
-        """
+        """,
     )
 
     parser.add_argument(
         "--db",
         type=str,
         default="data/memory.db",
-        help="Path to database file (default: data/memory.db)"
+        help="Path to database file (default: data/memory.db)",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
