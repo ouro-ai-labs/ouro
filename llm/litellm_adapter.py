@@ -175,6 +175,11 @@ class LiteLLMLLM:
         if isinstance(content, str):
             return content
 
+        # Handle Message objects (from previous LLM responses)
+        # This prevents nested Message objects from being stringified
+        if hasattr(content, "content"):
+            return self._extract_assistant_content(content.content)
+
         # Handle Anthropic content blocks
         if isinstance(content, list):
             texts = []
