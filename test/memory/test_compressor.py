@@ -251,7 +251,9 @@ class TestMessageSeparation:
 
     def test_separate_messages_basic(self, set_memory_config, mock_llm, simple_messages):
         """Test basic message separation - recent messages are preserved, others compressed."""
-        set_memory_config(MEMORY_SHORT_TERM_MIN_SIZE=0)  # Don't preserve recent messages for this test
+        set_memory_config(
+            MEMORY_SHORT_TERM_MIN_SIZE=0
+        )  # Don't preserve recent messages for this test
         compressor = WorkingMemoryCompressor(mock_llm)
 
         preserved, to_compress = compressor._separate_messages(simple_messages)

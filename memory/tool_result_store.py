@@ -23,12 +23,11 @@ class ToolResultStore:
             db_path: Path to SQLite database file. If None, uses in-memory database.
         """
         self.db_path = db_path or ":memory:"
-        self.conn = None
+        self.conn: sqlite3.Connection = sqlite3.connect(self.db_path, check_same_thread=False)
         self._init_db()
 
     def _init_db(self):
         """Initialize database schema."""
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
 
         self.conn.execute(

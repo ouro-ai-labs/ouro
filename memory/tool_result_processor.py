@@ -2,6 +2,7 @@
 
 import logging
 import re
+from typing import Dict, Union
 
 from memory.code_extractor import CodeExtractor
 
@@ -19,7 +20,7 @@ class ToolResultProcessor:
     """
 
     # Tool-specific processing strategies
-    TOOL_STRATEGIES = {
+    TOOL_STRATEGIES: Dict[str, Dict[str, Union[int, str]]] = {
         "read_file": {
             "max_tokens": 1000,
             "strategy": "extract_key_sections",
@@ -89,8 +90,8 @@ class ToolResultProcessor:
         strategy_config = self.TOOL_STRATEGIES.get(
             tool_name, {"max_tokens": 1000, "strategy": "smart_truncate"}
         )
-        max_tokens = strategy_config["max_tokens"]
-        strategy = strategy_config["strategy"]
+        max_tokens: int = int(strategy_config["max_tokens"])
+        strategy: str = str(strategy_config["strategy"])
 
         # Estimate tokens (rough: 3.5 chars per token)
         estimated_tokens = len(result) / 3.5

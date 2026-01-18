@@ -408,7 +408,8 @@ class TestEdgeCaseIntegration:
         # Summaries are now stored as messages in short_term, check context has summary messages
         context = manager.get_context_for_llm()
         summary_count = sum(
-            1 for msg in context
+            1
+            for msg in context
             if isinstance(msg.content, str) and msg.content.startswith("[Conversation Summary]")
         )
         assert summary_count >= 1  # At least one summary should exist

@@ -1,7 +1,7 @@
 """Code structure extraction using tree-sitter for multiple languages."""
 
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -167,8 +167,8 @@ class CodeExtractor:
 
     def __init__(self):
         """Initialize code extractor."""
-        self.parsers: Dict[str, any] = {}
-        self.languages: Dict[str, any] = {}
+        self.parsers: Dict[str, Any] = {}
+        self.languages: Dict[str, Any] = {}
 
     def detect_language(self, filename: str, content: str) -> Optional[str]:
         """Detect programming language from filename or content.
