@@ -189,6 +189,27 @@ class LiteLLMLLM:
 
         return str(content)
 
+    def _clean_message(self, message) -> None:
+        """Clean up unnecessary fields from message to reduce memory usage.
+
+        Removes:
+        - provider_specific_fields (contains thought_signature)
+        - __thought__ suffix from tool call IDs
+
+        These fields are added by Anthropic's extended thinking feature and
+        can be very large (2-3KB each), serving no purpose for agent operation.
+        """
+        if hasattr(message, "tool_calls") and message.tool_calls:
+            for tc in message.tool_calls:
+                # Remove provider_specific_fields if present
+                if hasattr(tc, "provider_specific_fields"):
+                    tc.provider_specific_fields = None
+
+                # Clean __thought__ suffix from tool call ID
+                # e.g., "call_abc123__thought__xxx..." -> "call_abc123"
+                if hasattr(tc, "id") and tc.id and "__thought__" in tc.id:
+                    tc.id = tc.id.split("__thought__")[0]
+
     def _convert_tools(self, tools: List[Dict[str, Any]]) -> List[Dict]:
         """Convert Anthropic tool format to OpenAI format."""
         openai_tools = []
@@ -209,6 +230,10 @@ class LiteLLMLLM:
         """Convert LiteLLM response to LLMResponse."""
         # Extract message
         message = response.choices[0].message
+
+        # Clean up provider_specific_fields (removes thought_signature, etc.)
+        # These fields are large and not useful for agent operation
+        self._clean_message(message)
 
         # Determine stop reason
         finish_reason = response.choices[0].finish_reason
