@@ -1,8 +1,5 @@
 """Tests for tool result processing and external storage."""
 
-import pytest
-
-from llm.base import LLMMessage
 from memory.tool_result_processor import ToolResultProcessor
 from memory.tool_result_store import ToolResultStore
 

@@ -2,7 +2,6 @@
 
 import logging
 import re
-from typing import Dict, Optional
 
 from memory.code_extractor import CodeExtractor
 
@@ -217,7 +216,7 @@ class ToolResultProcessor:
         return (
             f"[Key sections extracted - {omitted_lines} lines omitted]\n\n"
             + result
-            + f"\n\n[Use read_file with specific line ranges for full content]"
+            + "\n\n[Use read_file with specific line ranges for full content]"
         )
 
     def _preserve_matches(self, content: str, max_tokens: int) -> str:

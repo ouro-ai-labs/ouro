@@ -1,7 +1,7 @@
 """Code structure extraction using tree-sitter for multiple languages."""
 
 import logging
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
