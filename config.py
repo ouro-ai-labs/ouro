@@ -53,6 +53,11 @@ class Config:
     # If not set, LLM summarization is disabled and falls back to smart truncation
     TOOL_RESULT_SUMMARY_MODEL = os.getenv("TOOL_RESULT_SUMMARY_MODEL")
 
+    # Tools that should never have their results truncated (comma-separated)
+    TOOL_RESULT_BYPASS_TOOLS = os.getenv("TOOL_RESULT_BYPASS_TOOLS", "retrieve_tool_result").split(
+        ","
+    )
+
     # Logging Configuration
     LOG_DIR = os.getenv("LOG_DIR", "logs")
     LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG").upper()

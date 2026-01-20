@@ -5,37 +5,42 @@ from memory.tool_result_store import ToolResultStore
 
 
 class TestToolResultProcessor:
-    """Test intelligent tool result processing."""
+    """Test intelligent tool result processing.
+
+    Note: process_result() returns (processed_result, was_modified).
+    - was_modified=False means result was small enough, returned unchanged
+    - was_modified=True means result was truncated/processed, original should be stored
+    """
 
     def test_small_result_passthrough(self):
         """Small results should pass through unchanged."""
         processor = ToolResultProcessor()
         result = "Small result"
 
-        processed, should_store = processor.process_result("read_file", result)
+        processed, was_modified = processor.process_result("read_file", result)
 
         assert processed == result
-        assert should_store is False
+        assert was_modified is False  # Not modified
 
     def test_large_result_truncation(self):
-        """Large results should be truncated."""
+        """Large results should be truncated and marked as modified."""
         processor = ToolResultProcessor()
         result = "x" * 10000  # 10k chars
 
-        processed, should_store = processor.process_result("read_file", result)
+        processed, was_modified = processor.process_result("read_file", result)
 
         assert len(processed) < len(result)
         assert "[... " in processed or "[Key sections" in processed
-        assert should_store is False  # Not large enough for external storage
+        assert was_modified is True  # Was modified, original should be stored
 
-    def test_very_large_result_external_storage(self):
-        """Very large results should recommend external storage."""
+    def test_very_large_result_also_modified(self):
+        """Very large results should also be truncated and marked as modified."""
         processor = ToolResultProcessor()
         result = "x" * 50000  # 50k chars (~14k tokens)
 
-        processed, should_store = processor.process_result("read_file", result)
+        processed, was_modified = processor.process_result("read_file", result)
 
-        assert should_store is True
+        assert was_modified is True  # Was modified
 
     def test_extract_key_sections_strategy(self):
         """Test key section extraction for code files."""
@@ -440,3 +445,108 @@ class TestIntegration:
         # Should be able to retrieve full content
         retrieved = store.retrieve_result(result_id)
         assert retrieved == large_result
+
+
+class TestBypassTools:
+    """Test bypass tools whitelist functionality."""
+
+    def test_bypass_tool_not_truncated(self):
+        """Tools in bypass list should never be truncated."""
+        processor = ToolResultProcessor()
+        large_result = "x" * 100000  # Very large result
+
+        # retrieve_tool_result is in the bypass list
+        processed, was_modified = processor.process_result("retrieve_tool_result", large_result)
+
+        # Should return unchanged
+        assert processed == large_result
+        assert was_modified is False
+
+    def test_non_bypass_tool_truncated(self):
+        """Normal tools should be truncated."""
+        processor = ToolResultProcessor()
+        large_result = "x" * 100000
+
+        processed, was_modified = processor.process_result("read_file", large_result)
+
+        # Should be truncated
+        assert len(processed) < len(large_result)
+        assert was_modified is True
+
+
+class TestErrorPreservation:
+    """Test error-aware truncation strategy."""
+
+    def test_error_content_preserves_tail(self):
+        """Error messages should preserve more tail content."""
+        processor = ToolResultProcessor()
+
+        # Simulate output with error at the end
+        result = (
+            "Normal output line\n" * 500
+            + "Error: Something failed!\nTraceback:\n  File x.py\n  ..."
+        )
+
+        processed, was_modified = processor.process_result("execute_shell", result)
+
+        # Error message should be preserved (it's in the tail)
+        assert was_modified is True
+        assert "error detected, tail preserved" in processed.lower()
+        assert "Error: Something failed!" in processed or "Traceback" in processed
+
+    def test_non_error_content_uses_smart_truncate(self):
+        """Non-error content should use smart truncate (65% head, 30% tail)."""
+        processor = ToolResultProcessor()
+
+        # Normal output without errors
+        result = "START\n" + "normal line\n" * 500 + "END"
+
+        processed, was_modified = processor.process_result("execute_shell", result)
+
+        assert was_modified is True
+        assert "START" in processed
+        assert "END" in processed
+        # Should not mention error detection
+        assert "error detected" not in processed.lower()
+
+
+class TestToolStrategies:
+    """Test tool-specific strategy functionality."""
+
+    def test_default_budget_for_unknown_tool(self):
+        """Unknown tools should use DEFAULT_MAX_TOKENS (1000)."""
+        processor = ToolResultProcessor()
+
+        # Result larger than default 1000 tokens (~3500 chars)
+        result = "x" * 5000  # ~1428 tokens, exceeds 1000 default
+
+        processed, was_modified = processor.process_result("unknown_tool", result)
+
+        # Should be truncated with default budget
+        assert was_modified is True
+        assert len(processed) < len(result)
+
+    def test_subtask_budget(self):
+        """Subtask results should use _subtask_result config (800 tokens)."""
+        processor = ToolResultProcessor()
+
+        # Result that exceeds 800 token budget (~2800 chars)
+        result = "x" * 3500  # ~1000 tokens, exceeds 800
+
+        processed, was_modified = processor.process_result("_subtask_result", result)
+
+        assert was_modified is True
+
+    def test_tool_specific_budget(self):
+        """Tools in TOOL_STRATEGIES should use their configured budget."""
+        processor = ToolResultProcessor()
+
+        # web_fetch has 1500 token budget (~5250 chars)
+        # Result that fits in web_fetch budget but not in default
+        result = "x" * 4000  # ~1143 tokens, fits in 1500 but exceeds 1000
+
+        processed, was_modified = processor.process_result("web_fetch", result)
+
+        # Should NOT be truncated (fits in 1500 token budget)
+        assert was_modified is False
+        assert processed == result

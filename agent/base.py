@@ -171,6 +171,12 @@ class BaseAgent(ABC):
                     final_answer = self._extract_text(response)
                     return final_answer if final_answer else "No response generated."
 
+                # Print thinking/reasoning if available
+                if verbose and hasattr(self.llm, "extract_thinking"):
+                    thinking = self.llm.extract_thinking(response)
+                    if thinking:
+                        terminal_ui.print_thinking(thinking)
+
                 # Execute each tool call
                 tool_results = []
                 for tc in tool_calls:
@@ -179,7 +185,8 @@ class BaseAgent(ABC):
 
                     result = self.tool_executor.execute_tool_call(tc.name, tc.arguments)
 
-                    # Process tool result with intelligent summarization if memory is enabled
+                    # Process tool result with intelligent summarization
+                    # All truncation goes through ToolResultProcessor for consistency
                     if use_memory and self.memory:
                         result = self.memory.process_tool_result(
                             tool_name=tc.name,
@@ -188,15 +195,11 @@ class BaseAgent(ABC):
                             context=task,  # Pass task as context for intelligent summarization
                         )
                     else:
-                        # Fallback: simple truncation for non-memory mode
-                        MAX_TOOL_RESULT_LENGTH = 8000  # characters
-                        if len(result) > MAX_TOOL_RESULT_LENGTH:
-                            truncated_length = MAX_TOOL_RESULT_LENGTH
-                            result = (
-                                result[:truncated_length]
-                                + f"\n\n[... Output truncated. Showing first {truncated_length} characters of {len(result)} total. "
-                                f"Use grep_content or glob_files for more targeted searches instead of reading large files.]"
-                            )
+                        # Non-memory mode: still use ToolResultProcessor for consistent truncation
+                        result = self._process_result_standalone(
+                            tool_name=tc.name,
+                            result=result,
+                        )
 
                     if verbose:
                         # Check if result was truncated/processed
@@ -216,6 +219,35 @@ class BaseAgent(ABC):
                     messages.append(result_message)
 
         return "Max iterations reached without completion."
+
+    def _process_result_standalone(self, tool_name: str, result: str) -> str:
+        """Process tool result without memory storage (for non-memory mode).
+
+        Uses ToolResultProcessor for consistent truncation strategies,
+        but does not store results externally.
+
+        Args:
+            tool_name: Name of the tool
+            result: Raw tool result
+
+        Returns:
+            Processed result
+        """
+        from memory.tool_result_processor import ToolResultProcessor
+
+        processor = ToolResultProcessor()
+        processed, was_modified = processor.process_result(
+            tool_name=tool_name,
+            result=result,
+        )
+
+        if was_modified:
+            # In non-memory mode, we can't store externally, so add a note
+            processed += (
+                "\n\n[Note: Result was truncated. Re-run with more specific query if needed.]"
+            )
+
+        return processed
 
     def delegate_subtask(
         self, subtask_description: str, max_iterations: int = 5, include_context: bool = False
@@ -302,21 +334,18 @@ Execute this subtask NOW and provide concrete results."""
                 verbose=True,  # Still show progress
             )
 
-            # Compress result for main agent
-            max_result_length = 2000  # characters
-            if len(result) > max_result_length:
-                compressed_result = (
-                    result[:max_result_length]
-                    + f"\n\n[Result truncated. Original length: {len(result)} chars]"
-                )
-            else:
-                compressed_result = result
-
-            logger.info(
-                f"✅ Subtask completed. Result length: {len(result)} → {len(compressed_result)} chars"
+            # Process subtask result using unified processor
+            original_length = len(result)
+            result = self._process_result_standalone(
+                tool_name="_subtask_result",
+                result=result,
             )
 
-            return f"Subtask execution result:\n{compressed_result}"
+            logger.info(
+                f"✅ Subtask completed. Result length: {original_length} → {len(result)} chars"
+            )
+
+            return f"Subtask execution result:\n{result}"
 
         except Exception as e:
             error_msg = f"Subtask failed with error: {str(e)}"

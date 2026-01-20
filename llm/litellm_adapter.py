@@ -189,6 +189,27 @@ class LiteLLMLLM:
 
         return str(content)
 
+    def _clean_message(self, message) -> None:
+        """Clean up unnecessary fields from message to reduce memory usage.
+
+        Removes:
+        - provider_specific_fields (contains thought_signature)
+        - __thought__ suffix from tool call IDs
+
+        These fields are added by Anthropic's extended thinking feature and
+        can be very large (2-3KB each), serving no purpose for agent operation.
+        """
+        if hasattr(message, "tool_calls") and message.tool_calls:
+            for tc in message.tool_calls:
+                # Remove provider_specific_fields if present
+                if hasattr(tc, "provider_specific_fields"):
+                    tc.provider_specific_fields = None
+
+                # Clean __thought__ suffix from tool call ID
+                # e.g., "call_abc123__thought__xxx..." -> "call_abc123"
+                if hasattr(tc, "id") and tc.id and "__thought__" in tc.id:
+                    tc.id = tc.id.split("__thought__")[0]
+
     def _convert_tools(self, tools: List[Dict[str, Any]]) -> List[Dict]:
         """Convert Anthropic tool format to OpenAI format."""
         openai_tools = []
@@ -209,6 +230,10 @@ class LiteLLMLLM:
         """Convert LiteLLM response to LLMResponse."""
         # Extract message
         message = response.choices[0].message
+
+        # Clean up provider_specific_fields (removes thought_signature, etc.)
+        # These fields are large and not useful for agent operation
+        self._clean_message(message)
 
         # Determine stop reason
         finish_reason = response.choices[0].finish_reason
@@ -252,6 +277,47 @@ class LiteLLMLLM:
             logger.debug(f"No tool calls found in the response. {message}")
 
         return tool_calls
+
+    def extract_thinking(self, response: LLMResponse) -> Optional[str]:
+        """Extract thinking/reasoning content from LLM response.
+
+        Anthropic's extended thinking feature returns thinking content in various ways:
+        - message.thinking_blocks (list of thinking blocks)
+        - message.reasoning_content (OpenAI o1 style)
+        - content blocks with type="thinking"
+
+        Args:
+            response: LLM response
+
+        Returns:
+            Thinking content string or None if not present
+        """
+        message = response.message
+        thinking_parts = []
+
+        # Check for thinking_blocks (Anthropic extended thinking via LiteLLM)
+        if hasattr(message, "thinking_blocks") and message.thinking_blocks:
+            for block in message.thinking_blocks:
+                if hasattr(block, "thinking"):
+                    thinking_parts.append(block.thinking)
+                elif isinstance(block, dict) and "thinking" in block:
+                    thinking_parts.append(block["thinking"])
+                elif isinstance(block, str):
+                    thinking_parts.append(block)
+
+        # Check for reasoning_content (OpenAI o1 style)
+        if hasattr(message, "reasoning_content") and message.reasoning_content:
+            thinking_parts.append(message.reasoning_content)
+
+        # Check content blocks for thinking type
+        if hasattr(message, "content") and isinstance(message.content, list):
+            for block in message.content:
+                if isinstance(block, dict) and block.get("type") == "thinking":
+                    thinking_parts.append(block.get("thinking", ""))
+                elif hasattr(block, "type") and block.type == "thinking":
+                    thinking_parts.append(getattr(block, "thinking", ""))
+
+        return "\n\n".join(thinking_parts) if thinking_parts else None
 
     def format_tool_results(self, results: List[ToolResult]) -> LLMMessage:
         """Format tool results for LiteLLM."""

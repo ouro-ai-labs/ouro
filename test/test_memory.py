@@ -87,7 +87,6 @@ def main():
     print(f"Compression cost: {stats['compression_cost']} tokens")
     print(f"Net savings: {stats['net_savings']} tokens")
     print(f"Short-term messages: {stats['short_term_count']}")
-    print(f"Summaries: {stats['summary_count']}")
 
     # Show context structure
     print("\n4. Context Structure:")

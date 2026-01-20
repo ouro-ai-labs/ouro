@@ -396,7 +396,10 @@ class MemoryManager:
     def process_tool_result(
         self, tool_name: str, tool_call_id: str, result: str, context: str = ""
     ) -> str:
-        """Process a tool result with intelligent summarization and optional external storage.
+        """Process a tool result with intelligent summarization and automatic external storage.
+
+        Key behavior: If the result is modified (truncated/processed) in any way,
+        the original is automatically stored externally so it can be retrieved later.
 
         Args:
             tool_name: Name of the tool that produced the result
@@ -405,32 +408,35 @@ class MemoryManager:
             context: Optional context about the task
 
         Returns:
-            Processed result (may be summarized or reference to external storage)
+            Processed result (may include reference to stored original if modified)
         """
-        # Process the result
-        processed_result, should_store_externally = self.tool_result_processor.process_result(
+        # Process the result through unified processor
+        processed_result, was_modified = self.tool_result_processor.process_result(
             tool_name=tool_name, result=result, context=context
         )
 
-        # Store externally if processor recommends it (threshold already checked in processor)
-        if should_store_externally:
+        # Core logic: If result was modified, store the original for later retrieval
+        if was_modified:
             result_tokens = self.tool_result_processor.estimate_tokens(result)
             logger.info(
-                f"Storing large tool result externally: {tool_name} "
-                f"({result_tokens} tokens > {Config.TOOL_RESULT_STORAGE_THRESHOLD})"
+                f"Tool result was modified, storing original: {tool_name} ({result_tokens} tokens)"
             )
 
-            # Store full result
+            # Store the full original result
             result_id = self.tool_result_store.store_result(
                 tool_call_id=tool_call_id,
                 tool_name=tool_name,
-                content=result,
-                summary=processed_result,
+                content=result,  # Store original, not processed
+                summary=processed_result,  # Processed version as summary
                 token_count=result_tokens,
             )
 
-            # Return reference instead of full content
-            return self.tool_result_store.format_reference(result_id, include_summary=True)
+            # Append retrieval hint to processed result
+            retrieval_hint = (
+                f"\n\n[Original result stored as #{result_id} - "
+                f"use retrieve_tool_result tool to access full content]"
+            )
+            return processed_result + retrieval_hint
 
         return processed_result
 

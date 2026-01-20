@@ -1,25 +1,37 @@
-"""Tool result processing for intelligent summarization and truncation."""
+"""Tool result processing for intelligent summarization and truncation.
+
+This module provides unified tool result processing with:
+- Intelligent truncation strategies based on tool type
+- Error-aware processing (preserves error messages)
+- Bypass whitelist for tools that should never be truncated
+- Automatic tracking of modifications for external storage
+"""
 
 import logging
 import re
-from typing import Dict, Union
+from typing import Dict, Set, Union
 
+from config import Config
 from memory.code_extractor import CodeExtractor
 
 logger = logging.getLogger(__name__)
 
 
 class ToolResultProcessor:
-    """Intelligently process tool results to reduce memory usage.
+    """Unified tool result processor.
+
+    All tool result truncation/processing should go through this class.
 
     Provides different strategies for different tool types:
     - extract_key_sections: For code files, extract imports, definitions, key logic
     - preserve_matches: For search results, keep all matches with minimal context
+    - preserve_errors: For error outputs, preserve tail where errors usually appear
     - summarize_output: For complex outputs, use LLM to generate summary
     - smart_truncate: For general content, preserve head and tail
     """
 
     # Tool-specific processing strategies
+    # If a tool is not listed here, DEFAULT_MAX_TOKENS will be used
     TOOL_STRATEGIES: Dict[str, Dict[str, Union[int, str]]] = {
         "read_file": {
             "max_tokens": 1000,
@@ -45,7 +57,20 @@ class ToolResultProcessor:
             "max_tokens": 600,
             "strategy": "smart_truncate",
         },
+        # Internal: subtask result processing
+        "_subtask_result": {
+            "max_tokens": 800,
+            "strategy": "smart_truncate",
+        },
     }
+
+    # Default max tokens for tools not in TOOL_STRATEGIES
+    DEFAULT_MAX_TOKENS = 1000
+
+    @classmethod
+    def get_bypass_tools(cls) -> Set[str]:
+        """Get tools that should never be truncated (from Config)."""
+        return set(Config.TOOL_RESULT_BYPASS_TOOLS)
 
     # Default threshold for external storage (tokens)
     DEFAULT_STORAGE_THRESHOLD = 10000
@@ -71,54 +96,152 @@ class ToolResultProcessor:
         tool_name: str,
         result: str,
         context: str = "",
-        force_external: bool = False,
         filename: str = "",
     ) -> tuple[str, bool]:
         """Process tool result with appropriate strategy.
+
+        This is the unified entry point for all tool result processing.
 
         Args:
             tool_name: Name of the tool that produced the result
             result: Raw tool result string
             context: Optional context about the task (for intelligent summarization)
-            force_external: If True, always recommend external storage
             filename: Optional filename for language detection (used by extract_key_sections)
 
         Returns:
-            Tuple of (processed_result, should_store_externally)
+            Tuple of (processed_result, was_modified)
+            - was_modified: True if result was truncated/processed, indicating original should be stored
         """
-        # Get strategy for this tool
-        strategy_config = self.TOOL_STRATEGIES.get(
-            tool_name, {"max_tokens": 1000, "strategy": "smart_truncate"}
-        )
-        max_tokens: int = int(strategy_config["max_tokens"])
-        strategy: str = str(strategy_config["strategy"])
+        # Bypass tools should never be truncated
+        bypass_tools = self.get_bypass_tools()
+        if tool_name in bypass_tools:
+            logger.debug(f"Tool {tool_name} is in bypass list, returning as-is")
+            return result, False
+
+        # Get max tokens from tool config or use default
+        tool_config = self.TOOL_STRATEGIES.get(tool_name, {})
+        max_tokens = int(tool_config.get("max_tokens", self.DEFAULT_MAX_TOKENS))
 
         # Estimate tokens (rough: 3.5 chars per token)
         estimated_tokens = len(result) / 3.5
 
-        # If result is small enough, return as-is
+        # If result is small enough, return as-is (was_modified=False)
         if estimated_tokens <= max_tokens:
             return result, False
 
-        # If result is extremely large, recommend external storage
-        should_store_externally = force_external or estimated_tokens > self.storage_threshold
+        # Result needs processing - was_modified will be True
+        strategy = self._get_strategy(tool_name)
 
-        # Apply processing strategy
-        if strategy == "extract_key_sections":
+        # Check for error content - use error-preserving strategy
+        if self._contains_error(result):
+            processed = self._preserve_errors(result, max_tokens)
+            strategy_used = "preserve_errors"
+        elif strategy == "extract_key_sections":
             processed = self._extract_key_sections(result, max_tokens, filename)
+            strategy_used = strategy
         elif strategy == "preserve_matches":
             processed = self._preserve_matches(result, max_tokens)
+            strategy_used = strategy
         elif strategy == "summarize_output" and self.summary_model:
             processed = self._summarize_with_llm(result, max_tokens, context)
+            strategy_used = strategy
         else:
             processed = self._smart_truncate(result, max_tokens)
+            strategy_used = "smart_truncate"
 
         logger.info(
-            f"Processed {tool_name} result: {int(estimated_tokens)} -> "
-            f"{int(len(processed) / 3.5)} tokens (strategy: {strategy})"
+            f"Processed {tool_name}: {int(estimated_tokens)} -> "
+            f"{int(len(processed) / 3.5)} tokens (strategy: {strategy_used}, was_modified=True)"
         )
 
-        return processed, should_store_externally
+        return processed, True
+
+    def _get_strategy(self, tool_name: str) -> str:
+        """Get processing strategy for tool.
+
+        Args:
+            tool_name: Name of the tool
+
+        Returns:
+            Strategy name
+        """
+        tool_config = self.TOOL_STRATEGIES.get(tool_name, {})
+        return str(tool_config.get("strategy", "smart_truncate"))
+
+    def _contains_error(self, content: str) -> bool:
+        """Check if content contains error indicators.
+
+        Args:
+            content: Content to check
+
+        Returns:
+            True if content appears to contain errors
+        """
+        error_indicators = [
+            "error:",
+            "exception:",
+            "traceback",
+            "failed:",
+            "Error:",
+            "Exception:",
+            "FAILED",
+            "panic:",
+            "fatal:",
+            "Fatal:",
+            "FATAL",
+            "Errno",
+            "TypeError:",
+            "ValueError:",
+            "KeyError:",
+            "AttributeError:",
+            "ImportError:",
+            "ModuleNotFoundError:",
+            "FileNotFoundError:",
+            "PermissionError:",
+            "ConnectionError:",
+            "TimeoutError:",
+        ]
+        content_lower = content.lower()
+        return any(ind.lower() in content_lower for ind in error_indicators)
+
+    def _preserve_errors(self, content: str, max_tokens: int) -> str:
+        """Preserve errors strategy - keeps more tail content where errors usually appear.
+
+        Args:
+            content: Content to process
+            max_tokens: Token budget
+
+        Returns:
+            Processed content with errors preserved
+        """
+        max_chars = int(max_tokens * 3.5)
+
+        if len(content) <= max_chars:
+            return content
+
+        # Error messages are usually at the tail, so preserve more tail
+        head_chars = int(max_chars * 0.30)  # 30% head
+        tail_chars = int(max_chars * 0.60)  # 60% tail (errors)
+
+        head_part = content[:head_chars]
+        tail_part = content[-tail_chars:]
+
+        # Try to break at line boundaries
+        last_newline = head_part.rfind("\n")
+        if last_newline > head_chars * 0.7:
+            head_part = head_part[:last_newline]
+
+        first_newline = tail_part.find("\n")
+        if 0 < first_newline < tail_chars * 0.2:
+            tail_part = tail_part[first_newline + 1 :]
+
+        omitted_chars = len(content) - len(head_part) - len(tail_part)
+
+        return (
+            head_part
+            + f"\n\n[... {omitted_chars} characters omitted (error detected, tail preserved) ...]\n\n"
+            + tail_part
+        )
 
     def _extract_key_sections(self, content: str, max_tokens: int, filename: str = "") -> str:
         """Extract key sections from code files using CodeExtractor.
@@ -303,17 +426,17 @@ Provide a concise summary (target: {max_tokens} tokens) that captures the essent
     def _smart_truncate(self, content: str, max_tokens: int) -> str:
         """Smart truncation preserving head and tail.
 
-        Keeps first 60% and last 20% of allowed content.
-        This preserves context from both beginning and end.
+        Keeps first 65% and last 30% of allowed content (was 60%/20%).
+        This preserves context from both beginning and end, utilizing full budget.
         """
         max_chars = int(max_tokens * 3.5)
 
         if len(content) <= max_chars:
             return content
 
-        # Calculate split points
-        head_chars = int(max_chars * 0.6)
-        tail_chars = int(max_chars * 0.2)
+        # Calculate split points - use 65% + 30% = 95% of budget
+        head_chars = int(max_chars * 0.65)
+        tail_chars = int(max_chars * 0.30)
 
         # Try to break at line boundaries
         head_part = content[:head_chars]
@@ -331,12 +454,7 @@ Provide a concise summary (target: {max_tokens} tokens) that captures the essent
 
         omitted_chars = len(content) - len(head_part) - len(tail_part)
 
-        return (
-            head_part
-            + f"\n\n[... {omitted_chars} characters omitted ...]\n\n"
-            + tail_part
-            + "\n\n[Use more specific queries to see omitted content]"
-        )
+        return head_part + f"\n\n[... {omitted_chars} characters omitted ...]\n\n" + tail_part
 
     def estimate_tokens(self, text: str) -> int:
         """Estimate token count for text.
