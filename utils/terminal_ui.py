@@ -60,6 +60,35 @@ def print_iteration(iteration: int, total: Optional[int] = None) -> None:
     console.rule(text, style="yellow")
 
 
+def print_thinking(thinking: str, max_length: int = 500) -> None:
+    """Print AI thinking/reasoning content.
+
+    Args:
+        thinking: Thinking content string
+        max_length: Maximum length to display (default: 500)
+    """
+    if not thinking:
+        return
+
+    # Truncate if too long
+    if len(thinking) > max_length:
+        display_text = (
+            thinking[:max_length] + f"... [dim]({len(thinking) - max_length} more chars)[/dim]"
+        )
+    else:
+        display_text = thinking
+
+    console.print(
+        Panel(
+            display_text,
+            title="[bold blue]💭 Thinking[/bold blue]",
+            border_style="blue",
+            box=box.ROUNDED,
+            padding=(0, 1),
+        )
+    )
+
+
 def print_tool_call(tool_name: str, arguments: Dict[str, Any]) -> None:
     """Print tool call information.
 

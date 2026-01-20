@@ -278,6 +278,47 @@ class LiteLLMLLM:
 
         return tool_calls
 
+    def extract_thinking(self, response: LLMResponse) -> Optional[str]:
+        """Extract thinking/reasoning content from LLM response.
+
+        Anthropic's extended thinking feature returns thinking content in various ways:
+        - message.thinking_blocks (list of thinking blocks)
+        - message.reasoning_content (OpenAI o1 style)
+        - content blocks with type="thinking"
+
+        Args:
+            response: LLM response
+
+        Returns:
+            Thinking content string or None if not present
+        """
+        message = response.message
+        thinking_parts = []
+
+        # Check for thinking_blocks (Anthropic extended thinking via LiteLLM)
+        if hasattr(message, "thinking_blocks") and message.thinking_blocks:
+            for block in message.thinking_blocks:
+                if hasattr(block, "thinking"):
+                    thinking_parts.append(block.thinking)
+                elif isinstance(block, dict) and "thinking" in block:
+                    thinking_parts.append(block["thinking"])
+                elif isinstance(block, str):
+                    thinking_parts.append(block)
+
+        # Check for reasoning_content (OpenAI o1 style)
+        if hasattr(message, "reasoning_content") and message.reasoning_content:
+            thinking_parts.append(message.reasoning_content)
+
+        # Check content blocks for thinking type
+        if hasattr(message, "content") and isinstance(message.content, list):
+            for block in message.content:
+                if isinstance(block, dict) and block.get("type") == "thinking":
+                    thinking_parts.append(block.get("thinking", ""))
+                elif hasattr(block, "type") and block.type == "thinking":
+                    thinking_parts.append(getattr(block, "thinking", ""))
+
+        return "\n\n".join(thinking_parts) if thinking_parts else None
+
     def format_tool_results(self, results: List[ToolResult]) -> LLMMessage:
         """Format tool results for LiteLLM."""
         # LiteLLM expects tool results as user messages

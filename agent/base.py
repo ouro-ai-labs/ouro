@@ -171,6 +171,12 @@ class BaseAgent(ABC):
                     final_answer = self._extract_text(response)
                     return final_answer if final_answer else "No response generated."
 
+                # Print thinking/reasoning if available
+                if verbose and hasattr(self.llm, "extract_thinking"):
+                    thinking = self.llm.extract_thinking(response)
+                    if thinking:
+                        terminal_ui.print_thinking(thinking)
+
                 # Execute each tool call
                 tool_results = []
                 for tc in tool_calls:
