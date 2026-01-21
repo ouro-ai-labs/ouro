@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import os
 import socket
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import urljoin, urlparse
 
-import html2text
 import requests
+import trafilatura
 from lxml import html as lxml_html
-from readability import Document
 from requests.utils import get_encoding_from_headers
 
 from .base import BaseTool
@@ -54,7 +54,8 @@ class WebFetchTool(BaseTool):
     def description(self) -> str:
         return (
             "Fetch content from a URL and convert to markdown, text, or HTML. "
-            "Returns JSON with ok/output/metadata or error_code/message."
+            "Returns JSON with ok/output/metadata or error_code/message. "
+            "Use save_to parameter to save content to a local file for later grep/search."
         )
 
     @property
@@ -75,6 +76,14 @@ class WebFetchTool(BaseTool):
                 "description": "Optional timeout in seconds (max 120)",
                 "default": DEFAULT_TIMEOUT_SECONDS,
             },
+            "save_to": {
+                "type": "string",
+                "description": (
+                    "Optional file path to save the fetched content. "
+                    "Parent directories will be created if needed. "
+                    "Useful for saving content to search later with grep_content."
+                ),
+            },
         }
 
     def execute(self, **kwargs) -> str:
@@ -82,12 +91,15 @@ class WebFetchTool(BaseTool):
         url = kwargs.get("url")
         format_value = kwargs.get("format", "markdown")
         timeout = kwargs.get("timeout")
+        save_to = kwargs.get("save_to")
         start = time.time()
 
         try:
             if not url:
                 raise WebFetchError("invalid_url", "URL is required", {"requested_url": url})
-            result = self._execute(url=url, format=format_value, timeout=timeout, start_time=start)
+            result = self._execute(
+                url=url, format=format_value, timeout=timeout, start_time=start, save_to=save_to
+            )
             return json.dumps(result, ensure_ascii=False)
         except WebFetchError as exc:
             error_result = {
@@ -107,7 +119,12 @@ class WebFetchTool(BaseTool):
             return json.dumps(error_result, ensure_ascii=False)
 
     def _execute(
-        self, url: str, format: str, timeout: Optional[float], start_time: float
+        self,
+        url: str,
+        format: str,
+        timeout: Optional[float],
+        start_time: float,
+        save_to: Optional[str] = None,
     ) -> Dict[str, Any]:
         if format not in {"markdown", "text", "html"}:
             raise WebFetchError(
@@ -140,6 +157,11 @@ class WebFetchTool(BaseTool):
 
         output, title = self._convert_content(content, content_type, format, url)
 
+        # Save content to file if save_to is specified
+        saved_path = None
+        if save_to:
+            saved_path = self._save_content(output, save_to)
+
         metadata = {
             "requested_url": url,
             "final_url": response.url,
@@ -153,12 +175,47 @@ class WebFetchTool(BaseTool):
             "duration_ms": int((time.time() - start_time) * 1000),
         }
 
+        if saved_path:
+            metadata["saved_to"] = saved_path
+            # When saved to file, don't include full content in result to save tokens
+            # User can access content via read_file or grep_content
+            return {
+                "ok": True,
+                "title": title,
+                "output": f"Content saved to: {saved_path}\nUse read_file or grep_content to access the content.",
+                "metadata": metadata,
+            }
+
         return {
             "ok": True,
             "title": title,
             "output": output,
             "metadata": metadata,
         }
+
+    def _save_content(self, content: str, save_to: str) -> str:
+        """Save content to a file, creating parent directories if needed.
+
+        Args:
+            content: Content to save
+            save_to: File path to save to
+
+        Returns:
+            Absolute path where content was saved
+        """
+        # Get absolute path
+        abs_path = os.path.abspath(save_to)
+
+        # Create parent directories if needed
+        parent_dir = os.path.dirname(abs_path)
+        if parent_dir and not os.path.exists(parent_dir):
+            os.makedirs(parent_dir, exist_ok=True)
+
+        # Write content to file
+        with open(abs_path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+        return abs_path
 
     def _validate_url(self, url: str):
         if not url.startswith(("http://", "https://")):
@@ -381,31 +438,31 @@ class WebFetchTool(BaseTool):
         )
 
     def _render_html(self, html: str, format: str, url: str) -> Tuple[str, str]:
+        # Extract title from HTML
+        title = url
         try:
-            document = Document(html)
-            main_html = document.summary(html_partial=True)
-            title = document.short_title() or url
+            tree = lxml_html.fromstring(html)
+            title_elem = tree.find(".//title")
+            if title_elem is not None and title_elem.text:
+                title = title_elem.text.strip()
         except Exception:
-            main_html = html
-            title = url
+            pass
 
         if format == "markdown":
-            converter = html2text.HTML2Text()
-            converter.body_width = 0
-            converter.ignore_images = True
-            converter.ignore_emphasis = False
-            converter.ignore_links = False
-            converter.unicode_snob = True
-            if hasattr(converter, "code_style"):
-                setattr(converter, "code_style", "fenced")
-            return converter.handle(main_html).strip(), title
+            # Use trafilatura for markdown extraction
+            result = trafilatura.extract(
+                html,
+                include_links=True,
+                include_formatting=True,
+                include_tables=True,
+                output_format="markdown",
+            )
+            if result:
+                return result.strip(), title
+            # Fallback: extract as text if markdown fails
+            result = trafilatura.extract(html)
+            return result.strip() if result else "", title
 
-        try:
-            tree = lxml_html.fromstring(main_html)
-        except Exception:
-            return " ".join(main_html.split()), title
-
-        for node in tree.xpath(HTML_STRIP_XPATH):
-            node.drop_tree()
-        text = tree.text_content()
-        return " ".join(text.split()), title
+        # For text format, use trafilatura without formatting
+        result = trafilatura.extract(html, include_links=False, include_formatting=False)
+        return result.strip() if result else "", title

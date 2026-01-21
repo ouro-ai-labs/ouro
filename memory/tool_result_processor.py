@@ -1,15 +1,15 @@
-"""Tool result processing for intelligent summarization and truncation.
+"""Tool result processing with intelligent truncation and recovery suggestions.
 
 This module provides unified tool result processing with:
-- Intelligent truncation strategies based on tool type
-- Error-aware processing (preserves error messages)
 - Bypass whitelist for tools that should never be truncated
-- Automatic tracking of modifications for external storage
+- Intelligent recovery suggestions for truncated content
 """
 
+import json
 import logging
 import re
-from typing import Dict, Set, Union
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from config import Config
 from memory.code_extractor import CodeExtractor
@@ -17,444 +17,132 @@ from memory.code_extractor import CodeExtractor
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class RecoveryMetadata:
+    """Metadata extracted from tool results for recovery suggestions.
+
+    Contains tool-specific information to help generate actionable
+    recovery commands when content is truncated.
+    """
+
+    tool_name: str
+    char_count: int
+    line_count: int = 0
+
+    # Tool-specific fields
+    filename: Optional[str] = None  # read_file
+    content_type: Optional[str] = None  # read_file, web_fetch
+    structure: List[Tuple[str, str, int]] = field(
+        default_factory=list
+    )  # (type, name, line) for code
+
+    # grep_content specific
+    match_count: int = 0
+    file_distribution: Dict[str, int] = field(default_factory=dict)  # file -> match count
+    pattern: Optional[str] = None
+
+    # execute_shell specific
+    command: Optional[str] = None
+
+    # web_search specific
+    query: Optional[str] = None
+    result_count: int = 0
+
+    # web_fetch specific
+    url: Optional[str] = None
+    title: Optional[str] = None
+
+    # glob_files specific
+    file_count: int = 0
+    common_prefixes: List[str] = field(default_factory=list)
+
+
 class ToolResultProcessor:
     """Unified tool result processor.
 
     All tool result truncation/processing should go through this class.
 
-    Provides different strategies for different tool types:
-    - extract_key_sections: For code files, extract imports, definitions, key logic
-    - preserve_matches: For search results, keep all matches with minimal context
-    - preserve_errors: For error outputs, preserve tail where errors usually appear
-    - summarize_output: For complex outputs, use LLM to generate summary
-    - smart_truncate: For general content, preserve head and tail
+    When content exceeds thresholds, it is truncated and recovery suggestions
+    are added to guide users to access the full content via existing tools.
     """
 
-    # Tool-specific processing strategies
-    # If a tool is not listed here, DEFAULT_MAX_TOKENS will be used
-    TOOL_STRATEGIES: Dict[str, Dict[str, Union[int, str]]] = {
-        "read_file": {
-            "max_tokens": 1000,
-            "strategy": "extract_key_sections",
-        },
-        "grep_content": {
-            "max_tokens": 800,
-            "strategy": "preserve_matches",
-        },
-        "execute_shell": {
-            "max_tokens": 500,
-            "strategy": "smart_truncate",
-        },
-        "web_search": {
-            "max_tokens": 1200,
-            "strategy": "smart_truncate",
-        },
-        "web_fetch": {
-            "max_tokens": 1500,
-            "strategy": "summarize_output",
-        },
-        "glob_files": {
-            "max_tokens": 600,
-            "strategy": "smart_truncate",
-        },
-        # Internal: subtask result processing
-        "_subtask_result": {
-            "max_tokens": 800,
-            "strategy": "smart_truncate",
-        },
-    }
+    # Maximum characters to keep when truncating (recovery section is added after this)
+    MAX_TRUNCATED_CHARS = 2000
 
-    # Default max tokens for tools not in TOOL_STRATEGIES
-    DEFAULT_MAX_TOKENS = 1000
+    # Thresholds for truncation and recovery (must be > MAX_TRUNCATED_CHARS)
+    RECOVERY_THRESHOLDS: Dict[str, int] = {
+        "read_file": 3500,  # chars
+        "grep_content": 3500,  # chars
+        "execute_shell": 3500,  # chars
+        "web_fetch": 5000,  # chars
+        "web_search": 4000,  # chars
+        "glob_files": 3500,  # chars
+    }
+    DEFAULT_RECOVERY_THRESHOLD = 3500  # chars
+
+    # Tools that should never be truncated by default
+    DEFAULT_BYPASS_TOOLS = {"manage_todo_list"}
 
     @classmethod
     def get_bypass_tools(cls) -> Set[str]:
-        """Get tools that should never be truncated (from Config)."""
-        return set(Config.TOOL_RESULT_BYPASS_TOOLS)
+        """Get tools that should never be truncated (default + Config)."""
+        return cls.DEFAULT_BYPASS_TOOLS | set(Config.TOOL_RESULT_BYPASS_TOOLS)
 
-    # Default threshold for external storage (tokens)
-    DEFAULT_STORAGE_THRESHOLD = 10000
-
-    def __init__(
-        self,
-        storage_threshold: int = DEFAULT_STORAGE_THRESHOLD,
-        summary_model: str = None,
-    ):
-        """Initialize processor.
-
-        Args:
-            storage_threshold: Token threshold for recommending external storage
-            summary_model: Optional model name for LLM summarization (e.g., "openai/gpt-4o-mini")
-                          If None, LLM summarization is disabled and falls back to smart_truncate.
-        """
-        self.storage_threshold = storage_threshold
-        self.summary_model = summary_model
+    def __init__(self):
+        """Initialize processor."""
         self.code_extractor = CodeExtractor()
 
     def process_result(
         self,
         tool_name: str,
         result: str,
-        context: str = "",
-        filename: str = "",
+        tool_context: Optional[Dict[str, Any]] = None,
     ) -> tuple[str, bool]:
-        """Process tool result with appropriate strategy.
-
-        This is the unified entry point for all tool result processing.
+        """Process tool result with truncation and recovery suggestions.
 
         Args:
             tool_name: Name of the tool that produced the result
             result: Raw tool result string
-            context: Optional context about the task (for intelligent summarization)
-            filename: Optional filename for language detection (used by extract_key_sections)
+            tool_context: Optional dict with tool-specific context for recovery suggestions
+                         Keys depend on tool: filename, pattern, command, query, url, etc.
 
         Returns:
             Tuple of (processed_result, was_modified)
-            - was_modified: True if result was truncated/processed, indicating original should be stored
+            - was_modified: True if result was truncated
         """
+        if tool_context is None:
+            tool_context = {}
+
         # Bypass tools should never be truncated
         bypass_tools = self.get_bypass_tools()
         if tool_name in bypass_tools:
             logger.debug(f"Tool {tool_name} is in bypass list, returning as-is")
             return result, False
 
-        # Get max tokens from tool config or use default
-        tool_config = self.TOOL_STRATEGIES.get(tool_name, {})
-        max_tokens = int(tool_config.get("max_tokens", self.DEFAULT_MAX_TOKENS))
-
-        # Estimate tokens (rough: 3.5 chars per token)
-        estimated_tokens = len(result) / 3.5
-
-        # If result is small enough, return as-is (was_modified=False)
-        if estimated_tokens <= max_tokens:
+        # Check if truncation and recovery is needed
+        if not self._should_include_recovery(tool_name, result, tool_context):
             return result, False
 
-        # Result needs processing - was_modified will be True
-        strategy = self._get_strategy(tool_name)
+        # Extract metadata for recovery suggestions
+        metadata = self._extract_metadata(tool_name, result, tool_context)
 
-        # Check for error content - use error-preserving strategy
-        if self._contains_error(result):
-            processed = self._preserve_errors(result, max_tokens)
-            strategy_used = "preserve_errors"
-        elif strategy == "extract_key_sections":
-            processed = self._extract_key_sections(result, max_tokens, filename)
-            strategy_used = strategy
-        elif strategy == "preserve_matches":
-            processed = self._preserve_matches(result, max_tokens)
-            strategy_used = strategy
-        elif strategy == "summarize_output" and self.summary_model:
-            processed = self._summarize_with_llm(result, max_tokens, context)
-            strategy_used = strategy
-        else:
-            processed = self._smart_truncate(result, max_tokens)
-            strategy_used = "smart_truncate"
+        # Truncate content
+        truncated = result[: self.MAX_TRUNCATED_CHARS]
+        if len(result) > self.MAX_TRUNCATED_CHARS:
+            truncated += (
+                f"\n\n[... {len(result) - self.MAX_TRUNCATED_CHARS} characters truncated ...]"
+            )
+
+        # Add recovery section
+        recovery_section = self._format_recovery_section(metadata, tool_context)
+        if recovery_section:
+            truncated = truncated + "\n\n" + recovery_section
 
         logger.info(
-            f"Processed {tool_name}: {int(estimated_tokens)} -> "
-            f"{int(len(processed) / 3.5)} tokens (strategy: {strategy_used}, was_modified=True)"
+            f"Processed {tool_name}: {len(result)} -> {len(truncated)} chars (truncated with recovery)"
         )
 
-        return processed, True
-
-    def _get_strategy(self, tool_name: str) -> str:
-        """Get processing strategy for tool.
-
-        Args:
-            tool_name: Name of the tool
-
-        Returns:
-            Strategy name
-        """
-        tool_config = self.TOOL_STRATEGIES.get(tool_name, {})
-        return str(tool_config.get("strategy", "smart_truncate"))
-
-    def _contains_error(self, content: str) -> bool:
-        """Check if content contains error indicators.
-
-        Args:
-            content: Content to check
-
-        Returns:
-            True if content appears to contain errors
-        """
-        error_indicators = [
-            "error:",
-            "exception:",
-            "traceback",
-            "failed:",
-            "Error:",
-            "Exception:",
-            "FAILED",
-            "panic:",
-            "fatal:",
-            "Fatal:",
-            "FATAL",
-            "Errno",
-            "TypeError:",
-            "ValueError:",
-            "KeyError:",
-            "AttributeError:",
-            "ImportError:",
-            "ModuleNotFoundError:",
-            "FileNotFoundError:",
-            "PermissionError:",
-            "ConnectionError:",
-            "TimeoutError:",
-        ]
-        content_lower = content.lower()
-        return any(ind.lower() in content_lower for ind in error_indicators)
-
-    def _preserve_errors(self, content: str, max_tokens: int) -> str:
-        """Preserve errors strategy - keeps more tail content where errors usually appear.
-
-        Args:
-            content: Content to process
-            max_tokens: Token budget
-
-        Returns:
-            Processed content with errors preserved
-        """
-        max_chars = int(max_tokens * 3.5)
-
-        if len(content) <= max_chars:
-            return content
-
-        # Error messages are usually at the tail, so preserve more tail
-        head_chars = int(max_chars * 0.30)  # 30% head
-        tail_chars = int(max_chars * 0.60)  # 60% tail (errors)
-
-        head_part = content[:head_chars]
-        tail_part = content[-tail_chars:]
-
-        # Try to break at line boundaries
-        last_newline = head_part.rfind("\n")
-        if last_newline > head_chars * 0.7:
-            head_part = head_part[:last_newline]
-
-        first_newline = tail_part.find("\n")
-        if 0 < first_newline < tail_chars * 0.2:
-            tail_part = tail_part[first_newline + 1 :]
-
-        omitted_chars = len(content) - len(head_part) - len(tail_part)
-
-        return (
-            head_part
-            + f"\n\n[... {omitted_chars} characters omitted (error detected, tail preserved) ...]\n\n"
-            + tail_part
-        )
-
-    def _extract_key_sections(self, content: str, max_tokens: int, filename: str = "") -> str:
-        """Extract key sections from code files using CodeExtractor.
-
-        Uses tree-sitter for accurate multi-language parsing when available,
-        with regex fallback for unsupported languages.
-
-        Preserves:
-        - Import statements
-        - Class and function definitions
-        - Key structural elements (structs, interfaces, traits, etc.)
-
-        Omits:
-        - Long comments and docstrings
-        - Repetitive code blocks
-
-        Args:
-            content: Source code content
-            max_tokens: Maximum tokens to use
-            filename: Optional filename for language detection
-        """
-        # Try to detect language from filename
-        language = self.code_extractor.detect_language(filename, content) if filename else None
-
-        # If we can detect the language, use CodeExtractor's format_extracted_code
-        if language:
-            return self.code_extractor.format_extracted_code(content, filename, max_tokens)
-
-        # Fallback: try to detect language from content (e.g., shebang)
-        language = self.code_extractor.detect_language("", content)
-        if language:
-            # Create a dummy filename with the right extension
-            ext_map = {v: k for k, v in self.code_extractor.EXTENSION_TO_LANGUAGE.items()}
-            dummy_ext = ext_map.get(language, ".py")
-            return self.code_extractor.format_extracted_code(
-                content, f"file{dummy_ext}", max_tokens
-            )
-
-        # Final fallback: use simple Python-focused regex extraction
-        return self._extract_key_sections_regex(content, max_tokens)
-
-    def _extract_key_sections_regex(self, content: str, max_tokens: int) -> str:
-        """Fallback regex-based extraction for unknown languages.
-
-        Uses simple Python-like patterns as a reasonable default.
-
-        Args:
-            content: Source code content
-            max_tokens: Maximum tokens to use
-        """
-        max_chars = int(max_tokens * 3.5)
-        lines = content.split("\n")
-
-        # Patterns to identify important lines (Python-focused but catches common patterns)
-        important_patterns = [
-            r"^\s*import\s+",  # imports
-            r"^\s*from\s+.*\s+import\s+",  # from imports
-            r"^\s*class\s+\w+",  # class definitions
-            r"^\s*def\s+\w+",  # function definitions
-            r"^\s*async\s+def\s+\w+",  # async function definitions
-            r"^\s*@\w+",  # decorators
-            r"^\s*function\s+\w+",  # JS/TS functions
-            r"^\s*const\s+\w+\s*=\s*\(.*\)\s*=>",  # arrow functions
-            r"^\s*interface\s+\w+",  # TS interfaces
-            r"^\s*type\s+\w+",  # TS type aliases
-            r"^\s*fn\s+\w+",  # Rust functions
-            r"^\s*struct\s+\w+",  # Rust/Go structs
-            r"^\s*impl\s+",  # Rust impl blocks
-            r"^\s*func\s+",  # Go functions
-            r"^\s*#include\s+",  # C/C++ includes
-        ]
-
-        important_lines = []
-        current_size = 0
-
-        for i, line in enumerate(lines):
-            # Check if line matches important patterns
-            is_important = any(re.match(pattern, line) for pattern in important_patterns)
-
-            if is_important:
-                # Add line with line number
-                line_with_num = f"{i+1:4d}: {line}"
-                if current_size + len(line_with_num) < max_chars:
-                    important_lines.append(line_with_num)
-                    current_size += len(line_with_num) + 1
-                else:
-                    break
-
-        if not important_lines:
-            # Fallback to smart truncate if no important lines found
-            return self._smart_truncate(content, max_tokens)
-
-        result = "\n".join(important_lines)
-        omitted_lines = len(lines) - len(important_lines)
-
-        return (
-            f"[Key sections extracted - {omitted_lines} lines omitted]\n\n"
-            + result
-            + "\n\n[Use read_file with specific line ranges for full content]"
-        )
-
-    def _preserve_matches(self, content: str, max_tokens: int) -> str:
-        """Preserve search matches with minimal context.
-
-        For grep/search results, keeps all matching lines with line numbers.
-        """
-        max_chars = int(max_tokens * 3.5)
-        lines = content.split("\n")
-
-        # Try to keep all lines if possible
-        if len(content) <= max_chars:
-            return content
-
-        # If too large, keep first N matches
-        preserved_lines = []
-        current_size = 0
-        match_count = 0
-
-        for line in lines:
-            if current_size + len(line) < max_chars:
-                preserved_lines.append(line)
-                current_size += len(line) + 1
-                if ":" in line:  # Likely a match line (file:line:content)
-                    match_count += 1
-            else:
-                break
-
-        omitted = len(lines) - len(preserved_lines)
-        result = "\n".join(preserved_lines)
-
-        if omitted > 0:
-            result += f"\n\n[... {omitted} more lines omitted. Use more specific search patterns.]"
-
-        return result
-
-    def _summarize_with_llm(self, content: str, max_tokens: int, context: str) -> str:
-        """Use configured LLM model to generate intelligent summary.
-
-        Args:
-            content: Content to summarize
-            max_tokens: Target token limit for summary
-            context: Task context for relevance-aware summarization
-
-        Returns:
-            Summarized content or smart_truncate fallback on error
-        """
-        if not self.summary_model:
-            return self._smart_truncate(content, max_tokens)
-
-        try:
-            import litellm
-
-            # Limit input to avoid excessive costs (10k chars ~ 2.5k tokens)
-            input_limit = 10000
-            truncated_content = content[:input_limit]
-            if len(content) > input_limit:
-                truncated_content += f"\n\n[... {len(content) - input_limit} more characters]"
-
-            prompt = f"""Summarize this tool output concisely, focusing on key information.
-Context: {context if context else 'general task'}
-
-Output to summarize:
-{truncated_content}
-
-Provide a concise summary (target: {max_tokens} tokens) that captures the essential information."""
-
-            response = litellm.completion(
-                model=self.summary_model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens * 2,
-            )
-            summary = response.choices[0].message.content
-
-            return f"[Summary by {self.summary_model}]\n\n{summary}"
-
-        except Exception as e:
-            logger.warning(
-                f"LLM summarization failed ({self.summary_model}): {e}, falling back to truncation"
-            )
-            return self._smart_truncate(content, max_tokens)
-
-    def _smart_truncate(self, content: str, max_tokens: int) -> str:
-        """Smart truncation preserving head and tail.
-
-        Keeps first 65% and last 30% of allowed content (was 60%/20%).
-        This preserves context from both beginning and end, utilizing full budget.
-        """
-        max_chars = int(max_tokens * 3.5)
-
-        if len(content) <= max_chars:
-            return content
-
-        # Calculate split points - use 65% + 30% = 95% of budget
-        head_chars = int(max_chars * 0.65)
-        tail_chars = int(max_chars * 0.30)
-
-        # Try to break at line boundaries
-        head_part = content[:head_chars]
-        tail_part = content[-tail_chars:]
-
-        # Find last newline in head
-        last_newline = head_part.rfind("\n")
-        if last_newline > head_chars * 0.8:  # If newline is reasonably close
-            head_part = head_part[:last_newline]
-
-        # Find first newline in tail
-        first_newline = tail_part.find("\n")
-        if first_newline > 0 and first_newline < tail_chars * 0.2:
-            tail_part = tail_part[first_newline + 1 :]
-
-        omitted_chars = len(content) - len(head_part) - len(tail_part)
-
-        return head_part + f"\n\n[... {omitted_chars} characters omitted ...]\n\n" + tail_part
+        return truncated, True
 
     def estimate_tokens(self, text: str) -> int:
         """Estimate token count for text.
@@ -466,3 +154,387 @@ Provide a concise summary (target: {max_tokens} tokens) that captures the essent
             Estimated token count
         """
         return int(len(text) / 3.5)
+
+    # ========== Recovery Section Methods ==========
+
+    def _should_include_recovery(
+        self, tool_name: str, result: str, tool_context: Dict[str, Any]
+    ) -> bool:
+        """Determine if recovery section should be included.
+
+        Args:
+            tool_name: Name of the tool
+            result: Original result content
+            tool_context: Tool-specific context
+
+        Returns:
+            True if recovery section should be added (result exceeds char threshold)
+        """
+        threshold = self.RECOVERY_THRESHOLDS.get(tool_name, self.DEFAULT_RECOVERY_THRESHOLD)
+        return len(result) > threshold
+
+    def _extract_metadata(
+        self, tool_name: str, result: str, tool_context: Dict[str, Any]
+    ) -> RecoveryMetadata:
+        """Extract metadata from tool result for recovery suggestions.
+
+        Args:
+            tool_name: Name of the tool
+            result: Original result content
+            tool_context: Tool-specific context
+
+        Returns:
+            RecoveryMetadata with tool-specific information
+        """
+        lines = result.split("\n")
+        metadata = RecoveryMetadata(
+            tool_name=tool_name,
+            char_count=len(result),
+            line_count=len(lines),
+        )
+
+        # Dispatch to tool-specific extraction
+        if tool_name == "read_file":
+            self._extract_read_file_metadata(metadata, result, tool_context)
+        elif tool_name == "grep_content":
+            self._extract_grep_metadata(metadata, result, tool_context)
+        elif tool_name == "execute_shell":
+            self._extract_shell_metadata(metadata, result, tool_context)
+        elif tool_name == "web_search":
+            self._extract_web_search_metadata(metadata, result, tool_context)
+        elif tool_name == "web_fetch":
+            self._extract_web_fetch_metadata(metadata, result, tool_context)
+        elif tool_name == "glob_files":
+            self._extract_glob_metadata(metadata, result, tool_context)
+
+        return metadata
+
+    def _format_recovery_section(
+        self, metadata: RecoveryMetadata, tool_context: Dict[str, Any]
+    ) -> str:
+        """Format recovery section based on tool type.
+
+        Args:
+            metadata: Extracted metadata
+            tool_context: Tool-specific context
+
+        Returns:
+            Formatted recovery section string
+        """
+        # Dispatch to tool-specific formatter
+        if metadata.tool_name == "read_file":
+            return self._format_recovery_read_file(metadata, tool_context)
+        elif metadata.tool_name == "grep_content":
+            return self._format_recovery_grep(metadata, tool_context)
+        elif metadata.tool_name == "execute_shell":
+            return self._format_recovery_shell(metadata, tool_context)
+        elif metadata.tool_name == "web_search":
+            return self._format_recovery_web_search(metadata, tool_context)
+        elif metadata.tool_name == "web_fetch":
+            return self._format_recovery_web_fetch(metadata, tool_context)
+        elif metadata.tool_name == "glob_files":
+            return self._format_recovery_glob(metadata, tool_context)
+        else:
+            return self._format_recovery_default(metadata, tool_context)
+
+    # ========== read_file Recovery ==========
+
+    def _extract_read_file_metadata(
+        self, metadata: RecoveryMetadata, result: str, tool_context: Dict[str, Any]
+    ) -> None:
+        """Extract metadata for read_file results."""
+        metadata.filename = tool_context.get("filename", "")
+
+        # Detect content type using CodeExtractor
+        if metadata.filename:
+            lang = self.code_extractor.detect_language(metadata.filename, result)
+            if lang:
+                metadata.content_type = "code"
+                # Extract code structure (functions/classes with line numbers)
+                definitions = self.code_extractor.extract_definitions(result, lang, max_items=20)
+                metadata.structure = definitions
+                return
+
+        # Fallback: simple content type detection based on patterns
+        if re.search(r"\b(ERROR|WARNING|INFO|DEBUG)\b", result):
+            metadata.content_type = "log"
+        elif result.strip().startswith(("{", "[")):
+            metadata.content_type = "json"
+        else:
+            metadata.content_type = "text"
+
+    def _format_recovery_read_file(
+        self, metadata: RecoveryMetadata, tool_context: Dict[str, Any]
+    ) -> str:
+        """Format recovery section for read_file."""
+        lines = []
+        lines.append("--- Recovery Options ---")
+
+        # File info
+        filename = metadata.filename or tool_context.get("filename", "unknown")
+        size_str = (
+            f"{metadata.char_count:,}" if metadata.char_count > 1000 else str(metadata.char_count)
+        )
+        lines.append(f"File: {filename} | {metadata.line_count} lines, {size_str} chars")
+        lines.append("")
+
+        # Structure for code files
+        if metadata.content_type == "code" and metadata.structure:
+            lines.append("Structure:")
+            for def_type, name, line_num in metadata.structure[:10]:
+                lines.append(f"  - {def_type} {name} (line {line_num})")
+            if len(metadata.structure) > 10:
+                lines.append(f"  ... and {len(metadata.structure) - 10} more")
+            lines.append("")
+
+        # Recovery commands
+        lines.append("Commands:")
+        if metadata.structure:
+            # Suggest grep for a function name
+            first_def = metadata.structure[0]
+            lines.append(f'  • grep_content(pattern="{first_def[1]}", path="{filename}")')
+        else:
+            lines.append(f'  • grep_content(pattern="keyword", path="{filename}")')
+        lines.append(f"  • shell(command=\"sed -n '1,50p' {filename}\")  # First 50 lines")
+        lines.append(f"  • shell(command=\"sed -n '100,150p' {filename}\")  # Lines 100-150")
+
+        return "\n".join(lines)
+
+    # ========== grep_content Recovery ==========
+
+    def _extract_grep_metadata(
+        self, metadata: RecoveryMetadata, result: str, tool_context: Dict[str, Any]
+    ) -> None:
+        """Extract metadata for grep_content results."""
+        metadata.pattern = tool_context.get("pattern", "")
+
+        # Parse grep output to count matches per file
+        # Format: filename:line_number:content
+        file_counts: Dict[str, int] = {}
+        for line in result.split("\n"):
+            match = re.match(r"^([^:]+):(\d+):", line)
+            if match:
+                filepath = match.group(1)
+                file_counts[filepath] = file_counts.get(filepath, 0) + 1
+                metadata.match_count += 1
+
+        # Sort by match count descending
+        metadata.file_distribution = dict(
+            sorted(file_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+        )
+
+    def _format_recovery_grep(
+        self, metadata: RecoveryMetadata, tool_context: Dict[str, Any]
+    ) -> str:
+        """Format recovery section for grep_content."""
+        lines = []
+        lines.append("--- Recovery Options ---")
+
+        # Match info
+        file_count = len(metadata.file_distribution)
+        shown = min(metadata.match_count, 50)  # Assuming we showed ~50 matches
+        lines.append(
+            f"Searched: {file_count}+ files | {metadata.match_count} total matches | Showing first ~{shown}"
+        )
+        lines.append("")
+
+        # Top files by match count
+        if metadata.file_distribution:
+            lines.append("Top files by matches:")
+            for filepath, count in list(metadata.file_distribution.items())[:5]:
+                lines.append(f"  - {filepath}: {count} matches")
+            lines.append("")
+
+        # Recovery commands
+        pattern = metadata.pattern or tool_context.get("pattern", "pattern")
+        lines.append("Commands:")
+        if metadata.file_distribution:
+            top_file = list(metadata.file_distribution.keys())[0]
+            lines.append(
+                f'  • grep_content(pattern="{pattern}", file_pattern="{top_file}", mode="with_context")'
+            )
+        lines.append(f'  • grep_content(pattern="{pattern}", max_matches_per_file=3)')
+
+        return "\n".join(lines)
+
+    # ========== execute_shell Recovery ==========
+
+    def _extract_shell_metadata(
+        self, metadata: RecoveryMetadata, result: str, tool_context: Dict[str, Any]
+    ) -> None:
+        """Extract metadata for execute_shell results."""
+        metadata.command = tool_context.get("command", "")
+
+    def _format_recovery_shell(
+        self, metadata: RecoveryMetadata, tool_context: Dict[str, Any]
+    ) -> str:
+        """Format recovery section for execute_shell."""
+        lines = []
+        lines.append("--- Recovery Options ---")
+
+        # Output info
+        lines.append(f"Output: {metadata.line_count} lines, {metadata.char_count:,} chars")
+        lines.append("")
+
+        # Recovery commands
+        cmd = metadata.command or tool_context.get("command", "command")
+        # Escape single quotes in command
+        cmd_escaped = cmd.replace("'", "'\"'\"'")
+        lines.append("Commands:")
+        lines.append(f'  • shell(command="{cmd_escaped} | head -n 50")')
+        lines.append(f'  • shell(command="{cmd_escaped} | tail -n 50")')
+        lines.append(f"  • shell(command=\"{cmd_escaped} | grep 'pattern'\")")
+
+        return "\n".join(lines)
+
+    # ========== web_search Recovery ==========
+
+    def _extract_web_search_metadata(
+        self, metadata: RecoveryMetadata, result: str, tool_context: Dict[str, Any]
+    ) -> None:
+        """Extract metadata for web_search results."""
+        metadata.query = tool_context.get("query", "")
+
+        # Count results (separated by ---)
+        metadata.result_count = result.count("---") + 1
+
+    def _format_recovery_web_search(
+        self, metadata: RecoveryMetadata, tool_context: Dict[str, Any]
+    ) -> str:
+        """Format recovery section for web_search."""
+        lines = []
+        lines.append("--- Recovery Options ---")
+
+        # Result info
+        lines.append(f"Results: {metadata.result_count} shown (truncated)")
+        lines.append("")
+
+        # Recovery commands
+        query = metadata.query or tool_context.get("query", "query")
+        lines.append("Commands:")
+        lines.append(f'  • web_search(query="{query} site:specific-domain.com")')
+        lines.append(f'  • web_search(query="{query} filetype:pdf")')
+        lines.append('  • web_fetch(url="<specific-result-url>") for full content')
+
+        return "\n".join(lines)
+
+    # ========== web_fetch Recovery ==========
+
+    def _extract_web_fetch_metadata(
+        self, metadata: RecoveryMetadata, result: str, tool_context: Dict[str, Any]
+    ) -> None:
+        """Extract metadata for web_fetch results."""
+        metadata.url = tool_context.get("url", "")
+
+        # Try to parse JSON response format
+        try:
+            data = json.loads(result)
+            if isinstance(data, dict):
+                metadata.title = data.get("title", "")
+                output = data.get("output", "")
+                metadata.char_count = len(output)
+        except json.JSONDecodeError:
+            # Not JSON, treat as raw content
+            # Try to extract title from content
+            title_match = re.search(r"^#\s+(.+)$", result, re.MULTILINE)
+            if title_match:
+                metadata.title = title_match.group(1)
+
+    def _format_recovery_web_fetch(
+        self, metadata: RecoveryMetadata, tool_context: Dict[str, Any]
+    ) -> str:
+        """Format recovery section for web_fetch."""
+        lines = []
+        lines.append("--- Recovery Options ---")
+
+        # Page info
+        title = metadata.title or "Unknown Page"
+        lines.append(f"Page: {title} | {metadata.char_count:,} chars")
+        if metadata.url:
+            lines.append(f"URL: {metadata.url}")
+        lines.append("")
+
+        # Recovery commands
+        url = metadata.url or tool_context.get("url", "<url>")
+        # Extract domain from URL
+        domain_match = re.search(r"https?://([^/]+)", url)
+        domain = domain_match.group(1) if domain_match else "domain.com"
+
+        lines.append("Commands:")
+        lines.append(
+            f'  • web_fetch(url="{url}", save_to="/tmp/page.md") '
+            f'then grep_content(pattern="keyword", path="/tmp/page.md")'
+        )
+        lines.append(f'  • web_search(query="site:{domain} specific topic")')
+
+        return "\n".join(lines)
+
+    # ========== glob_files Recovery ==========
+
+    def _extract_glob_metadata(
+        self, metadata: RecoveryMetadata, result: str, tool_context: Dict[str, Any]
+    ) -> None:
+        """Extract metadata for glob_files results."""
+        metadata.pattern = tool_context.get("pattern", "")
+
+        # Count files and find common prefixes
+        files = [line.strip() for line in result.split("\n") if line.strip()]
+        metadata.file_count = len(files)
+
+        # Find common directory prefixes
+        if files:
+            prefix_counts: Dict[str, int] = {}
+            for f in files:
+                # Get directory part
+                parts = f.rsplit("/", 1)
+                if len(parts) > 1:
+                    prefix = parts[0]
+                    prefix_counts[prefix] = prefix_counts.get(prefix, 0) + 1
+
+            # Get top 3 prefixes
+            sorted_prefixes = sorted(prefix_counts.items(), key=lambda x: x[1], reverse=True)
+            metadata.common_prefixes = [p for p, _ in sorted_prefixes[:3]]
+
+    def _format_recovery_glob(
+        self, metadata: RecoveryMetadata, tool_context: Dict[str, Any]
+    ) -> str:
+        """Format recovery section for glob_files."""
+        lines = []
+        lines.append("--- Recovery Options ---")
+
+        # File count
+        shown = min(metadata.file_count, 50)  # Assuming we showed ~50 files
+        lines.append(f"Found: {metadata.file_count} files | Showing first ~{shown}")
+        lines.append("")
+
+        # Common prefixes
+        if metadata.common_prefixes:
+            lines.append("Common directories:")
+            for prefix in metadata.common_prefixes[:3]:
+                lines.append(f"  - {prefix}/")
+            lines.append("")
+
+        # Recovery commands
+        pattern = metadata.pattern or tool_context.get("pattern", "*.py")
+        lines.append("Commands:")
+        if metadata.common_prefixes:
+            top_prefix = metadata.common_prefixes[0]
+            lines.append(f'  • glob_files(pattern="{pattern}", path="{top_prefix}")')
+        lines.append(f'  • glob_files(pattern="more_specific_{pattern}")')
+
+        return "\n".join(lines)
+
+    # ========== Default Recovery ==========
+
+    def _format_recovery_default(
+        self, metadata: RecoveryMetadata, tool_context: Dict[str, Any]
+    ) -> str:
+        """Format default recovery section for unknown tools."""
+        lines = []
+        lines.append("--- Recovery Options ---")
+        lines.append(f"Output: {metadata.line_count} lines, {metadata.char_count:,} chars")
+        lines.append("")
+        lines.append("The output was truncated. Consider using more specific parameters")
+        lines.append("or filtering the output with shell pipes (| head, | tail, | grep).")
+
+        return "\n".join(lines)

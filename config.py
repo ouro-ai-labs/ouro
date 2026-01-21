@@ -47,15 +47,11 @@ class Config:
     MEMORY_PRESERVE_SYSTEM_PROMPTS = True
 
     # Tool Result Processing Configuration
-    TOOL_RESULT_STORAGE_THRESHOLD = int(os.getenv("TOOL_RESULT_STORAGE_THRESHOLD", "10000"))
-    TOOL_RESULT_STORAGE_PATH = os.getenv("TOOL_RESULT_STORAGE_PATH")
-    # Model for summarizing large tool results (e.g., "openai/gpt-4o-mini", "anthropic/claude-3-haiku-20240307")
-    # If not set, LLM summarization is disabled and falls back to smart truncation
-    TOOL_RESULT_SUMMARY_MODEL = os.getenv("TOOL_RESULT_SUMMARY_MODEL")
-
     # Tools that should never have their results truncated (comma-separated)
-    TOOL_RESULT_BYPASS_TOOLS = os.getenv("TOOL_RESULT_BYPASS_TOOLS", "retrieve_tool_result").split(
-        ","
+    TOOL_RESULT_BYPASS_TOOLS = (
+        os.getenv("TOOL_RESULT_BYPASS_TOOLS", "").split(",")
+        if os.getenv("TOOL_RESULT_BYPASS_TOOLS")
+        else []
     )
 
     # Logging Configuration
