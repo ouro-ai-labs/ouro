@@ -1,7 +1,7 @@
 """Base agent class for all agent types."""
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from llm import LLMMessage, LLMResponse, ToolResult
 from memory import MemoryManager
@@ -185,20 +185,23 @@ class BaseAgent(ABC):
 
                     result = self.tool_executor.execute_tool_call(tc.name, tc.arguments)
 
-                    # Process tool result with intelligent summarization
+                    # Process tool result with intelligent truncation
                     # All truncation goes through ToolResultProcessor for consistency
+                    # Extract tool context from arguments for recovery suggestions
+                    tool_context = self._extract_tool_context(tc.name, tc.arguments)
                     if use_memory and self.memory:
                         result = self.memory.process_tool_result(
                             tool_name=tc.name,
                             tool_call_id=tc.id,
                             result=result,
-                            context=task,  # Pass task as context for intelligent summarization
+                            tool_context=tool_context,
                         )
                     else:
                         # Non-memory mode: still use ToolResultProcessor for consistent truncation
                         result = self._process_result_standalone(
                             tool_name=tc.name,
                             result=result,
+                            tool_context=tool_context,
                         )
 
                     if verbose:
@@ -220,7 +223,41 @@ class BaseAgent(ABC):
 
         return "Max iterations reached without completion."
 
-    def _process_result_standalone(self, tool_name: str, result: str) -> str:
+    def _extract_tool_context(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract tool context from arguments for recovery suggestions.
+
+        Args:
+            tool_name: Name of the tool
+            arguments: Tool call arguments
+
+        Returns:
+            Dict with tool-specific context keys (filename, pattern, command, etc.)
+        """
+        context: Dict[str, Any] = {}
+
+        if tool_name == "read_file":
+            context["filename"] = arguments.get("filename", "")
+        elif tool_name == "grep_content":
+            context["pattern"] = arguments.get("pattern", "")
+            context["path"] = arguments.get("path", "")
+        elif tool_name == "execute_shell":
+            context["command"] = arguments.get("command", "")
+        elif tool_name == "web_search":
+            context["query"] = arguments.get("query", "")
+        elif tool_name == "web_fetch":
+            context["url"] = arguments.get("url", "")
+        elif tool_name == "glob_files":
+            context["pattern"] = arguments.get("pattern", "")
+            context["path"] = arguments.get("path", "")
+
+        return context
+
+    def _process_result_standalone(
+        self,
+        tool_name: str,
+        result: str,
+        tool_context: Optional[Dict[str, Any]] = None,
+    ) -> str:
         """Process tool result without memory storage (for non-memory mode).
 
         Uses ToolResultProcessor for consistent truncation strategies,
@@ -229,6 +266,7 @@ class BaseAgent(ABC):
         Args:
             tool_name: Name of the tool
             result: Raw tool result
+            tool_context: Optional dict with tool-specific context
 
         Returns:
             Processed result
@@ -239,6 +277,7 @@ class BaseAgent(ABC):
         processed, was_modified = processor.process_result(
             tool_name=tool_name,
             result=result,
+            tool_context=tool_context,
         )
 
         if was_modified:

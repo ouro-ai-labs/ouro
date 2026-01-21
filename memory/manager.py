@@ -11,7 +11,6 @@ from .short_term import ShortTermMemory
 from .store import MemoryStore
 from .token_tracker import TokenTracker
 from .tool_result_processor import ToolResultProcessor
-from .tool_result_store import ToolResultStore
 from .types import CompressedMemory, CompressionStrategy
 
 logger = logging.getLogger(__name__)
@@ -60,16 +59,9 @@ class MemoryManager:
         self.compressor = WorkingMemoryCompressor(llm)
         self.token_tracker = TokenTracker()
 
-        # Initialize tool result processing components (always enabled)
-        self.tool_result_processor = ToolResultProcessor(
-            storage_threshold=Config.TOOL_RESULT_STORAGE_THRESHOLD,
-            summary_model=Config.TOOL_RESULT_SUMMARY_MODEL,
-        )
-        storage_path = Config.TOOL_RESULT_STORAGE_PATH
-        self.tool_result_store = ToolResultStore(db_path=storage_path)
-        logger.info(
-            f"Tool result processing enabled with external storage: {storage_path or 'in-memory'}"
-        )
+        # Initialize tool result processor (with intelligent recovery suggestions)
+        self.tool_result_processor = ToolResultProcessor()
+        logger.info("Tool result processing enabled with intelligent recovery suggestions")
 
         # Storage for system messages (summaries are now stored as regular messages in short_term)
         self.system_messages: List[LLMMessage] = []
@@ -394,72 +386,36 @@ class MemoryManager:
         return max(target, 500)  # Minimum 500 tokens for summary
 
     def process_tool_result(
-        self, tool_name: str, tool_call_id: str, result: str, context: str = ""
+        self,
+        tool_name: str,
+        tool_call_id: str,
+        result: str,
+        tool_context: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """Process a tool result with intelligent summarization and automatic external storage.
-
-        Key behavior: If the result is modified (truncated/processed) in any way,
-        the original is automatically stored externally so it can be retrieved later.
+        """Process a tool result with intelligent truncation and recovery suggestions.
 
         Args:
             tool_name: Name of the tool that produced the result
             tool_call_id: ID of the tool call
             result: Raw tool result string
-            context: Optional context about the task
+            tool_context: Optional dict with tool-specific context for recovery suggestions
+                         Keys depend on tool: filename, pattern, command, query, url, etc.
 
         Returns:
-            Processed result (may include reference to stored original if modified)
+            Processed result (may include recovery suggestions if truncated)
         """
-        # Process the result through unified processor
+        # Process the result through unified processor with tool context
         processed_result, was_modified = self.tool_result_processor.process_result(
-            tool_name=tool_name, result=result, context=context
+            tool_name=tool_name,
+            result=result,
+            tool_context=tool_context,
         )
 
-        # Core logic: If result was modified, store the original for later retrieval
         if was_modified:
             result_tokens = self.tool_result_processor.estimate_tokens(result)
-            logger.info(
-                f"Tool result was modified, storing original: {tool_name} ({result_tokens} tokens)"
-            )
-
-            # Store the full original result
-            result_id = self.tool_result_store.store_result(
-                tool_call_id=tool_call_id,
-                tool_name=tool_name,
-                content=result,  # Store original, not processed
-                summary=processed_result,  # Processed version as summary
-                token_count=result_tokens,
-            )
-
-            # Append retrieval hint to processed result
-            retrieval_hint = (
-                f"\n\n[Original result stored as #{result_id} - "
-                f"use retrieve_tool_result tool to access full content]"
-            )
-            return processed_result + retrieval_hint
+            logger.info(f"Tool result was truncated: {tool_name} ({result_tokens} tokens)")
 
         return processed_result
-
-    def retrieve_tool_result(self, result_id: str) -> Optional[str]:
-        """Retrieve a tool result from external storage.
-
-        Args:
-            result_id: ID returned by process_tool_result
-
-        Returns:
-            Full tool result content, or None if not found
-        """
-        return self.tool_result_store.retrieve_result(result_id)
-
-    def get_tool_result_stats(self) -> Dict[str, Any]:
-        """Get statistics about stored tool results.
-
-        Returns:
-            Dictionary with statistics
-        """
-        stats = self.tool_result_store.get_stats()
-        stats["enabled"] = True
-        return stats
 
     def _recalculate_current_tokens(self) -> int:
         """Recalculate current token count from scratch.

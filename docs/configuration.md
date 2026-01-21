@@ -83,6 +83,15 @@ RETRY_INITIAL_DELAY=1.0
 RETRY_MAX_DELAY=60.0
 ```
 
+## Tool Result Processing Configuration
+
+```bash
+# Tools that should never be truncated (comma-separated, optional)
+TOOL_RESULT_BYPASS_TOOLS=my_special_tool,another_tool
+```
+
+See [Tool Result Processing](tool_result_processing.md) for details on truncation and recovery suggestions.
+
 ## Validation
 
 ```bash
