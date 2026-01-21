@@ -80,10 +80,13 @@ class ToolResultProcessor:
     }
     DEFAULT_RECOVERY_THRESHOLD = 3500  # chars
 
+    # Tools that should never be truncated by default
+    DEFAULT_BYPASS_TOOLS = {"manage_todo_list"}
+
     @classmethod
     def get_bypass_tools(cls) -> Set[str]:
-        """Get tools that should never be truncated (from Config)."""
-        return set(Config.TOOL_RESULT_BYPASS_TOOLS)
+        """Get tools that should never be truncated (default + Config)."""
+        return cls.DEFAULT_BYPASS_TOOLS | set(Config.TOOL_RESULT_BYPASS_TOOLS)
 
     def __init__(self):
         """Initialize processor."""

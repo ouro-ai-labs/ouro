@@ -67,6 +67,16 @@ class TestBypassTools:
         assert processed == large_result
         assert was_modified is False
 
+    def test_todo_tool_bypassed_by_default(self):
+        """Todo tool should be bypassed by default."""
+        processor = ToolResultProcessor()
+        large_result = "x" * 100000
+
+        processed, was_modified = processor.process_result("manage_todo_list", large_result)
+
+        assert processed == large_result
+        assert was_modified is False
+
     def test_non_bypass_tool_truncated(self):
         """Normal tools should be truncated when exceeding threshold."""
         processor = ToolResultProcessor()
