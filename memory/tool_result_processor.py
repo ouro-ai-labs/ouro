@@ -478,7 +478,7 @@ class ToolResultProcessor:
         metadata.pattern = tool_context.get("pattern", "")
 
         # Count files and find common prefixes
-        files = [l.strip() for l in result.split("\n") if l.strip()]
+        files = [line.strip() for line in result.split("\n") if line.strip()]
         metadata.file_count = len(files)
 
         # Find common directory prefixes
