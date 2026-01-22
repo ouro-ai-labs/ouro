@@ -220,7 +220,14 @@ class MemoryStore:
         }
 
         # Add new format fields if present
-        if hasattr(message, "tool_calls") and message.tool_calls:
+        # For assistant messages, always include tool_calls (even if None) for completeness
+        if message.role == "assistant":
+            result["tool_calls"] = (
+                message.tool_calls
+                if (hasattr(message, "tool_calls") and message.tool_calls)
+                else None
+            )
+        elif hasattr(message, "tool_calls") and message.tool_calls:
             result["tool_calls"] = message.tool_calls
 
         if hasattr(message, "tool_call_id") and message.tool_call_id:

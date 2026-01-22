@@ -127,6 +127,101 @@ class TestMessageStorage:
         assert len(loaded_msg.content) == 2
 
 
+class TestToolCallsSerialization:
+    """Test tool_calls and tool_call_id serialization."""
+
+    def test_save_assistant_message_with_tool_calls(self, store):
+        """Test saving assistant message with tool_calls preserves tool_calls."""
+        session_id = store.create_session()
+        tool_calls = [
+            {
+                "id": "call_abc123",
+                "type": "function",
+                "function": {"name": "web_fetch", "arguments": '{"url": "https://example.com"}'},
+            }
+        ]
+        msg = LLMMessage(role="assistant", content=None, tool_calls=tool_calls)
+
+        store.save_message(session_id, msg, tokens=10)
+
+        # Load and verify
+        session_data = store.load_session(session_id)
+        loaded_msg = session_data["messages"][0]
+        assert loaded_msg.role == "assistant"
+        assert loaded_msg.tool_calls is not None
+        assert len(loaded_msg.tool_calls) == 1
+        assert loaded_msg.tool_calls[0]["id"] == "call_abc123"
+        assert loaded_msg.tool_calls[0]["function"]["name"] == "web_fetch"
+
+    def test_save_assistant_message_without_tool_calls(self, store):
+        """Test saving assistant message without tool_calls includes null tool_calls."""
+        session_id = store.create_session()
+        msg = LLMMessage(role="assistant", content="Hello there!")
+
+        store.save_message(session_id, msg, tokens=5)
+
+        # Load and verify - assistant messages should have tool_calls field (even if None)
+        session_data = store.load_session(session_id)
+        loaded_msg = session_data["messages"][0]
+        assert loaded_msg.role == "assistant"
+        assert loaded_msg.content == "Hello there!"
+
+    def test_save_tool_message_with_tool_call_id(self, store):
+        """Test saving tool message preserves tool_call_id."""
+        session_id = store.create_session()
+        msg = LLMMessage(
+            role="tool",
+            content='{"result": "success"}',
+            tool_call_id="call_abc123",
+            name="web_fetch",
+        )
+
+        store.save_message(session_id, msg, tokens=8)
+
+        # Load and verify
+        session_data = store.load_session(session_id)
+        loaded_msg = session_data["messages"][0]
+        assert loaded_msg.role == "tool"
+        assert loaded_msg.tool_call_id == "call_abc123"
+        assert loaded_msg.name == "web_fetch"
+        assert loaded_msg.content == '{"result": "success"}'
+
+    def test_tool_call_roundtrip(self, store):
+        """Test complete tool call flow: assistant with tool_calls -> tool response."""
+        session_id = store.create_session()
+
+        # Assistant makes a tool call
+        tool_calls = [
+            {
+                "id": "call_xyz789",
+                "type": "function",
+                "function": {"name": "calculator", "arguments": '{"expression": "2+2"}'},
+            }
+        ]
+        assistant_msg = LLMMessage(role="assistant", content=None, tool_calls=tool_calls)
+        store.save_message(session_id, assistant_msg, tokens=15)
+
+        # Tool responds
+        tool_msg = LLMMessage(
+            role="tool",
+            content="4",
+            tool_call_id="call_xyz789",
+            name="calculator",
+        )
+        store.save_message(session_id, tool_msg, tokens=5)
+
+        # Load and verify the complete flow
+        session_data = store.load_session(session_id)
+        assert len(session_data["messages"]) == 2
+
+        loaded_assistant = session_data["messages"][0]
+        loaded_tool = session_data["messages"][1]
+
+        # Verify tool_call_id matches
+        assert loaded_assistant.tool_calls[0]["id"] == loaded_tool.tool_call_id
+        assert loaded_tool.name == "calculator"
+
+
 class TestBatchSave:
     """Test batch save_memory functionality."""
 

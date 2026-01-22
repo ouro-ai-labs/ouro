@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import json
 import os
 import socket
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -31,6 +33,71 @@ ACCEPT_HEADERS = {
     "text": "text/plain;q=1.0, text/markdown;q=0.9, text/html;q=0.8, */*;q=0.1",
     "html": "text/html;q=1.0, application/xhtml+xml;q=0.9, text/plain;q=0.8, text/markdown;q=0.7, */*;q=0.1",
 }
+
+# Cache configuration
+CACHE_TTL_SECONDS = 300  # 5 minutes TTL
+CACHE_MAX_ENTRIES = 100
+
+
+class ExtractedLink(TypedDict):
+    """Structured link extracted from HTML content."""
+
+    href: str
+    text: str
+    type: str  # "internal", "external", "anchor", "mailto", "tel"
+
+
+@dataclass
+class CacheEntry:
+    """Cache entry for URL fetch results."""
+
+    result: Dict[str, Any]
+    timestamp: float
+    ttl: float
+
+
+class WebFetchCache:
+    """Simple in-memory cache for web fetch results."""
+
+    def __init__(self, max_entries: int = CACHE_MAX_ENTRIES):
+        self._cache: Dict[str, CacheEntry] = {}
+        self._max_entries = max_entries
+
+    def _make_key(self, url: str, format: str) -> str:
+        """Create a cache key from URL and format."""
+        return hashlib.md5(f"{url}:{format}".encode()).hexdigest()
+
+    def get(self, url: str, format: str) -> Optional[Dict[str, Any]]:
+        """Get cached result if valid."""
+        key = self._make_key(url, format)
+        entry = self._cache.get(key)
+        if entry is None:
+            return None
+        # Check TTL
+        if time.time() - entry.timestamp > entry.ttl:
+            del self._cache[key]
+            return None
+        return entry.result
+
+    def set(
+        self, url: str, format: str, result: Dict[str, Any], ttl: float = CACHE_TTL_SECONDS
+    ) -> None:
+        """Cache a result."""
+        # Evict oldest entries if at capacity
+        if len(self._cache) >= self._max_entries:
+            oldest_key = min(self._cache, key=lambda k: self._cache[k].timestamp)
+            del self._cache[oldest_key]
+
+        key = self._make_key(url, format)
+        self._cache[key] = CacheEntry(result=result, timestamp=time.time(), ttl=ttl)
+
+    def clear(self) -> None:
+        """Clear all cached entries."""
+        self._cache.clear()
+
+
+# Global cache instance
+_url_cache = WebFetchCache()
 
 
 class WebFetchError(Exception):
@@ -84,6 +151,14 @@ class WebFetchTool(BaseTool):
                     "Useful for saving content to search later with grep_content."
                 ),
             },
+            "use_cache": {
+                "type": "boolean",
+                "description": (
+                    "Whether to use cached results if available (default: true). "
+                    "Cache TTL is 5 minutes. Set to false to force a fresh fetch."
+                ),
+                "default": True,
+            },
         }
 
     def execute(self, **kwargs) -> str:
@@ -92,14 +167,33 @@ class WebFetchTool(BaseTool):
         format_value = kwargs.get("format", "markdown")
         timeout = kwargs.get("timeout")
         save_to = kwargs.get("save_to")
+        use_cache = kwargs.get("use_cache", True)
         start = time.time()
 
         try:
             if not url:
                 raise WebFetchError("invalid_url", "URL is required", {"requested_url": url})
+
+            # Check cache first (only if use_cache is True and save_to is not specified)
+            if use_cache and not save_to:
+                cached_result = _url_cache.get(url, format_value)
+                if cached_result is not None:
+                    # Update metadata to indicate cache hit
+                    result = cached_result.copy()
+                    result["metadata"] = result.get("metadata", {}).copy()
+                    result["metadata"]["cache_hit"] = True
+                    result["metadata"]["duration_ms"] = int((time.time() - start) * 1000)
+                    return json.dumps(result, ensure_ascii=False)
+
             result = self._execute(
                 url=url, format=format_value, timeout=timeout, start_time=start, save_to=save_to
             )
+
+            # Cache successful results (only if save_to is not specified)
+            if result.get("ok") and not save_to:
+                _url_cache.set(url, format_value, result)
+                result["metadata"]["cache_hit"] = False
+
             return json.dumps(result, ensure_ascii=False)
         except WebFetchError as exc:
             error_result = {
@@ -157,12 +251,17 @@ class WebFetchTool(BaseTool):
 
         output, title = self._convert_content(content, content_type, format, url)
 
+        # Extract structured links from HTML content
+        links: List[ExtractedLink] = []
+        if "html" in content_type or content_type in {"application/xhtml+xml"}:
+            links = self._extract_links(content, response.url)
+
         # Save content to file if save_to is specified
         saved_path = None
         if save_to:
             saved_path = self._save_content(output, save_to)
 
-        metadata = {
+        metadata: Dict[str, Any] = {
             "requested_url": url,
             "final_url": response.url,
             "status_code": response.status_code,
@@ -174,6 +273,10 @@ class WebFetchTool(BaseTool):
             "truncated": len(content_bytes) >= MAX_RESPONSE_BYTES,
             "duration_ms": int((time.time() - start_time) * 1000),
         }
+
+        # Add extracted links to metadata if any were found
+        if links:
+            metadata["links"] = links
 
         if saved_path:
             metadata["saved_to"] = saved_path
@@ -466,3 +569,67 @@ class WebFetchTool(BaseTool):
         # For text format, use trafilatura without formatting
         result = trafilatura.extract(html, include_links=False, include_formatting=False)
         return result.strip() if result else "", title
+
+    def _extract_links(self, html: str, base_url: str, max_links: int = 50) -> List[ExtractedLink]:
+        """Extract structured links from HTML content.
+
+        Args:
+            html: Raw HTML content
+            base_url: Base URL for resolving relative links
+            max_links: Maximum number of links to extract (default: 50)
+
+        Returns:
+            List of ExtractedLink dictionaries with href, text, and type
+        """
+        links: List[ExtractedLink] = []
+        try:
+            tree = lxml_html.fromstring(html)
+            parsed_base = urlparse(base_url)
+            base_domain = parsed_base.netloc.lower()
+
+            for anchor in tree.iter("a"):
+                href = anchor.get("href")
+                if not href:
+                    continue
+
+                # Get link text (strip whitespace and normalize)
+                text = anchor.text_content().strip() if anchor.text_content() else ""
+                text = " ".join(text.split())  # Normalize whitespace
+                if not text:
+                    # Try alt text from child img if no text
+                    img = anchor.find(".//img")
+                    if img is not None:
+                        text = img.get("alt", "").strip()
+
+                # Determine link type
+                link_type: str
+                if href.startswith("#"):
+                    link_type = "anchor"
+                elif href.startswith("mailto:"):
+                    link_type = "mailto"
+                elif href.startswith("tel:"):
+                    link_type = "tel"
+                elif href.startswith(("javascript:", "data:")):
+                    continue  # Skip javascript and data URLs
+                else:
+                    # Resolve relative URLs
+                    resolved_href = urljoin(base_url, href)
+                    parsed_href = urlparse(resolved_href)
+                    href_domain = parsed_href.netloc.lower()
+
+                    if href_domain == base_domain:
+                        link_type = "internal"
+                    else:
+                        link_type = "external"
+                    href = resolved_href
+
+                links.append(ExtractedLink(href=href, text=text[:200], type=link_type))
+
+                if len(links) >= max_links:
+                    break
+
+        except Exception:
+            # If parsing fails, return empty list
+            pass
+
+        return links

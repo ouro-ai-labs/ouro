@@ -239,18 +239,13 @@ def _dump_memory(session_id: str):
             )
             return
 
-        # Prepare export data
+        # Prepare export data - use to_dict() for proper serialization including tool_calls
         export_data = {
             "session_id": session_id,
             "exported_at": datetime.now().isoformat(),
             "stats": session_data["stats"],
-            "system_messages": [
-                {"role": msg.role, "content": msg.content}
-                for msg in session_data["system_messages"]
-            ],
-            "messages": [
-                {"role": msg.role, "content": msg.content} for msg in session_data["messages"]
-            ],
+            "system_messages": [msg.to_dict() for msg in session_data["system_messages"]],
+            "messages": [msg.to_dict() for msg in session_data["messages"]],
             "summaries": [
                 {
                     "summary": s.summary,
@@ -259,9 +254,7 @@ def _dump_memory(session_id: str):
                     "compressed_tokens": s.compressed_tokens,
                     "compression_ratio": s.compression_ratio,
                     "token_savings": s.token_savings,
-                    "preserved_messages": [
-                        {"role": msg.role, "content": msg.content} for msg in s.preserved_messages
-                    ],
+                    "preserved_messages": [msg.to_dict() for msg in s.preserved_messages],
                     "metadata": s.metadata,
                 }
                 for s in session_data["summaries"]
