@@ -319,6 +319,10 @@ Original messages ({count} messages, ~{tokens} tokens):
     def _find_tool_pairs(self, messages: List[LLMMessage]) -> tuple[List[List[int]], List[int]]:
         """Find tool_use/tool_result pairs in messages.
 
+        Uses LiteLLM (OpenAI) format:
+        - Assistant messages: message object with tool_calls attribute
+        - User messages: list of dicts with tool_call_id
+
         Returns:
             Tuple of (pairs, orphaned_tool_use_indices)
             - pairs: List of [assistant_index, user_index] for matched pairs
@@ -328,25 +332,22 @@ Original messages ({count} messages, ~{tokens} tokens):
         pending_tool_uses = {}  # tool_id -> message_index
 
         for i, msg in enumerate(messages):
-            if msg.role == "assistant" and isinstance(msg.content, list):
-                # Collect tool_use IDs
-                for block in msg.content:
-                    btype = self._get_block_attr(block, "type")
-                    if btype == "tool_use":
-                        tool_id = self._get_block_attr(block, "id")
-                        if tool_id:
-                            pending_tool_uses[tool_id] = i
+            # Assistant messages: check for tool_calls (OpenAI/LiteLLM format)
+            if msg.role == "assistant" and hasattr(msg, "tool_calls") and msg.tool_calls:
+                for tc in msg.tool_calls:
+                    tool_id = tc.id if hasattr(tc, "id") else None
+                    if tool_id:
+                        pending_tool_uses[tool_id] = i
 
+            # User messages: check for tool results
             elif msg.role == "user" and isinstance(msg.content, list):
-                # Match tool_result with tool_use
                 for block in msg.content:
-                    btype = self._get_block_attr(block, "type")
-                    if btype == "tool_result":
-                        tool_use_id = self._get_block_attr(block, "tool_use_id")
-                        if tool_use_id in pending_tool_uses:
-                            assistant_idx = pending_tool_uses[tool_use_id]
+                    if isinstance(block, dict) and "tool_call_id" in block:
+                        tool_call_id = block.get("tool_call_id")
+                        if tool_call_id in pending_tool_uses:
+                            assistant_idx = pending_tool_uses[tool_call_id]
                             pairs.append([assistant_idx, i])
-                            del pending_tool_uses[tool_use_id]
+                            del pending_tool_uses[tool_call_id]
 
         # Remaining items in pending_tool_uses are orphaned (no matching result yet)
         orphaned_indices = list(pending_tool_uses.values())
@@ -364,6 +365,8 @@ Original messages ({count} messages, ~{tokens} tokens):
     ) -> List[List[int]]:
         """Find tool pairs that use protected tools (must never be compressed).
 
+        Uses LiteLLM (OpenAI) format: message object with tool_calls attribute.
+
         Args:
             messages: All messages
             tool_pairs: All tool_use/tool_result pairs
@@ -374,19 +377,18 @@ Original messages ({count} messages, ~{tokens} tokens):
         protected_pairs = []
 
         for assistant_idx, user_idx in tool_pairs:
-            # Check if this tool pair uses a protected tool
             msg = messages[assistant_idx]
-            if msg.role == "assistant" and isinstance(msg.content, list):
-                for block in msg.content:
-                    btype = self._get_block_attr(block, "type")
-                    if btype == "tool_use":
-                        tool_name = self._get_block_attr(block, "name")
-                        if tool_name in self.PROTECTED_TOOLS:
-                            protected_pairs.append([assistant_idx, user_idx])
-                            logger.debug(
-                                f"Protected tool '{tool_name}' at indices [{assistant_idx}, {user_idx}] - will be preserved"
-                            )
-                            break  # Only need to find one protected tool in the message
+
+            # Check OpenAI/LiteLLM format: message object with tool_calls
+            if msg.role == "assistant" and hasattr(msg, "tool_calls") and msg.tool_calls:
+                for tc in msg.tool_calls:
+                    tool_name = tc.function.name if hasattr(tc, "function") and hasattr(tc.function, "name") else None
+                    if tool_name in self.PROTECTED_TOOLS:
+                        protected_pairs.append([assistant_idx, user_idx])
+                        logger.debug(
+                            f"Protected tool '{tool_name}' at indices [{assistant_idx}, {user_idx}] - will be preserved"
+                        )
+                        break  # Only need to find one protected tool in the message
 
         return protected_pairs
 

@@ -126,8 +126,8 @@ class BaseAgent(ABC):
             # Call LLM with tools
             response = self._call_llm(messages=context, tools=tools)
 
-            # Save assistant response
-            assistant_msg = LLMMessage(role="assistant", content=response.message)
+            # Save assistant response (response.message is already LLMMessage)
+            assistant_msg = response.message
             if use_memory:
                 if save_to_memory:
                     # Extract actual token usage from response

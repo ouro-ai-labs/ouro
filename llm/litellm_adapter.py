@@ -154,14 +154,16 @@ class LiteLLMLLM:
         return litellm_messages
 
     def _convert_tool_results_to_text(self, content: List) -> str:
-        """Convert Anthropic tool_result format to text for LiteLLM."""
+        """Convert tool results to text for LiteLLM."""
         # LiteLLM handles tool results as text in user messages
         results = []
         for block in content:
-            if isinstance(block, dict) and block.get("type") == "tool_result":
-                tool_id = block.get("tool_use_id", "unknown")
-                tool_content = block.get("content", "")
-                results.append(f"Tool result (ID: {tool_id}):\n{tool_content}")
+            if isinstance(block, dict):
+                # New simple format: {"tool_call_id": "...", "content": "..."}
+                if "tool_call_id" in block:
+                    tool_id = block.get("tool_call_id", "unknown")
+                    tool_content = block.get("content", "")
+                    results.append(f"Tool result (ID: {tool_id}):\n{tool_content}")
         return "\n\n".join(results) if results else str(content)
 
     def _extract_assistant_content(self, content: Any) -> str:
@@ -229,11 +231,14 @@ class LiteLLMLLM:
     def _convert_response(self, response) -> LLMResponse:
         """Convert LiteLLM response to LLMResponse."""
         # Extract message
-        message = response.choices[0].message
+        raw_message = response.choices[0].message
 
         # Clean up provider_specific_fields (removes thought_signature, etc.)
         # These fields are large and not useful for agent operation
-        self._clean_message(message)
+        self._clean_message(raw_message)
+
+        # Convert to LLMMessage
+        message = self._convert_to_llm_message(raw_message)
 
         # Determine stop reason
         finish_reason = response.choices[0].finish_reason
@@ -254,29 +259,65 @@ class LiteLLMLLM:
                 "output_tokens": response.usage.get("completion_tokens", 0),
             }
 
-        return LLMResponse(message=message, stop_reason=stop_reason, usage=usage_dict)
+        return LLMResponse(
+            message=message, stop_reason=stop_reason, usage=usage_dict, _raw_message=raw_message
+        )
 
-    def extract_text(self, response: LLMResponse) -> str:
-        """Extract text from LiteLLM response."""
-        message = response.message
-        return message.content if hasattr(message, "content") and message.content else ""
+    def _convert_to_llm_message(self, raw_message) -> LLMMessage:
+        """Convert LiteLLM message object to LLMMessage.
 
-    def extract_tool_calls(self, response: LLMResponse) -> List[ToolCall]:
-        """Extract tool calls from LiteLLM response."""
-        tool_calls = []
-        message = response.message
+        Args:
+            raw_message: LiteLLM ChatCompletionMessage object
 
-        if hasattr(message, "tool_calls") and message.tool_calls:
-            for tc in message.tool_calls:
+        Returns:
+            LLMMessage with properly extracted content and tool_calls
+        """
+        # Extract content
+        content = raw_message.content if hasattr(raw_message, "content") else ""
+
+        # Extract tool_calls if present
+        tool_calls = None
+        if hasattr(raw_message, "tool_calls") and raw_message.tool_calls:
+            tool_calls = []
+            for tc in raw_message.tool_calls:
                 tool_calls.append(
                     ToolCall(
-                        id=tc.id, name=tc.function.name, arguments=json.loads(tc.function.arguments)
+                        id=tc.id,
+                        name=tc.function.name,
+                        arguments=json.loads(tc.function.arguments),
                     )
                 )
-        else:
-            logger.debug(f"No tool calls found in the response. {message}")
 
-        return tool_calls
+        return LLMMessage(role="assistant", content=content or "", tool_calls=tool_calls)
+
+    def extract_text(self, response: LLMResponse) -> str:
+        """Extract text from LLMResponse.
+
+        Args:
+            response: LLMResponse object
+
+        Returns:
+            Text content from the message
+        """
+        message = response.message
+        if isinstance(message, LLMMessage):
+            content = message.content
+            return content if isinstance(content, str) else ""
+        return ""
+
+    def extract_tool_calls(self, response: LLMResponse) -> List[ToolCall]:
+        """Extract tool calls from LLMResponse.
+
+        Args:
+            response: LLMResponse object
+
+        Returns:
+            List of ToolCall objects
+        """
+        message = response.message
+        if isinstance(message, LLMMessage) and message.tool_calls:
+            return message.tool_calls
+        return []
 
     def extract_thinking(self, response: LLMResponse) -> Optional[str]:
         """Extract thinking/reasoning content from LLM response.
@@ -292,12 +333,16 @@ class LiteLLMLLM:
         Returns:
             Thinking content string or None if not present
         """
-        message = response.message
+        # Use raw_message for provider-specific features
+        raw_message = response._raw_message
+        if not raw_message:
+            return None
+
         thinking_parts = []
 
         # Check for thinking_blocks (Anthropic extended thinking via LiteLLM)
-        if hasattr(message, "thinking_blocks") and message.thinking_blocks:
-            for block in message.thinking_blocks:
+        if hasattr(raw_message, "thinking_blocks") and raw_message.thinking_blocks:
+            for block in raw_message.thinking_blocks:
                 if hasattr(block, "thinking"):
                     thinking_parts.append(block.thinking)
                 elif isinstance(block, dict) and "thinking" in block:
@@ -306,12 +351,12 @@ class LiteLLMLLM:
                     thinking_parts.append(block)
 
         # Check for reasoning_content (OpenAI o1 style)
-        if hasattr(message, "reasoning_content") and message.reasoning_content:
-            thinking_parts.append(message.reasoning_content)
+        if hasattr(raw_message, "reasoning_content") and raw_message.reasoning_content:
+            thinking_parts.append(raw_message.reasoning_content)
 
         # Check content blocks for thinking type
-        if hasattr(message, "content") and isinstance(message.content, list):
-            for block in message.content:
+        if hasattr(raw_message, "content") and isinstance(raw_message.content, list):
+            for block in raw_message.content:
                 if isinstance(block, dict) and block.get("type") == "thinking":
                     thinking_parts.append(block.get("thinking", ""))
                 elif hasattr(block, "type") and block.type == "thinking":
@@ -320,15 +365,16 @@ class LiteLLMLLM:
         return "\n\n".join(thinking_parts) if thinking_parts else None
 
     def format_tool_results(self, results: List[ToolResult]) -> LLMMessage:
-        """Format tool results for LiteLLM."""
-        # LiteLLM expects tool results as user messages
-        # Format as Anthropic-style for compatibility with existing code
+        """Format tool results for LiteLLM.
+
+        Uses a simple format compatible with OpenAI/LiteLLM:
+        - List of dicts with tool_call_id and content
+        """
         content = []
         for result in results:
             content.append(
                 {
-                    "type": "tool_result",
-                    "tool_use_id": result.tool_call_id,
+                    "tool_call_id": result.tool_call_id,
                     "content": result.content,
                 }
             )

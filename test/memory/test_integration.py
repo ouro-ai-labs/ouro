@@ -9,6 +9,19 @@ from memory import MemoryManager
 from memory.types import CompressionStrategy
 
 
+# Helper classes for LiteLLM format
+class MockToolCall:
+    def __init__(self, id, name):
+        self.id = id
+        self.function = type('obj', (object,), {'name': name, 'arguments': '{}'})()
+
+
+class MockMessage:
+    def __init__(self, content, tool_calls=None):
+        self.content = content
+        self.tool_calls = tool_calls or []
+
+
 class TestToolCallResultIntegration:
     """Integration tests for tool_call and tool_result matching.
 
@@ -16,7 +29,7 @@ class TestToolCallResultIntegration:
     """
 
     def test_tool_pairs_survive_compression_cycle(self, set_memory_config, mock_llm):
-        """Test that tool pairs remain matched through compression cycles."""
+        """Test that tool pairs remain matched through compression cycles in LiteLLM format."""
         set_memory_config(
             MEMORY_SHORT_TERM_SIZE=6,
             MEMORY_SHORT_TERM_MIN_SIZE=2,
@@ -31,24 +44,14 @@ class TestToolCallResultIntegration:
                     LLMMessage(role="user", content=f"Request {i}"),
                     LLMMessage(
                         role="assistant",
-                        content=[
-                            {
-                                "type": "tool_use",
-                                "id": f"tool_{i}",
-                                "name": f"tool_{i}",
-                                "input": {},
-                            }
-                        ],
+                        content=MockMessage(
+                            content="",
+                            tool_calls=[MockToolCall(f"tool_{i}", f"tool_{i}")]
+                        ),
                     ),
                     LLMMessage(
                         role="user",
-                        content=[
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": f"tool_{i}",
-                                "content": f"result_{i}",
-                            }
-                        ],
+                        content=[{"tool_call_id": f"tool_{i}", "content": f"result_{i}"}],
                     ),
                     LLMMessage(role="assistant", content=f"Response {i}"),
                 ]
@@ -63,7 +66,7 @@ class TestToolCallResultIntegration:
         self._verify_tool_pairs_matched(context)
 
     def test_tool_pairs_with_multiple_compressions(self, set_memory_config, mock_llm):
-        """Test tool pairs remain matched through multiple compression cycles."""
+        """Test tool pairs remain matched through multiple compression cycles in LiteLLM format."""
         set_memory_config(
             MEMORY_SHORT_TERM_SIZE=4,
             MEMORY_SHORT_TERM_MIN_SIZE=2,
@@ -78,26 +81,16 @@ class TestToolCallResultIntegration:
                 manager.add_message(
                     LLMMessage(
                         role="assistant",
-                        content=[
-                            {
-                                "type": "tool_use",
-                                "id": f"tool_{idx}",
-                                "name": f"tool_{idx}",
-                                "input": {},
-                            }
-                        ],
+                        content=MockMessage(
+                            content="",
+                            tool_calls=[MockToolCall(f"tool_{idx}", f"tool_{idx}")]
+                        ),
                     )
                 )
                 manager.add_message(
                     LLMMessage(
                         role="user",
-                        content=[
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": f"tool_{idx}",
-                                "content": f"result_{idx}",
-                            }
-                        ],
+                        content=[{"tool_call_id": f"tool_{idx}", "content": f"result_{idx}"}],
                     )
                 )
                 manager.add_message(LLMMessage(role="assistant", content=f"Response {idx}"))
@@ -218,18 +211,21 @@ class TestToolCallResultIntegration:
             print(f"Detected phantom tool_result: {phantoms}")
 
     def _verify_tool_pairs_matched(self, messages):
-        """Helper to verify all tool pairs are properly matched."""
+        """Helper to verify all tool pairs are properly matched in LiteLLM format."""
         tool_use_ids = set()
         tool_result_ids = set()
 
         for msg in messages:
-            if isinstance(msg.content, list):
+            # Check for LiteLLM format: message object with tool_calls
+            if hasattr(msg.content, "tool_calls") and msg.content.tool_calls:
+                for tc in msg.content.tool_calls:
+                    if hasattr(tc, "id"):
+                        tool_use_ids.add(tc.id)
+            # Check for tool results
+            elif isinstance(msg.content, list):
                 for block in msg.content:
-                    if isinstance(block, dict):
-                        if block.get("type") == "tool_use":
-                            tool_use_ids.add(block.get("id"))
-                        elif block.get("type") == "tool_result":
-                            tool_result_ids.add(block.get("tool_use_id"))
+                    if isinstance(block, dict) and "tool_call_id" in block:
+                        tool_result_ids.add(block.get("tool_call_id"))
 
         assert (
             tool_use_ids == tool_result_ids

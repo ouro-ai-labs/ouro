@@ -367,12 +367,9 @@ class MemoryManager:
         Returns:
             True if contains tool calls
         """
-        content = message.content
-        if isinstance(content, list):
-            for block in content:
-                if isinstance(block, dict):
-                    if block.get("type") in ["tool_use", "tool_result", "tool_calls"]:
-                        return True
+        # Check for OpenAI/LiteLLM format: tool_calls attribute
+        if hasattr(message, "tool_calls") and message.tool_calls:
+            return True
         return False
 
     def _calculate_target_tokens(self) -> int:

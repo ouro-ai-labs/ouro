@@ -84,50 +84,42 @@ def simple_messages():
 
 @pytest.fixture
 def tool_use_messages():
-    """Create messages with tool_use and tool_result pairs."""
+    """Create messages with tool_use and tool_result pairs in LiteLLM format."""
+    from llm.base import ToolCall
+
     return [
         LLMMessage(role="user", content="Calculate 2+2"),
         LLMMessage(
             role="assistant",
-            content=[
-                {"type": "text", "text": "I'll calculate that for you."},
-                {
-                    "type": "tool_use",
-                    "id": "tool_1",
-                    "name": "calculator",
-                    "input": {"expression": "2+2"},
-                },
-            ],
+            content="I'll calculate that for you.",
+            tool_calls=[ToolCall(id="tool_1", name="calculator", arguments={"expression": "2+2"})],
         ),
-        LLMMessage(
-            role="user", content=[{"type": "tool_result", "tool_use_id": "tool_1", "content": "4"}]
-        ),
+        LLMMessage(role="user", content=[{"tool_call_id": "tool_1", "content": "4"}]),
         LLMMessage(role="assistant", content="The result is 4."),
     ]
 
 
 @pytest.fixture
 def protected_tool_messages():
-    """Create messages with protected tool (manage_todo_list)."""
+    """Create messages with protected tool (manage_todo_list) in LiteLLM format."""
+    from llm.base import ToolCall
+
     return [
         LLMMessage(role="user", content="Add a todo item"),
         LLMMessage(
             role="assistant",
-            content=[
-                {"type": "text", "text": "I'll add that to the todo list."},
-                {
-                    "type": "tool_use",
-                    "id": "tool_todo_1",
-                    "name": "manage_todo_list",
-                    "input": {"action": "add", "item": "Test item"},
-                },
+            content="I'll add that to the todo list.",
+            tool_calls=[
+                ToolCall(
+                    id="tool_todo_1",
+                    name="manage_todo_list",
+                    arguments={"action": "add", "item": "Test item"},
+                )
             ],
         ),
         LLMMessage(
             role="user",
-            content=[
-                {"type": "tool_result", "tool_use_id": "tool_todo_1", "content": "Todo item added"}
-            ],
+            content=[{"tool_call_id": "tool_todo_1", "content": "Todo item added"}],
         ),
         LLMMessage(role="assistant", content="Todo item has been added."),
     ]
@@ -135,21 +127,25 @@ def protected_tool_messages():
 
 @pytest.fixture
 def mismatched_tool_messages():
-    """Create messages with mismatched tool_use and tool_result (bug scenario)."""
+    """Create messages with mismatched tool_use and tool_result (bug scenario) in LiteLLM format."""
+    from llm.base import ToolCall
+
     return [
         LLMMessage(role="user", content="Do something"),
         LLMMessage(
             role="assistant",
-            content=[{"type": "tool_use", "id": "tool_1", "name": "tool_a", "input": {}}],
+            content="",
+            tool_calls=[ToolCall(id="tool_1", name="tool_a", arguments={})],
         ),
         # Missing tool_result for tool_1
         LLMMessage(role="user", content="Another request"),
         LLMMessage(
             role="assistant",
-            content=[{"type": "tool_use", "id": "tool_2", "name": "tool_b", "input": {}}],
+            content="",
+            tool_calls=[ToolCall(id="tool_2", name="tool_b", arguments={})],
         ),
         LLMMessage(
             role="user",
-            content=[{"type": "tool_result", "tool_use_id": "tool_2", "content": "result"}],
+            content=[{"tool_call_id": "tool_2", "content": "result"}],
         ),
     ]

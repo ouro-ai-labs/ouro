@@ -35,6 +35,10 @@ class TokenTracker:
         """
         content = self._extract_content(message)
 
+        # Add tool_calls tokens if present (LiteLLM format)
+        if hasattr(message, "tool_calls") and message.tool_calls:
+            content += "\n" + str(message.tool_calls)
+
         if provider == "openai":
             return self._count_openai_tokens(content, model)
         elif provider == "anthropic":
@@ -53,17 +57,17 @@ class TokenTracker:
         if isinstance(content, str):
             return content
         elif isinstance(content, list):
-            # Content blocks (Anthropic format)
+            # Content blocks (for tool results in LiteLLM format)
             text_parts = []
             for block in content:
                 if isinstance(block, dict):
                     if block.get("type") == "text":
                         text_parts.append(block.get("text", ""))
-                    elif block.get("type") == "tool_use":
-                        # Include tool use in token count
+                    elif "tool_call_id" in block:
+                        # LiteLLM tool result format
                         text_parts.append(str(block))
-                    elif block.get("type") == "tool_result":
-                        # Include tool results in token count
+                    else:
+                        # Other block types
                         text_parts.append(str(block))
             return "\n".join(text_parts)
         else:

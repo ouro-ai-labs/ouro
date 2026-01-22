@@ -271,25 +271,34 @@ class TestToolCallMatching:
         context = manager.get_context_for_llm()
 
         for msg in context:
-            if isinstance(msg.content, list):
-                for block in msg.content:
-                    if isinstance(block, dict):
-                        if (
-                            block.get("type") == "tool_use"
-                            and block.get("name") == "manage_todo_list"
-                        ):
+            # Check for LiteLLM format: message object with tool_calls
+            if hasattr(msg.content, "tool_calls") and msg.content.tool_calls:
+                for tc in msg.content.tool_calls:
+                    if hasattr(tc, "function") and hasattr(tc.function, "name"):
+                        if tc.function.name == "manage_todo_list":
                             found_protected = True
                             break
 
         assert found_protected, "Protected tool 'manage_todo_list' should be preserved in context"
 
     def test_multiple_tool_pairs_in_sequence(self, set_memory_config, mock_llm):
-        """Test multiple consecutive tool_use/tool_result pairs."""
+        """Test multiple consecutive tool_use/tool_result pairs in LiteLLM format."""
         set_memory_config(
-            MEMORY_SHORT_TERM_SIZE=10,
+            MEMORY_SHORT_TERM_SIZE=20,  # Large enough to avoid auto-compression
             MEMORY_SHORT_TERM_MIN_SIZE=2,
         )
         manager = MemoryManager(mock_llm)
+
+        # Mock LiteLLM message objects
+        class MockToolCall:
+            def __init__(self, id, name):
+                self.id = id
+                self.function = type('obj', (object,), {'name': name, 'arguments': '{}'})()
+
+        class MockMessage:
+            def __init__(self, content, tool_calls=None):
+                self.content = content
+                self.tool_calls = tool_calls or []
 
         # Create multiple tool pairs
         messages = []
@@ -299,24 +308,14 @@ class TestToolCallMatching:
                     LLMMessage(role="user", content=f"Request {i}"),
                     LLMMessage(
                         role="assistant",
-                        content=[
-                            {
-                                "type": "tool_use",
-                                "id": f"tool_{i}",
-                                "name": f"tool_{i}",
-                                "input": {},
-                            }
-                        ],
+                        content=MockMessage(
+                            content="",
+                            tool_calls=[MockToolCall(f"tool_{i}", f"tool_{i}")]
+                        ),
                     ),
                     LLMMessage(
                         role="user",
-                        content=[
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": f"tool_{i}",
-                                "content": f"result_{i}",
-                            }
-                        ],
+                        content=[{"tool_call_id": f"tool_{i}", "content": f"result_{i}"}],
                     ),
                     LLMMessage(role="assistant", content=f"Response {i}"),
                 ]
@@ -328,19 +327,22 @@ class TestToolCallMatching:
         # Force compression
         manager.compress(strategy=CompressionStrategy.SELECTIVE)
 
-        # Verify all pairs are matched
+        # Verify all pairs are matched (LiteLLM format)
         context = manager.get_context_for_llm()
         tool_use_ids = set()
         tool_result_ids = set()
 
         for msg in context:
-            if isinstance(msg.content, list):
+            # Check for LiteLLM format: message object with tool_calls
+            if hasattr(msg.content, "tool_calls") and msg.content.tool_calls:
+                for tc in msg.content.tool_calls:
+                    if hasattr(tc, "id"):
+                        tool_use_ids.add(tc.id)
+            # Check for tool results
+            elif isinstance(msg.content, list):
                 for block in msg.content:
-                    if isinstance(block, dict):
-                        if block.get("type") == "tool_use":
-                            tool_use_ids.add(block.get("id"))
-                        elif block.get("type") == "tool_result":
-                            tool_result_ids.add(block.get("tool_use_id"))
+                    if isinstance(block, dict) and "tool_call_id" in block:
+                        tool_result_ids.add(block.get("tool_call_id"))
 
         assert tool_use_ids == tool_result_ids
 

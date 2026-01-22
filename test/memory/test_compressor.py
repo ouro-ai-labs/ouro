@@ -117,8 +117,19 @@ class TestToolPairDetection:
         assert len(orphaned) == 0
 
     def test_find_tool_pairs_multiple(self, mock_llm):
-        """Test finding multiple tool pairs."""
+        """Test finding multiple tool pairs in LiteLLM format."""
         compressor = WorkingMemoryCompressor(mock_llm)
+
+        # Mock LiteLLM message objects
+        class MockToolCall:
+            def __init__(self, id, name):
+                self.id = id
+                self.function = type('obj', (object,), {'name': name, 'arguments': '{}'})()
+
+        class MockMessage:
+            def __init__(self, content, tool_calls=None):
+                self.content = content
+                self.tool_calls = tool_calls or []
 
         messages = []
         for i in range(3):
@@ -126,24 +137,14 @@ class TestToolPairDetection:
                 [
                     LLMMessage(
                         role="assistant",
-                        content=[
-                            {
-                                "type": "tool_use",
-                                "id": f"tool_{i}",
-                                "name": f"tool_{i}",
-                                "input": {},
-                            }
-                        ],
+                        content=MockMessage(
+                            content="",
+                            tool_calls=[MockToolCall(f"tool_{i}", f"tool_{i}")]
+                        ),
                     ),
                     LLMMessage(
                         role="user",
-                        content=[
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": f"tool_{i}",
-                                "content": f"result_{i}",
-                            }
-                        ],
+                        content=[{"tool_call_id": f"tool_{i}", "content": f"result_{i}"}],
                     ),
                 ]
             )
@@ -217,16 +218,14 @@ class TestProtectedTools:
 
         preserved, to_compress = compressor._separate_messages(protected_tool_messages)
 
-        # Protected tool should be in preserved messages
+        # Protected tool should be in preserved messages (LiteLLM format)
         found_protected = False
         for msg in preserved:
-            if isinstance(msg.content, list):
-                for block in msg.content:
-                    if isinstance(block, dict):
-                        if (
-                            block.get("type") == "tool_use"
-                            and block.get("name") == "manage_todo_list"
-                        ):
+            # Check for LiteLLM format: message object with tool_calls
+            if hasattr(msg.content, "tool_calls") and msg.content.tool_calls:
+                for tc in msg.content.tool_calls:
+                    if hasattr(tc, "function") and hasattr(tc.function, "name"):
+                        if tc.function.name == "manage_todo_list":
                             found_protected = True
                             break
 
