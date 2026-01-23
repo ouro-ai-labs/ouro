@@ -1,8 +1,10 @@
 """Advanced file operation tools inspired by Claude Code."""
 
 import re
+import shutil
+import subprocess
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from tools.base import BaseTool
 
@@ -64,6 +66,11 @@ Returns sorted list of matching file paths."""
 class GrepTool(BaseTool):
     """Search file contents using regex patterns."""
 
+    def __init__(self):
+        """Initialize GrepTool, checking for ripgrep availability."""
+        self._rg_path = shutil.which("rg")
+        self._has_ripgrep = self._rg_path is not None
+
     @property
     def name(self) -> str:
         return "grep_content"
@@ -77,26 +84,18 @@ Output modes:
 - with_context: Show matching lines with line numbers
 - count: Count matches per file
 
-File filtering:
-- file_pattern: Glob pattern to filter files BEFORE content search (e.g., '**/*.py', 'src/**/*.js')
-- exclude_patterns: List of glob patterns to exclude (e.g., ['**/*.pyc', 'node_modules/**'])
-- Uses hard-coded defaults if not specified
-
-WHEN TO USE:
-- Finding specific code patterns: pattern + file_pattern
-- Searching TODOs/FIXMEs: pattern="TODO|FIXME"
-- Counting occurrences: mode="count"
-- Targeted searches: file_pattern="**/*.py" + pattern="def\\s+\\w+"
-
-WHEN TO USE GlobTool + GrepTool:
-- When you need the file list for multiple operations
-- When file discovery is separate from content search
+Options:
+- file_pattern: Glob pattern to filter files (e.g., '**/*.py', 'src/**/*.js')
+- exclude_patterns: Glob patterns to exclude (e.g., ['**/*.pyc', 'node_modules/**'])
+- context_lines: Show N lines before and after matches (with_context mode)
+- multiline: Enable multiline pattern matching
 
 Examples:
-- Find function definitions in Python files: pattern="def\\s+\\w+", file_pattern="**/*.py"
-- Search imports in src/: pattern="^import\\s+", file_pattern="src/**/*.py"
-- Find TODOs excluding tests: pattern="TODO|FIXME", exclude_patterns=["tests/**"]
-- Count all print statements: pattern="print\\(", mode="count" """
+- Find functions: pattern="def\\s+\\w+", file_pattern="**/*.py"
+- Search imports: pattern="^import\\s+", file_pattern="src/**/*.py"
+- Find TODOs: pattern="TODO|FIXME", exclude_patterns=["tests/**"]
+- Count prints: pattern="print\\(", mode="count"
+- With context: pattern="ERROR", mode="with_context", context_lines=2"""
 
     @property
     def parameters(self) -> Dict[str, Any]:
@@ -127,6 +126,18 @@ Examples:
                 "type": "integer",
                 "description": "Maximum matches to show per file in with_context mode (default: 5)",
             },
+            "context_lines": {
+                "type": "integer",
+                "description": "Number of lines to show before and after each match (default: 0)",
+            },
+            "multiline": {
+                "type": "boolean",
+                "description": "Enable multiline pattern matching (default: false)",
+            },
+            "max_count": {
+                "type": "integer",
+                "description": "Maximum total number of results to return (default: 50)",
+            },
         }
 
     def execute(
@@ -138,8 +149,157 @@ Examples:
         file_pattern: str = None,
         exclude_patterns: list = None,
         max_matches_per_file: int = 5,
+        context_lines: int = 0,
+        multiline: bool = False,
+        max_count: int = 50,
+        **kwargs,
     ) -> str:
         """Search for pattern in files with optional file filtering."""
+        base_path = Path(path)
+        if not base_path.exists():
+            return f"Error: Path does not exist: {path}"
+
+        # Use ripgrep if available
+        if self._has_ripgrep:
+            return self._execute_ripgrep(
+                pattern=pattern,
+                path=path,
+                mode=mode,
+                case_sensitive=case_sensitive,
+                file_pattern=file_pattern,
+                exclude_patterns=exclude_patterns,
+                max_matches_per_file=max_matches_per_file,
+                context_lines=context_lines,
+                multiline=multiline,
+                max_count=max_count,
+            )
+        else:
+            return self._execute_python_fallback(
+                pattern=pattern,
+                path=path,
+                mode=mode,
+                case_sensitive=case_sensitive,
+                file_pattern=file_pattern,
+                exclude_patterns=exclude_patterns,
+                max_matches_per_file=max_matches_per_file,
+                max_count=max_count,
+            )
+
+    def _execute_ripgrep(
+        self,
+        pattern: str,
+        path: str,
+        mode: str,
+        case_sensitive: bool,
+        file_pattern: Optional[str],
+        exclude_patterns: Optional[List[str]],
+        max_matches_per_file: int,
+        context_lines: int,
+        multiline: bool,
+        max_count: int,
+    ) -> str:
+        """Execute search using ripgrep."""
+        cmd = [self._rg_path]
+
+        # Output mode
+        if mode == "files_only":
+            cmd.append("-l")  # --files-with-matches
+        elif mode == "count":
+            cmd.append("-c")  # --count
+        else:  # with_context
+            cmd.append("-n")  # --line-number
+            if context_lines > 0:
+                cmd.extend(["-C", str(context_lines)])
+
+        # Case sensitivity
+        if not case_sensitive:
+            cmd.append("-i")
+
+        # Multiline mode
+        if multiline:
+            cmd.append("-U")  # --multiline
+
+        # File type filtering via glob
+        if file_pattern:
+            cmd.extend(["-g", file_pattern])
+
+        # Exclude patterns
+        default_excludes = [
+            ".git/",
+            "node_modules/",
+            "__pycache__/",
+            "*.pyc",
+            ".venv/",
+            "venv/",
+            "target/",
+            "build/",
+        ]
+        excludes = exclude_patterns if exclude_patterns is not None else default_excludes
+        for exclude in excludes:
+            cmd.extend(["-g", f"!{exclude}"])
+
+        # Max results per file (only for with_context mode)
+        if mode == "with_context":
+            cmd.extend(["-m", str(max_matches_per_file)])
+
+        # Include hidden files but exclude .git
+        cmd.append("--hidden")
+
+        # Pattern and path
+        cmd.extend(["--", pattern, path])
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            output = result.stdout
+            if not output and result.returncode == 1:
+                return f"No matches found for pattern '{pattern}'"
+            elif result.returncode not in (0, 1):
+                # returncode 1 means no matches, 0 means matches found
+                # Other codes indicate errors
+                if result.stderr:
+                    return f"Error executing ripgrep: {result.stderr.strip()}"
+                return f"No matches found for pattern '{pattern}'"
+
+            # Limit output size
+            lines = output.strip().split("\n") if output.strip() else []
+            if len(lines) > max_count:
+                lines = lines[:max_count]
+                lines.append(f"\n... (truncated, showing first {max_count} results)")
+
+            output = "\n".join(lines)
+
+            # Check output size
+            estimated_tokens = len(output) // self.CHARS_PER_TOKEN
+            if estimated_tokens > self.MAX_TOKENS:
+                max_chars = self.MAX_TOKENS * self.CHARS_PER_TOKEN
+                output = output[:max_chars]
+                output += f"\n... (output truncated to ~{self.MAX_TOKENS} tokens)"
+
+            return output
+
+        except subprocess.TimeoutExpired:
+            return "Error: Search timed out after 30 seconds"
+        except Exception as e:
+            return f"Error executing ripgrep: {str(e)}"
+
+    def _execute_python_fallback(
+        self,
+        pattern: str,
+        path: str,
+        mode: str,
+        case_sensitive: bool,
+        file_pattern: Optional[str],
+        exclude_patterns: Optional[List[str]],
+        max_matches_per_file: int,
+        max_count: int,
+    ) -> str:
+        """Execute search using Python regex (fallback when ripgrep not available)."""
         try:
             flags = 0 if case_sensitive else re.IGNORECASE
             regex = re.compile(pattern, flags)
@@ -148,8 +308,6 @@ Examples:
 
         try:
             base_path = Path(path)
-            if not base_path.exists():
-                return f"Error: Path does not exist: {path}"
 
             # Default exclusions if not specified
             default_excludes = [
@@ -170,35 +328,50 @@ Examples:
 
             # Determine files to search
             if file_pattern:
-                # Use user-specified file pattern
                 try:
                     files_to_search = list(base_path.glob(file_pattern))
                 except Exception as e:
                     return f"Error with file_pattern '{file_pattern}': {str(e)}"
             else:
-                # Recursively find all files (current behavior)
                 files_to_search = [f for f in base_path.rglob("*") if f.is_file()]
 
             # Filter out excluded patterns
             excludes = exclude_patterns if exclude_patterns is not None else default_excludes
 
-            # Pre-compute set of excluded files using glob patterns
+            # Pre-compute set of excluded files
             excluded_files = set()
             for exclude_pattern in excludes:
                 try:
                     excluded_files.update(base_path.glob(exclude_pattern))
-                    # Also handle recursive patterns
                     excluded_files.update(base_path.rglob(exclude_pattern))
                 except Exception:
-                    # Skip invalid patterns
                     pass
+
+            # Also exclude common directories
+            exclude_dirs = {
+                ".git",
+                "node_modules",
+                "__pycache__",
+                ".venv",
+                "venv",
+                "target",
+                "build",
+            }
 
             # Filter files
             filtered_files = []
             for file_path in files_to_search:
                 if not file_path.is_file():
                     continue
-                if file_path not in excluded_files:
+                if file_path in excluded_files:
+                    continue
+                # Check for excluded directories
+                skip = False
+                for part in file_path.parts:
+                    if part in exclude_dirs:
+                        skip = True
+                        break
+                if not skip:
                     filtered_files.append(file_path)
 
             results = []
@@ -225,11 +398,9 @@ Examples:
                             if line_no <= len(lines):
                                 results.append(f"{file_path}:{line_no}: {lines[line_no-1].strip()}")
                 except (UnicodeDecodeError, PermissionError):
-                    # Skip files that can't be read
                     continue
 
-                # Limit total results to 50 to avoid overwhelming output
-                if len(results) >= 50:
+                if len(results) >= max_count:
                     break
 
             if not results:
@@ -245,7 +416,7 @@ Examples:
                 return (
                     f"Error: Grep output (~{estimated_tokens} tokens) exceeds "
                     f"maximum allowed ({self.MAX_TOKENS}). Please use more specific "
-                    f"file_pattern or pattern to narrow results, or reduce max_matches_per_file."
+                    f"file_pattern or pattern to narrow results."
                 )
 
             return output

@@ -2,7 +2,12 @@
 
 import pytest
 
-from tools.code_navigator import CodeNavigatorTool
+from tools.code_navigator import (
+    HAS_TREE_SITTER,
+    CodeNavigatorTool,
+    detect_language,
+    get_supported_languages,
+)
 
 
 @pytest.fixture
@@ -311,6 +316,449 @@ class TestRealWorldScenarios:
 
         assert "_process" in result
         assert "BaseAgent" in result or "base.py" in result
+
+
+class TestLanguageDetection:
+    """Test language detection functionality."""
+
+    def test_python_extension(self, tmp_path):
+        """Test Python file detection."""
+        from pathlib import Path
+
+        assert detect_language(Path("test.py")) == "python"
+
+    def test_javascript_extensions(self, tmp_path):
+        """Test JavaScript file detection."""
+        from pathlib import Path
+
+        assert detect_language(Path("test.js")) == "javascript"
+        assert detect_language(Path("test.jsx")) == "javascript"
+
+    def test_typescript_extensions(self, tmp_path):
+        """Test TypeScript file detection."""
+        from pathlib import Path
+
+        assert detect_language(Path("test.ts")) == "typescript"
+        assert detect_language(Path("test.tsx")) == "typescript"
+
+    def test_go_extension(self, tmp_path):
+        """Test Go file detection."""
+        from pathlib import Path
+
+        assert detect_language(Path("test.go")) == "go"
+
+    def test_rust_extension(self, tmp_path):
+        """Test Rust file detection."""
+        from pathlib import Path
+
+        assert detect_language(Path("test.rs")) == "rust"
+
+    def test_java_extension(self, tmp_path):
+        """Test Java file detection."""
+        from pathlib import Path
+
+        assert detect_language(Path("test.java")) == "java"
+
+    def test_cpp_extensions(self, tmp_path):
+        """Test C++ file detection."""
+        from pathlib import Path
+
+        assert detect_language(Path("test.cpp")) == "cpp"
+        assert detect_language(Path("test.cc")) == "cpp"
+        assert detect_language(Path("test.hpp")) == "cpp"
+
+    def test_c_extension(self, tmp_path):
+        """Test C file detection."""
+        from pathlib import Path
+
+        assert detect_language(Path("test.c")) == "c"
+
+    def test_supported_languages(self):
+        """Test that supported languages list is correct."""
+        langs = get_supported_languages()
+        assert "python" in langs
+        assert "javascript" in langs
+        assert "typescript" in langs
+        assert "go" in langs
+        assert "rust" in langs
+        assert "java" in langs
+
+
+@pytest.mark.skipif(not HAS_TREE_SITTER, reason="tree-sitter-languages not installed")
+class TestMultiLanguageSupport:
+    """Test multi-language code navigation with tree-sitter."""
+
+    @pytest.fixture
+    def multi_lang_files(self, tmp_path):
+        """Create sample files in multiple languages."""
+        # JavaScript file
+        js_file = tmp_path / "app.js"
+        js_file.write_text(
+            """
+function greet(name) {
+    return "Hello, " + name;
+}
+
+class UserService {
+    constructor() {
+        this.users = [];
+    }
+
+    getUser(id) {
+        return this.users.find(u => u.id === id);
+    }
+}
+
+const helper = () => console.log("helper");
+"""
+        )
+
+        # TypeScript file
+        ts_file = tmp_path / "service.ts"
+        ts_file.write_text(
+            """
+interface User {
+    id: number;
+    name: string;
+}
+
+class ApiService {
+    private baseUrl: string;
+
+    constructor(url: string) {
+        this.baseUrl = url;
+    }
+
+    fetchData(endpoint: string): Promise<any> {
+        return fetch(this.baseUrl + endpoint);
+    }
+}
+
+function processData(data: User[]): void {
+    console.log(data);
+}
+"""
+        )
+
+        # Go file
+        go_file = tmp_path / "main.go"
+        go_file.write_text(
+            """
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Hello, World!")
+}
+
+func greet(name string) string {
+    return "Hello, " + name
+}
+
+type Server struct {
+    Port int
+    Host string
+}
+
+func (s *Server) Start() {
+    fmt.Printf("Starting server on %s:%d", s.Host, s.Port)
+}
+"""
+        )
+
+        # Rust file
+        rs_file = tmp_path / "lib.rs"
+        rs_file.write_text(
+            """
+pub fn calculate(a: i32, b: i32) -> i32 {
+    a + b
+}
+
+struct Calculator {
+    value: i32,
+}
+
+impl Calculator {
+    fn new() -> Self {
+        Calculator { value: 0 }
+    }
+
+    fn add(&mut self, n: i32) {
+        self.value += n;
+    }
+}
+
+trait Compute {
+    fn compute(&self) -> i32;
+}
+"""
+        )
+
+        # Java file
+        java_file = tmp_path / "Main.java"
+        java_file.write_text(
+            """
+public class Main {
+    public static void main(String[] args) {
+        System.out.println("Hello, World!");
+    }
+
+    public int add(int a, int b) {
+        return a + b;
+    }
+}
+
+interface Processor {
+    void process();
+}
+
+class Helper {
+    private String name;
+
+    public Helper(String name) {
+        this.name = name;
+    }
+
+    public String getName() {
+        return this.name;
+    }
+}
+"""
+        )
+
+        # C++ file
+        cpp_file = tmp_path / "app.cpp"
+        cpp_file.write_text(
+            """
+#include <iostream>
+#include <string>
+
+class Engine {
+public:
+    void start() {
+        std::cout << "Engine started" << std::endl;
+    }
+
+    void stop() {
+        std::cout << "Engine stopped" << std::endl;
+    }
+};
+
+int calculate(int a, int b) {
+    return a + b;
+}
+
+void printMessage(const std::string& msg) {
+    std::cout << msg << std::endl;
+}
+"""
+        )
+
+        return tmp_path
+
+    def test_find_javascript_function(self, tool, multi_lang_files):
+        """Test finding JavaScript function."""
+        result = tool.execute(
+            target="greet",
+            search_type="find_function",
+            path=str(multi_lang_files),
+            language="javascript",
+        )
+
+        assert "greet" in result
+        assert "app.js" in result
+        assert "[javascript]" in result
+
+    def test_find_javascript_class(self, tool, multi_lang_files):
+        """Test finding JavaScript class."""
+        result = tool.execute(
+            target="UserService",
+            search_type="find_class",
+            path=str(multi_lang_files),
+            language="javascript",
+        )
+
+        assert "UserService" in result
+        assert "app.js" in result
+
+    def test_find_typescript_function(self, tool, multi_lang_files):
+        """Test finding TypeScript function."""
+        result = tool.execute(
+            target="processData",
+            search_type="find_function",
+            path=str(multi_lang_files),
+            language="typescript",
+        )
+
+        assert "processData" in result
+        assert "service.ts" in result
+
+    def test_find_typescript_class(self, tool, multi_lang_files):
+        """Test finding TypeScript class and interface."""
+        result = tool.execute(
+            target="ApiService",
+            search_type="find_class",
+            path=str(multi_lang_files),
+            language="typescript",
+        )
+
+        assert "ApiService" in result
+        assert "service.ts" in result
+
+    def test_find_go_function(self, tool, multi_lang_files):
+        """Test finding Go function."""
+        result = tool.execute(
+            target="greet",
+            search_type="find_function",
+            path=str(multi_lang_files),
+            language="go",
+        )
+
+        assert "greet" in result
+        assert "main.go" in result
+        assert "[go]" in result
+
+    def test_find_go_struct(self, tool, multi_lang_files):
+        """Test finding Go struct (treated as class)."""
+        result = tool.execute(
+            target="Server",
+            search_type="find_class",
+            path=str(multi_lang_files),
+            language="go",
+        )
+
+        assert "Server" in result
+        assert "main.go" in result
+
+    def test_find_rust_function(self, tool, multi_lang_files):
+        """Test finding Rust function."""
+        result = tool.execute(
+            target="calculate",
+            search_type="find_function",
+            path=str(multi_lang_files),
+            language="rust",
+        )
+
+        assert "calculate" in result
+        assert "lib.rs" in result
+        assert "[rust]" in result
+
+    def test_find_rust_struct(self, tool, multi_lang_files):
+        """Test finding Rust struct."""
+        result = tool.execute(
+            target="Calculator",
+            search_type="find_class",
+            path=str(multi_lang_files),
+            language="rust",
+        )
+
+        assert "Calculator" in result
+        assert "lib.rs" in result
+
+    def test_find_java_method(self, tool, multi_lang_files):
+        """Test finding Java method."""
+        result = tool.execute(
+            target="add",
+            search_type="find_function",
+            path=str(multi_lang_files),
+            language="java",
+        )
+
+        assert "add" in result
+        assert "Main.java" in result
+        assert "[java]" in result
+
+    def test_find_java_class(self, tool, multi_lang_files):
+        """Test finding Java class."""
+        result = tool.execute(
+            target="Helper",
+            search_type="find_class",
+            path=str(multi_lang_files),
+            language="java",
+        )
+
+        assert "Helper" in result
+        assert "Main.java" in result
+
+    def test_find_cpp_function(self, tool, multi_lang_files):
+        """Test finding C++ function."""
+        result = tool.execute(
+            target="calculate",
+            search_type="find_function",
+            path=str(multi_lang_files),
+            language="cpp",
+        )
+
+        assert "calculate" in result
+        assert "app.cpp" in result
+        assert "[cpp]" in result
+
+    def test_find_cpp_class(self, tool, multi_lang_files):
+        """Test finding C++ class."""
+        result = tool.execute(
+            target="Engine",
+            search_type="find_class",
+            path=str(multi_lang_files),
+            language="cpp",
+        )
+
+        assert "Engine" in result
+        assert "app.cpp" in result
+
+    def test_cross_language_search(self, tool, multi_lang_files):
+        """Test finding function across multiple languages."""
+        # 'greet' exists in both JS and Go
+        result = tool.execute(
+            target="greet",
+            search_type="find_function",
+            path=str(multi_lang_files),
+        )
+
+        assert "greet" in result
+        # Should find in both files
+        assert "Found" in result
+
+    def test_show_structure_javascript(self, tool, multi_lang_files):
+        """Test showing structure of JavaScript file."""
+        js_file = multi_lang_files / "app.js"
+        result = tool.execute(target=str(js_file), search_type="show_structure")
+
+        assert "[javascript]" in result
+        assert "CLASSES" in result or "FUNCTIONS" in result
+        assert "UserService" in result or "greet" in result
+
+    def test_show_structure_go(self, tool, multi_lang_files):
+        """Test showing structure of Go file."""
+        go_file = multi_lang_files / "main.go"
+        result = tool.execute(target=str(go_file), search_type="show_structure")
+
+        assert "[go]" in result
+        assert "FUNCTIONS" in result
+        assert "main" in result or "greet" in result
+
+    def test_find_usages_cross_language(self, tool, multi_lang_files):
+        """Test finding usages across languages."""
+        result = tool.execute(
+            target="calculate",
+            search_type="find_usages",
+            path=str(multi_lang_files),
+        )
+
+        # Should find in Rust, Java, and C++
+        assert "calculate" in result
+
+    def test_language_filter(self, tool, multi_lang_files):
+        """Test that language filter works correctly."""
+        # Search only in Python (should find nothing in multi_lang_files)
+        result = tool.execute(
+            target="greet",
+            search_type="find_function",
+            path=str(multi_lang_files),
+            language="python",
+        )
+
+        assert "No function named" in result
 
 
 if __name__ == "__main__":

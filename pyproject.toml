@@ -34,6 +34,8 @@ dependencies = [
     "lxml>=5.0.0",
     "litellm>=1.30.0",
     "tiktoken>=0.5.0",
+    "tree-sitter>=0.21.0,<0.22.0",
+    "tree-sitter-languages>=1.8.0,<1.11.0",
 ]
 
 [project.optional-dependencies]
