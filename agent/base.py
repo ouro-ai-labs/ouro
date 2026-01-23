@@ -1,7 +1,7 @@
 """Base agent class for all agent types."""
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 from llm import LLMMessage, LLMResponse, StopReason, ToolResult
 from memory import MemoryManager
