@@ -15,7 +15,7 @@ class TestToolCallResultIntegration:
     This is the critical test suite for the bug mentioned by the user.
     """
 
-    def test_tool_pairs_survive_compression_cycle(self, set_memory_config, mock_llm):
+    async def test_tool_pairs_survive_compression_cycle(self, set_memory_config, mock_llm):
         """Test that tool pairs remain matched through compression cycles."""
         set_memory_config(
             MEMORY_SHORT_TERM_SIZE=6,
@@ -56,13 +56,13 @@ class TestToolCallResultIntegration:
 
         # Add messages and trigger compression
         for msg in messages:
-            manager.add_message(msg)
+            await manager.add_message(msg)
 
         # Verify no mismatches in context
         context = manager.get_context_for_llm()
         self._verify_tool_pairs_matched(context)
 
-    def test_tool_pairs_with_multiple_compressions(self, set_memory_config, mock_llm):
+    async def test_tool_pairs_with_multiple_compressions(self, set_memory_config, mock_llm):
         """Test tool pairs remain matched through multiple compression cycles."""
         set_memory_config(
             MEMORY_SHORT_TERM_SIZE=4,
@@ -74,8 +74,8 @@ class TestToolCallResultIntegration:
         for batch in range(3):
             for i in range(2):
                 idx = batch * 2 + i
-                manager.add_message(LLMMessage(role="user", content=f"Request {idx}"))
-                manager.add_message(
+                await manager.add_message(LLMMessage(role="user", content=f"Request {idx}"))
+                await manager.add_message(
                     LLMMessage(
                         role="assistant",
                         content=[
@@ -88,7 +88,7 @@ class TestToolCallResultIntegration:
                         ],
                     )
                 )
-                manager.add_message(
+                await manager.add_message(
                     LLMMessage(
                         role="user",
                         content=[
@@ -100,20 +100,20 @@ class TestToolCallResultIntegration:
                         ],
                     )
                 )
-                manager.add_message(LLMMessage(role="assistant", content=f"Response {idx}"))
+                await manager.add_message(LLMMessage(role="assistant", content=f"Response {idx}"))
 
         # Verify no mismatches after multiple compressions
         context = manager.get_context_for_llm()
         self._verify_tool_pairs_matched(context)
 
-    def test_interleaved_tool_calls(self, set_memory_config, mock_llm):
+    async def test_interleaved_tool_calls(self, set_memory_config, mock_llm):
         """Test tool pairs when tool calls are interleaved."""
         set_memory_config(MEMORY_SHORT_TERM_SIZE=10)
         manager = MemoryManager(mock_llm)
 
         # Add interleaved tool calls (assistant makes multiple tool calls at once)
-        manager.add_message(LLMMessage(role="user", content="Complex request"))
-        manager.add_message(
+        await manager.add_message(LLMMessage(role="user", content="Complex request"))
+        await manager.add_message(
             LLMMessage(
                 role="assistant",
                 content=[
@@ -123,7 +123,7 @@ class TestToolCallResultIntegration:
             )
         )
         # Results come back together
-        manager.add_message(
+        await manager.add_message(
             LLMMessage(
                 role="user",
                 content=[
@@ -132,32 +132,32 @@ class TestToolCallResultIntegration:
                 ],
             )
         )
-        manager.add_message(LLMMessage(role="assistant", content="Final response"))
+        await manager.add_message(LLMMessage(role="assistant", content="Final response"))
 
         # Force compression
-        manager.compress(strategy=CompressionStrategy.SELECTIVE)
+        await manager.compress(strategy=CompressionStrategy.SELECTIVE)
 
         context = manager.get_context_for_llm()
         self._verify_tool_pairs_matched(context)
 
-    def test_orphaned_tool_use_detection(self, set_memory_config, mock_llm):
+    async def test_orphaned_tool_use_detection(self, set_memory_config, mock_llm):
         """Test detection of orphaned tool_use (no matching result)."""
         set_memory_config(MEMORY_SHORT_TERM_SIZE=5)
         manager = MemoryManager(mock_llm)
 
         # Add tool_use without result
-        manager.add_message(LLMMessage(role="user", content="Request"))
-        manager.add_message(
+        await manager.add_message(LLMMessage(role="user", content="Request"))
+        await manager.add_message(
             LLMMessage(
                 role="assistant",
                 content=[{"type": "tool_use", "id": "orphan_tool", "name": "tool", "input": {}}],
             )
         )
         # Missing tool_result!
-        manager.add_message(LLMMessage(role="user", content="Another request"))
+        await manager.add_message(LLMMessage(role="user", content="Another request"))
 
         # Force compression
-        manager.compress(strategy=CompressionStrategy.SELECTIVE)
+        await manager.compress(strategy=CompressionStrategy.SELECTIVE)
 
         context = manager.get_context_for_llm()
 
@@ -179,14 +179,14 @@ class TestToolCallResultIntegration:
         if orphans:
             print(f"Detected orphaned tool_use: {orphans}")
 
-    def test_orphaned_tool_result_detection(self, set_memory_config, mock_llm):
+    async def test_orphaned_tool_result_detection(self, set_memory_config, mock_llm):
         """Test detection of orphaned tool_result (no matching use)."""
         set_memory_config(MEMORY_SHORT_TERM_SIZE=5)
         manager = MemoryManager(mock_llm)
 
         # Add tool_result without use (this shouldn't happen but let's test it)
-        manager.add_message(LLMMessage(role="user", content="Request"))
-        manager.add_message(
+        await manager.add_message(LLMMessage(role="user", content="Request"))
+        await manager.add_message(
             LLMMessage(
                 role="user",
                 content=[
@@ -196,7 +196,7 @@ class TestToolCallResultIntegration:
         )
 
         # Force compression
-        manager.compress(strategy=CompressionStrategy.SELECTIVE)
+        await manager.compress(strategy=CompressionStrategy.SELECTIVE)
 
         context = manager.get_context_for_llm()
 
@@ -239,7 +239,7 @@ class TestToolCallResultIntegration:
 class TestCompressionIntegration:
     """Integration tests for compression behavior."""
 
-    def test_full_conversation_lifecycle(self, set_memory_config, mock_llm):
+    async def test_full_conversation_lifecycle(self, set_memory_config, mock_llm):
         """Test a complete conversation lifecycle with multiple compressions."""
         set_memory_config(
             MEMORY_SHORT_TERM_SIZE=8,
@@ -249,8 +249,8 @@ class TestCompressionIntegration:
 
         # Simulate a long conversation
         for i in range(20):
-            manager.add_message(LLMMessage(role="user", content=f"User message {i} " * 20))
-            manager.add_message(
+            await manager.add_message(LLMMessage(role="user", content=f"User message {i} " * 20))
+            await manager.add_message(
                 LLMMessage(role="assistant", content=f"Assistant response {i} " * 20)
             )
 
@@ -264,7 +264,7 @@ class TestCompressionIntegration:
         context = manager.get_context_for_llm()
         assert len(context) < 40  # Compressed from 40 messages
 
-    def test_mixed_content_conversation(self, set_memory_config, mock_llm):
+    async def test_mixed_content_conversation(self, set_memory_config, mock_llm):
         """Test conversation with mixed text and tool content."""
         set_memory_config(
             MEMORY_SHORT_TERM_SIZE=6,
@@ -273,12 +273,12 @@ class TestCompressionIntegration:
         manager = MemoryManager(mock_llm)
 
         # Mix of text and tool messages
-        manager.add_message(LLMMessage(role="user", content="Text message 1"))
-        manager.add_message(LLMMessage(role="assistant", content="Response 1"))
+        await manager.add_message(LLMMessage(role="user", content="Text message 1"))
+        await manager.add_message(LLMMessage(role="assistant", content="Response 1"))
 
         # Tool call
-        manager.add_message(LLMMessage(role="user", content="Use a tool"))
-        manager.add_message(
+        await manager.add_message(LLMMessage(role="user", content="Use a tool"))
+        await manager.add_message(
             LLMMessage(
                 role="assistant",
                 content=[
@@ -287,23 +287,23 @@ class TestCompressionIntegration:
                 ],
             )
         )
-        manager.add_message(
+        await manager.add_message(
             LLMMessage(
                 role="user", content=[{"type": "tool_result", "tool_use_id": "t1", "content": "42"}]
             )
         )
 
         # More text
-        manager.add_message(LLMMessage(role="assistant", content="The answer is 42"))
-        manager.add_message(LLMMessage(role="user", content="Text message 2"))
+        await manager.add_message(LLMMessage(role="assistant", content="The answer is 42"))
+        await manager.add_message(LLMMessage(role="user", content="Text message 2"))
 
         # Force compression
-        manager.compress(strategy=CompressionStrategy.SELECTIVE)
+        await manager.compress(strategy=CompressionStrategy.SELECTIVE)
 
         context = manager.get_context_for_llm()
         assert len(context) > 0
 
-    def test_system_message_persistence(self, set_memory_config, mock_llm):
+    async def test_system_message_persistence(self, set_memory_config, mock_llm):
         """Test that system messages persist through compressions."""
         set_memory_config(
             MEMORY_SHORT_TERM_SIZE=5,
@@ -312,11 +312,11 @@ class TestCompressionIntegration:
         manager = MemoryManager(mock_llm)
 
         system_msg = LLMMessage(role="system", content="You are a helpful assistant.")
-        manager.add_message(system_msg)
+        await manager.add_message(system_msg)
 
         # Add many messages to trigger compression
         for i in range(10):
-            manager.add_message(LLMMessage(role="user", content=f"Message {i}"))
+            await manager.add_message(LLMMessage(role="user", content=f"Message {i}"))
 
         # System message should still be first in context
         context = manager.get_context_for_llm()
@@ -327,7 +327,7 @@ class TestCompressionIntegration:
 class TestEdgeCaseIntegration:
     """Integration tests for edge cases."""
 
-    def test_compression_with_no_compressible_content(
+    async def test_compression_with_no_compressible_content(
         self, set_memory_config, mock_llm, protected_tool_messages
     ):
         """Test compression when all content is protected."""
@@ -339,10 +339,10 @@ class TestEdgeCaseIntegration:
 
         # Add only protected tool messages
         for msg in protected_tool_messages:
-            manager.add_message(msg)
+            await manager.add_message(msg)
 
         # Force compression
-        result = manager.compress(strategy=CompressionStrategy.SELECTIVE)
+        result = await manager.compress(strategy=CompressionStrategy.SELECTIVE)
 
         # Should preserve everything or nearly everything
         assert result is not None
@@ -355,7 +355,7 @@ class TestEdgeCaseIntegration:
                         found_protected = True
         assert found_protected or len(result.preserved_messages) > 0
 
-    def test_rapid_compression_cycles(self, set_memory_config, mock_llm):
+    async def test_rapid_compression_cycles(self, set_memory_config, mock_llm):
         """Test many rapid compression cycles."""
         set_memory_config(
             MEMORY_SHORT_TERM_SIZE=2,
@@ -365,7 +365,7 @@ class TestEdgeCaseIntegration:
 
         # Add messages rapidly, triggering many compressions
         for i in range(20):
-            manager.add_message(LLMMessage(role="user", content=f"Message {i}" * 10))
+            await manager.add_message(LLMMessage(role="user", content=f"Message {i}" * 10))
 
         stats = manager.get_stats()
 
@@ -375,33 +375,33 @@ class TestEdgeCaseIntegration:
         context = manager.get_context_for_llm()
         assert context is not None
 
-    def test_alternating_compression_strategies(self, set_memory_config, mock_llm):
+    async def test_alternating_compression_strategies(self, set_memory_config, mock_llm):
         """Test using different compression strategies on same manager."""
         set_memory_config(MEMORY_SHORT_TERM_SIZE=5)
         manager = MemoryManager(mock_llm)
 
         # Add messages and compress with sliding window
         for i in range(4):
-            manager.add_message(LLMMessage(role="user", content=f"Message {i}"))
+            await manager.add_message(LLMMessage(role="user", content=f"Message {i}"))
 
-        manager.compress(strategy=CompressionStrategy.SLIDING_WINDOW)
+        await manager.compress(strategy=CompressionStrategy.SLIDING_WINDOW)
 
         # Add more messages and compress with selective
-        manager.add_message(LLMMessage(role="user", content="Use tool"))
-        manager.add_message(
+        await manager.add_message(LLMMessage(role="user", content="Use tool"))
+        await manager.add_message(
             LLMMessage(
                 role="assistant",
                 content=[{"type": "tool_use", "id": "t1", "name": "tool", "input": {}}],
             )
         )
-        manager.add_message(
+        await manager.add_message(
             LLMMessage(
                 role="user",
                 content=[{"type": "tool_result", "tool_use_id": "t1", "content": "result"}],
             )
         )
 
-        manager.compress(strategy=CompressionStrategy.SELECTIVE)
+        await manager.compress(strategy=CompressionStrategy.SELECTIVE)
 
         # Should have multiple compressions with different strategies
         assert manager.compression_count == 2
@@ -414,13 +414,13 @@ class TestEdgeCaseIntegration:
         )
         assert summary_count >= 1  # At least one summary should exist
 
-    def test_empty_content_blocks(self, set_memory_config, mock_llm):
+    async def test_empty_content_blocks(self, set_memory_config, mock_llm):
         """Test handling of empty content blocks."""
         set_memory_config(MEMORY_SHORT_TERM_SIZE=5)
         manager = MemoryManager(mock_llm)
 
         # Add message with empty content blocks
-        manager.add_message(
+        await manager.add_message(
             LLMMessage(
                 role="assistant",
                 content=[
@@ -436,7 +436,7 @@ class TestEdgeCaseIntegration:
         # Test passes if no error occurred
         assert context is not None
 
-    def test_very_long_single_message(self, set_memory_config, mock_llm):
+    async def test_very_long_single_message(self, set_memory_config, mock_llm):
         """Test handling of a very long single message."""
         set_memory_config(
             MEMORY_SHORT_TERM_SIZE=5,
@@ -446,7 +446,7 @@ class TestEdgeCaseIntegration:
 
         # Add very long message
         long_content = "This is a very long message. " * 500
-        manager.add_message(LLMMessage(role="user", content=long_content))
+        await manager.add_message(LLMMessage(role="user", content=long_content))
 
         # Should trigger compression
         assert manager.compression_count >= 1
@@ -455,14 +455,14 @@ class TestEdgeCaseIntegration:
 class TestMemoryReset:
     """Test reset functionality in various scenarios."""
 
-    def test_reset_after_compression(self, set_memory_config, mock_llm, simple_messages):
+    async def test_reset_after_compression(self, set_memory_config, mock_llm, simple_messages):
         """Test reset after compression has occurred."""
         set_memory_config(MEMORY_SHORT_TERM_SIZE=3)
         manager = MemoryManager(mock_llm)
 
         # Add messages and compress
         for msg in simple_messages:
-            manager.add_message(msg)
+            await manager.add_message(msg)
 
         # Reset
         manager.reset()
@@ -472,7 +472,7 @@ class TestMemoryReset:
         assert manager.compression_count == 0
         assert manager.short_term.count() == 0
 
-    def test_reuse_after_reset(self, set_memory_config, mock_llm):
+    async def test_reuse_after_reset(self, set_memory_config, mock_llm):
         """Test that manager can be reused after reset."""
         set_memory_config(
             MEMORY_SHORT_TERM_SIZE=10,  # Large enough to avoid compression
@@ -482,14 +482,14 @@ class TestMemoryReset:
 
         # First use
         for i in range(5):
-            manager.add_message(LLMMessage(role="user", content=f"First use {i}"))
+            await manager.add_message(LLMMessage(role="user", content=f"First use {i}"))
 
         # Reset
         manager.reset()
 
         # Second use
         for i in range(5):
-            manager.add_message(LLMMessage(role="user", content=f"Second use {i}"))
+            await manager.add_message(LLMMessage(role="user", content=f"Second use {i}"))
 
         # Should work normally - no compression occurred due to high limits
         context = manager.get_context_for_llm()

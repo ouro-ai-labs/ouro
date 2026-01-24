@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Quick start: Using memory persistence."""
+import asyncio
 import sys
 from pathlib import Path
 
@@ -14,7 +15,7 @@ class MockLLM:
     provider_name = "Mock"
     model = "mock-model"
 
-    def call(self, messages, **kwargs):
+    async def call_async(self, messages, **kwargs):
         return {"content": "Mock response"}
 
     def extract_text(self, response):
@@ -25,7 +26,7 @@ class MockLLM:
         return True
 
 
-def main():
+async def main():
     # Initialize
     llm = MockLLM()
 
@@ -36,8 +37,8 @@ def main():
     print(f"   Session ID: {session_id}")
 
     # Add messages
-    manager.add_message(LLMMessage(role="user", content="Hello!"))
-    manager.add_message(LLMMessage(role="assistant", content="Hi there!"))
+    await manager.add_message(LLMMessage(role="user", content="Hello!"))
+    await manager.add_message(LLMMessage(role="assistant", content="Hi there!"))
     print("   ✓ Added 2 messages")
 
     # Save memory state (normally done automatically after await agent.run(...))
@@ -50,7 +51,7 @@ def main():
     print(f"   ✓ Loaded {manager2.short_term.count()} messages")
 
     # Continue conversation
-    manager2.add_message(LLMMessage(role="user", content="How are you?"))
+    await manager2.add_message(LLMMessage(role="user", content="How are you?"))
     print("   ✓ Continued conversation")
 
     # View sessions
@@ -65,4 +66,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

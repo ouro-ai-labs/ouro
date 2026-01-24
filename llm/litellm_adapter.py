@@ -1,6 +1,5 @@
 """LiteLLM adapter for unified LLM access across 100+ providers."""
 
-import asyncio
 import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -66,17 +65,12 @@ class LiteLLMLLM:
         logger.info(f"Initialized LiteLLM adapter for provider: {self.provider}, model: {model}")
 
     @with_retry()
-    def _make_api_call(self, **call_params):
-        """Internal method to make API call with retry logic."""
-        return litellm.completion(**call_params)
-
-    @with_retry()
     async def _make_api_call_async(self, **call_params):
         """Internal async API call with retry logic."""
         acompletion = getattr(litellm, "acompletion", None)
-        if acompletion is not None:
-            return await acompletion(**call_params)
-        return await asyncio.to_thread(litellm.completion, **call_params)
+        if acompletion is None:
+            raise RuntimeError("LiteLLM async completion is unavailable.")
+        return await acompletion(**call_params)
 
     def _build_call_params(
         self,
@@ -111,49 +105,6 @@ class LiteLLMLLM:
         call_params.update(kwargs)
 
         return litellm_messages, call_params
-
-    def call(
-        self,
-        messages: List[LLMMessage],
-        tools: Optional[List[Dict[str, Any]]] = None,
-        max_tokens: int = 4096,
-        **kwargs,
-    ) -> LLMResponse:
-        """Call LLM via LiteLLM with automatic retry.
-
-        Args:
-            messages: List of conversation messages
-            tools: Optional list of tool schemas (Anthropic format)
-            max_tokens: Maximum tokens to generate
-            **kwargs: Additional parameters
-
-        Returns:
-            LLMResponse with unified format
-        """
-        litellm_messages, call_params = self._build_call_params(
-            messages=messages,
-            tools=tools,
-            max_tokens=max_tokens,
-            **kwargs,
-        )
-
-        # Make API call with retry logic
-        logger.debug(
-            f"Calling LiteLLM with model: {self.model}, messages: {len(litellm_messages)}, tools: {len(tools) if tools else 0}"
-        )
-        response = self._make_api_call(**call_params)
-
-        # Log token usage
-        if hasattr(response, "usage") and response.usage:
-            usage = response.usage
-            logger.debug(
-                f"Token Usage: Input={usage.get('prompt_tokens', 0)}, "
-                f"Output={usage.get('completion_tokens', 0)}, "
-                f"Total={usage.get('total_tokens', 0)}"
-            )
-
-        # Convert to unified format
-        return self._convert_response(response)
 
     async def call_async(
         self,

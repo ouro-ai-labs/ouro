@@ -1,5 +1,6 @@
 """Demo: Using memory persistence with sessions."""
 
+import asyncio
 import sys
 from pathlib import Path
 
@@ -17,7 +18,7 @@ class MockLLM:
         self.provider_name = "Mock"
         self.model = "mock-model"
 
-    def call(self, messages, tools=None, max_tokens=4096, **kwargs):
+    async def call_async(self, messages, tools=None, max_tokens=4096, **kwargs):
         return {"content": "Mock response", "stop_reason": "end_turn"}
 
     def extract_text(self, response):
@@ -28,7 +29,7 @@ class MockLLM:
         return True
 
 
-def demo_create_session():
+async def demo_create_session():
     """Demo: Create a new session and add messages."""
     print("\n" + "=" * 80)
     print("Demo 1: Create a new session (automatically persisted)")
@@ -57,7 +58,7 @@ def demo_create_session():
     ]
 
     for msg in messages:
-        manager.add_message(msg)
+        await manager.add_message(msg)
         print(f"  Added message: [{msg.role}] {str(msg.content)[:50]}...")
 
     # Save memory state (normally done automatically after await agent.run(...))
@@ -74,7 +75,7 @@ def demo_create_session():
     return session_id
 
 
-def demo_load_session(session_id: str):
+async def demo_load_session(session_id: str):
     """Demo: Load an existing session."""
     print("\n" + "=" * 80)
     print(f"Demo 2: Load session {session_id}")
@@ -102,7 +103,7 @@ def demo_load_session(session_id: str):
     ]
 
     for msg in new_messages:
-        manager.add_message(msg)
+        await manager.add_message(msg)
         print(f"  Added: [{msg.role}] {str(msg.content)[:50]}...")
 
     # Save memory state
@@ -136,16 +137,16 @@ def demo_list_sessions():
         print(f"  Summaries: {session['summary_count']}")
 
 
-def main():
+async def main():
     """Run all demos."""
     print("\n🚀 Memory Persistence Demo")
     print("=" * 80)
 
     # Demo 1: Create a new session
-    session_id = demo_create_session()
+    session_id = await demo_create_session()
 
     # Demo 2: Load the session
-    demo_load_session(session_id)
+    await demo_load_session(session_id)
 
     # Demo 3: List all sessions
     demo_list_sessions()
@@ -159,4 +160,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

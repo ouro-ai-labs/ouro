@@ -34,12 +34,11 @@ class MockLLM:
         self.last_messages = None
         self.response_text = "This is a summary of the conversation."
 
-    def call(self, messages, tools=None, max_tokens=4096, **kwargs):
-        """Mock LLM call that returns a summary."""
+    async def call_async(self, messages, tools=None, max_tokens=4096, **kwargs):
+        """Mock async LLM call that returns a summary."""
         self.call_count += 1
         self.last_messages = messages
 
-        # Use new LLMResponse format with content instead of message
         return LLMResponse(
             content=self.response_text,
             stop_reason=StopReason.STOP,

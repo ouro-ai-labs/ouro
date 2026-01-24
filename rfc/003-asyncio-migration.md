@@ -126,12 +126,12 @@ Migration invariant (Phase 2–4 compatibility):
 Notes:
 - `asyncio.to_thread(...)` isolates blocking work but does **not** forcibly stop the underlying work on cancellation; it only cancels the await. For side-effecting operations, native async implementations (or explicit process cancellation) are preferred.
 
-### 3.1) LLM calls: awaitable interface without duplication
+### 3.1) LLM calls: async-only interface
 
-The LLM adapter should follow the same principle as tools: prefer a single method name that becomes awaitable.
+The LLM adapter exposes a single async entrypoint.
 
-- The agent runtime should treat `llm.call(...)` as awaitable. During migration it may accept either a sync or async implementation, based on “is the returned value awaitable?”.
-- If the underlying provider library is synchronous, the async boundary belongs in the runtime/LLM adapter (not sprinkled across agent code).
+- The agent runtime calls `await llm.call_async(...)` (no sync fallbacks).
+- If the underlying provider library is synchronous, the async boundary belongs in the adapter (not in agent code).
 
 ### 4) Concurrency semantics (safe by default)
 

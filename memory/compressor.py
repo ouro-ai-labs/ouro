@@ -44,7 +44,7 @@ Original messages ({count} messages, ~{tokens} tokens):
         """
         self.llm = llm
 
-    def compress(
+    async def compress(
         self,
         messages: List[LLMMessage],
         strategy: str = CompressionStrategy.SLIDING_WINDOW,
@@ -70,16 +70,16 @@ Original messages ({count} messages, ~{tokens} tokens):
 
         # Select and apply compression strategy
         if strategy == CompressionStrategy.SLIDING_WINDOW:
-            return self._compress_sliding_window(messages, target_tokens)
+            return await self._compress_sliding_window(messages, target_tokens)
         elif strategy == CompressionStrategy.SELECTIVE:
-            return self._compress_selective(messages, target_tokens)
+            return await self._compress_selective(messages, target_tokens)
         elif strategy == CompressionStrategy.DELETION:
             return self._compress_deletion(messages)
         else:
             logger.warning(f"Unknown strategy {strategy}, using sliding window")
-            return self._compress_sliding_window(messages, target_tokens)
+            return await self._compress_sliding_window(messages, target_tokens)
 
-    def _compress_sliding_window(
+    async def _compress_sliding_window(
         self, messages: List[LLMMessage], target_tokens: int
     ) -> CompressedMemory:
         """Compress using sliding window strategy.
@@ -110,7 +110,7 @@ Original messages ({count} messages, ~{tokens} tokens):
             from llm import LLMMessage
 
             prompt = LLMMessage(role="user", content=prompt_text)
-            response = self.llm.call(messages=[prompt], max_tokens=target_tokens * 2)
+            response = await self.llm.call_async(messages=[prompt], max_tokens=target_tokens * 2)
             summary = self.llm.extract_text(response)
 
             # Calculate compression metrics
@@ -141,7 +141,7 @@ Original messages ({count} messages, ~{tokens} tokens):
                 metadata={"strategy": "sliding_window", "error": str(e)},
             )
 
-    def _compress_selective(
+    async def _compress_selective(
         self, messages: List[LLMMessage], target_tokens: int
     ) -> CompressedMemory:
         """Compress using selective preservation strategy.
@@ -190,7 +190,9 @@ Original messages ({count} messages, ~{tokens} tokens):
                 from llm import LLMMessage
 
                 prompt = LLMMessage(role="user", content=prompt_text)
-                response = self.llm.call(messages=[prompt], max_tokens=available_for_summary * 2)
+                response = await self.llm.call_async(
+                    messages=[prompt], max_tokens=available_for_summary * 2
+                )
                 summary = self.llm.extract_text(response)
 
                 summary_tokens = self._estimate_tokens(

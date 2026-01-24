@@ -95,7 +95,7 @@ class PlanExecuteAgent(BaseAgent):
 
         # Commit exploration summary to global memory for persistence
         global_scope.set_summary(self._exploration_results.context_summary)
-        global_scope.commit_to_global()
+        await global_scope.commit_to_global()
 
         # Print memory statistics
         self._print_memory_stats()
@@ -345,7 +345,7 @@ class PlanExecuteAgent(BaseAgent):
         plan = self._parse_plan(task, plan_text, exploration)
 
         # Save plan to memory
-        self.memory.add_message(
+        await self.memory.add_message(
             LLMMessage(
                 role="assistant",
                 content=f"[Plan Created - v{plan.version}]\n{self._format_plan(plan)}",
@@ -596,7 +596,7 @@ class PlanExecuteAgent(BaseAgent):
             logger.error(f"{step.id} failed: {e}")
 
         # Save step result summary to main memory
-        self.memory.add_message(
+        await self.memory.add_message(
             LLMMessage(
                 role="assistant",
                 content=f"{step.id} ({step.description}): {result[:300]}...",
@@ -757,7 +757,7 @@ class PlanExecuteAgent(BaseAgent):
                 step.result = old_step.result
 
         # Save replan to memory
-        self.memory.add_message(
+        await self.memory.add_message(
             LLMMessage(
                 role="assistant",
                 content=f"[Plan Updated - v{new_plan.version}]\nReason: {request.reason}\n{self._format_plan(new_plan)}",

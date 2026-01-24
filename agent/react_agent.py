@@ -146,10 +146,10 @@ DO NOT delegate simple operations that can be done in 1-2 tool calls.
                 pass
 
             # Add system message only on first turn
-            self.memory.add_message(LLMMessage(role="system", content=system_content))
+            await self.memory.add_message(LLMMessage(role="system", content=system_content))
 
         # Add user task/message
-        self.memory.add_message(LLMMessage(role="user", content=task))
+        await self.memory.add_message(LLMMessage(role="user", content=task))
 
         tools = self.tool_executor.get_tool_schemas()
 

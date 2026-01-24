@@ -81,7 +81,7 @@ memory = MemoryManager(config, llm)
 ```
 
 **Key Methods**:
-- `add_message()`: Add a message to memory
+- `add_message()`: Add a message to memory (async, requires `await`)
 - `get_context_for_llm()`: Get optimized context
 - `get_stats()`: Get usage statistics
 
@@ -109,7 +109,7 @@ short_term = ShortTermMemory(max_size=20)
 from memory import WorkingMemoryCompressor
 
 compressor = WorkingMemoryCompressor(llm, config)
-compressed = compressor.compress(old_messages)
+compressed = await compressor.compress(old_messages)
 ```
 
 **Features**:
@@ -333,7 +333,7 @@ For precise costs, pass actual token counts from LLM responses:
 
 ```python
 # In your agent code
-response = llm.call(messages, tools)
+response = await llm.call_async(messages, tools)
 
 # Extract actual usage
 actual_tokens = {
@@ -342,7 +342,7 @@ actual_tokens = {
 }
 
 # Add to memory with actual counts
-memory.add_message(
+await memory.add_message(
     LLMMessage(role="assistant", content=response.content),
     actual_tokens=actual_tokens
 )
@@ -410,7 +410,7 @@ agent = ReActAgent(llm=llm, tools=tools, memory_config=config)
 
 ### Step-by-Step Process
 
-1. **Message Addition**: New message added via `add_message()`
+1. **Message Addition**: New message added via `await add_message()`
 2. **Threshold Check**: If total tokens > threshold, trigger compression
 3. **Message Separation**:
    - Recent N messages → Short-term memory (preserved)
@@ -457,7 +457,7 @@ preferred official docs. Created comparison of top 3 tutorials.
 The system estimates compression quality:
 
 ```python
-compressed = compressor.compress(messages)
+compressed = await compressor.compress(messages)
 
 print(f"Original: {compressed.original_tokens} tokens")
 print(f"Compressed: {compressed.compressed_tokens} tokens")
@@ -594,19 +594,19 @@ if memory.compressed_memory:
 from agent.base import BaseAgent
 
 class MyCustomAgent(BaseAgent):
-    def run(self, task: str) -> str:
+    async def run(self, task: str) -> str:
         # Add initial message
-        self.memory.add_message(LLMMessage(role="user", content=task))
+        await self.memory.add_message(LLMMessage(role="user", content=task))
 
         for i in range(self.max_iterations):
             # Get optimized context
             context = self.memory.get_context_for_llm()
 
             # Call LLM
-            response = self.llm.generate(context)
+            response = await self.llm.call_async(messages=context)
 
             # Add response to memory (auto-compression if needed)
-            self.memory.add_message(
+            await self.memory.add_message(
                 LLMMessage(role="assistant", content=response.content)
             )
 

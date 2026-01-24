@@ -69,8 +69,8 @@ manager = MemoryManager(
 )
 
 # Add messages
-manager.add_message(LLMMessage(role="user", content="Hello"))
-manager.add_message(LLMMessage(role="assistant", content="Hi!"))
+await manager.add_message(LLMMessage(role="user", content="Hello"))
+await manager.add_message(LLMMessage(role="assistant", content="Hi!"))
 
 # Manually save to database
 manager.save_memory()
@@ -96,7 +96,7 @@ manager = MemoryManager.from_session(
 )
 
 # Continue conversation
-manager.add_message(LLMMessage(role="user", content="Continue..."))
+await manager.add_message(LLMMessage(role="user", content="Continue..."))
 
 # Save after adding messages
 manager.save_memory()

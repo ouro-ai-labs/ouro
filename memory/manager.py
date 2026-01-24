@@ -132,7 +132,7 @@ class MemoryManager:
             self._session_created = True
             logger.info(f"Created new session: {self.session_id}")
 
-    def add_message(self, message: LLMMessage, actual_tokens: Dict[str, int] = None) -> None:
+    async def add_message(self, message: LLMMessage, actual_tokens: Dict[str, int] = None) -> None:
         """Add a message to memory and trigger compression if needed.
 
         Args:
@@ -194,7 +194,7 @@ class MemoryManager:
         should_compress, reason = self._should_compress()
         if should_compress:
             logger.info(f"🗜️  Triggering compression: {reason}")
-            self.compress()
+            await self.compress()
         else:
             # Log compression check details
             logger.debug(
@@ -219,7 +219,7 @@ class MemoryManager:
 
         return context
 
-    def compress(self, strategy: str = None) -> Optional[CompressedMemory]:
+    async def compress(self, strategy: str = None) -> Optional[CompressedMemory]:
         """Compress current short-term memory.
 
         After compression, summary and preserved messages are put back into short_term
@@ -246,7 +246,7 @@ class MemoryManager:
 
         try:
             # Perform compression
-            compressed = self.compressor.compress(
+            compressed = await self.compressor.compress(
                 messages,
                 strategy=strategy,
                 target_tokens=self._calculate_target_tokens(),

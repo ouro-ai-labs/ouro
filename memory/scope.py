@@ -113,7 +113,7 @@ class ScopedMemoryView:
         """
         self._scope_summary = summary
 
-    def commit_to_global(self) -> None:
+    async def commit_to_global(self) -> None:
         """Commit this scope's summary to the global memory.
 
         This saves the scope summary as a message in the global MemoryManager,
@@ -121,7 +121,7 @@ class ScopedMemoryView:
         """
         summary = self.get_summary()
         if summary:
-            self.manager.add_message(
+            await self.manager.add_message(
                 LLMMessage(
                     role="assistant",
                     content=f"[{self.scope.value.title()} Summary]\n{summary}",
