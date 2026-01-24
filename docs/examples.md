@@ -219,31 +219,37 @@ See [Memory Management](memory-management.md) for more details.
 ### Custom Agent Configuration
 
 ```python
+import asyncio
+
 from agent.react_agent import ReActAgent
 from llm import LiteLLMLLM
 from llm.retry import RetryConfig
 from tools import CalculatorTool, FileReadTool
 from config import Config
 
-# Create custom LLM with retry config
-llm = LiteLLMLLM(
-    model=Config.LITELLM_MODEL,
-    api_base=Config.LITELLM_API_BASE,
-    drop_params=Config.LITELLM_DROP_PARAMS,
-    timeout=Config.LITELLM_TIMEOUT,
-    retry_config=RetryConfig(max_retries=10, initial_delay=2.0, max_delay=60.0),
-)
+async def main():
+    # Create custom LLM with retry config
+    llm = LiteLLMLLM(
+        model=Config.LITELLM_MODEL,
+        api_base=Config.LITELLM_API_BASE,
+        drop_params=Config.LITELLM_DROP_PARAMS,
+        timeout=Config.LITELLM_TIMEOUT,
+        retry_config=RetryConfig(max_retries=10, initial_delay=2.0, max_delay=60.0),
+    )
 
-# Create agent with specific tools
-agent = ReActAgent(
-    llm=llm,
-    max_iterations=15,
-    tools=[CalculatorTool(), FileReadTool()]
-)
+    # Create agent with specific tools
+    agent = ReActAgent(
+        llm=llm,
+        max_iterations=15,
+        tools=[CalculatorTool(), FileReadTool()]
+    )
 
-# Run task
-result = agent.run("Your complex task here")
-print(result)
+    # Run task
+    result = await agent.run("Your complex task here")
+    print(result)
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
 ### Custom Tool Creation

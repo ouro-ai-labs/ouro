@@ -1,5 +1,6 @@
 """Example usage of WebFetchTool with ReAct Agent."""
 
+import asyncio
 import os
 import sys
 
@@ -11,7 +12,7 @@ from llm import LiteLLMLLM
 from tools.web_fetch import WebFetchTool
 
 
-def main():
+async def main():
     """Run WebFetchTool examples."""
     print("=" * 60)
     print("WebFetchTool Example")
@@ -39,14 +40,14 @@ def main():
     )
 
     print("\n--- Example 1: Fetch web page (raw tool output) ---")
-    result1 = agent.run(
+    result1 = await agent.run(
         "Use the web_fetch tool to fetch https://github.com/luohaha/agentic-loop in markdown format with a 20s timeout. "
         "Return the raw tool output JSON without extra commentary."
     )
     print(f"\nResult:\n{result1}")
 
     print("\n--- Example 2: Invalid URL error ---")
-    result2 = agent.run(
+    result2 = await agent.run(
         "Call web_fetch with url 'example.com' and return the raw tool output JSON only."
     )
     print(f"\nResult:\n{result2}")
@@ -57,4 +58,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

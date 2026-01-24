@@ -50,7 +50,7 @@ class MemoryStore:
                 """
                 CREATE TABLE IF NOT EXISTS sessions (
                     id TEXT PRIMARY KEY,
-                    created_at TIMESTAMP NOT NULL,
+                    created_at TEXT NOT NULL,
                     messages TEXT,
                     system_messages TEXT,
                     summaries TEXT
@@ -71,7 +71,8 @@ class MemoryStore:
             Session ID (UUID)
         """
         session_id = str(uuid.uuid4())
-        now = datetime.now()
+        # Store as ISO 8601 text to avoid sqlite3's deprecated default datetime adapter (Python 3.12+).
+        now = datetime.now().isoformat()
 
         # Initialize with empty lists
         with sqlite3.connect(self.db_path) as conn:

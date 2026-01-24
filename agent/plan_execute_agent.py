@@ -1,5 +1,6 @@
 """Enhanced Plan-and-Execute agent with exploration, parallel execution, and adaptive replanning."""
 
+import asyncio
 import re
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional, Tuple
@@ -60,7 +61,7 @@ class PlanExecuteAgent(BaseAgent):
         if hasattr(self, "_executor"):
             self._executor.shutdown(wait=False)
 
-    def run(self, task: str) -> str:
+    async def run(self, task: str) -> str:
         """Execute the four-phase agent loop.
 
         Args:
@@ -75,7 +76,7 @@ class PlanExecuteAgent(BaseAgent):
         # Phase 1: EXPLORE
         terminal_ui.console.print()
         terminal_ui.console.rule("[bold blue]PHASE 1: EXPLORATION[/bold blue]", style="blue")
-        self._exploration_results = self._explore(task, global_scope)
+        self._exploration_results = await self._explore(task, global_scope)
         terminal_ui.console.print()
         terminal_ui.console.print(
             f"[dim]Exploration complete. Discovered {len(self._exploration_results.discovered_files)} files, "
@@ -85,19 +86,19 @@ class PlanExecuteAgent(BaseAgent):
         # Phase 2: PLAN
         terminal_ui.console.print()
         terminal_ui.console.rule("[bold cyan]PHASE 2: PLANNING[/bold cyan]", style="cyan")
-        self._current_plan = self._create_plan(task, self._exploration_results)
+        self._current_plan = await self._create_plan(task, self._exploration_results)
         terminal_ui.console.print()
         terminal_ui.console.print(self._format_plan(self._current_plan), style="dim")
 
         # Phase 3: EXECUTE (with potential replanning)
         terminal_ui.console.print()
         terminal_ui.console.rule("[bold yellow]PHASE 3: EXECUTION[/bold yellow]", style="yellow")
-        step_results = self._execute_plan(self._current_plan, global_scope)
+        step_results = await self._execute_plan(self._current_plan, global_scope)
 
         # Phase 4: SYNTHESIZE
         terminal_ui.console.print()
         terminal_ui.console.rule("[bold green]PHASE 4: SYNTHESIS[/bold green]", style="green")
-        final_answer = self._synthesize(task, step_results, global_scope)
+        final_answer = await self._synthesize(task, step_results, global_scope)
 
         # Commit exploration summary to global memory for persistence
         global_scope.set_summary(self._exploration_results.context_summary)
@@ -113,7 +114,7 @@ class PlanExecuteAgent(BaseAgent):
 
     # ==================== PHASE 1: EXPLORATION ====================
 
-    def _explore(self, task: str, global_scope: ScopedMemoryView) -> ExplorationResult:
+    async def _explore(self, task: str, global_scope: ScopedMemoryView) -> ExplorationResult:
         """Run parallel exploration to gather context.
 
         Args:
@@ -138,12 +139,12 @@ class PlanExecuteAgent(BaseAgent):
             f"[dim]Running {len(exploration_tasks)} parallel explorations...[/dim]"
         )
 
-        # Run explorations in parallel (thread pool; no nested event loops)
+        # Run explorations in parallel
         try:
-            results = self._run_parallel_explorations(exploration_tasks, task)
+            results = await self._run_parallel_explorations(exploration_tasks, task)
         except Exception as e:
             logger.warning(f"Parallel exploration failed, falling back to sequential: {e}")
-            results = self._run_sequential_explorations(exploration_tasks, task)
+            results = await self._run_sequential_explorations(exploration_tasks, task)
 
         # Combine results
         combined = ExplorationResult(
@@ -165,7 +166,7 @@ class PlanExecuteAgent(BaseAgent):
 
         return combined
 
-    def _run_parallel_explorations(
+    async def _run_parallel_explorations(
         self, tasks: List[Tuple[str, str]], main_task: str
     ) -> Dict[str, dict]:
         """Run multiple exploration tasks in parallel.
@@ -177,25 +178,30 @@ class PlanExecuteAgent(BaseAgent):
         Returns:
             Dict mapping aspect names to exploration results
         """
-        futures = {}
-        for aspect, description in tasks:
-            futures[
-                self._executor.submit(
-                    self._run_single_exploration, aspect, description, main_task
-                )
-            ] = aspect
 
-        results: Dict[str, dict] = {}
-        for future, aspect in futures.items():
+        async def run_exploration(aspect: str, description: str) -> Tuple[str, dict]:
             try:
-                results[aspect] = future.result()
+                result = await self._run_single_exploration(aspect, description, main_task)
+                return aspect, result
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
                 logger.warning(f"Exploration {aspect} failed: {e}")
-                results[aspect] = {"error": str(e)}
+                return aspect, {"error": str(e)}
+
+        tasks_list = []
+        async with asyncio.TaskGroup() as tg:
+            for aspect, description in tasks:
+                tasks_list.append(tg.create_task(run_exploration(aspect, description)))
+
+        results: Dict[str, dict] = {}
+        for task in tasks_list:
+            aspect, result = task.result()
+            results[aspect] = result
 
         return results
 
-    def _run_sequential_explorations(
+    async def _run_sequential_explorations(
         self, tasks: List[Tuple[str, str]], main_task: str
     ) -> Dict[str, dict]:
         """Run explorations sequentially (fallback if parallel fails).
@@ -210,14 +216,14 @@ class PlanExecuteAgent(BaseAgent):
         results = {}
         for aspect, description in tasks:
             try:
-                result = self._run_single_exploration(aspect, description, main_task)
+                result = await self._run_single_exploration(aspect, description, main_task)
                 results[aspect] = result
             except Exception as e:
                 logger.warning(f"Exploration {aspect} failed: {e}")
                 results[aspect] = {"error": str(e)}
         return results
 
-    def _run_single_exploration(self, aspect: str, description: str, main_task: str) -> dict:
+    async def _run_single_exploration(self, aspect: str, description: str, main_task: str) -> dict:
         """Run a single exploration using isolated mini-loop.
 
         Args:
@@ -242,7 +248,7 @@ class PlanExecuteAgent(BaseAgent):
         messages = [LLMMessage(role="user", content=prompt)]
 
         # Run exploration in isolated context
-        result = self._react_loop(
+        result = await self._react_loop(
             messages=messages,
             tools=exploration_tools,
             max_iterations=self.max_iterations,
@@ -303,7 +309,7 @@ class PlanExecuteAgent(BaseAgent):
 
     # ==================== PHASE 2: PLANNING ====================
 
-    def _create_plan(self, task: str, exploration: ExplorationResult) -> ExecutionPlan:
+    async def _create_plan(self, task: str, exploration: ExplorationResult) -> ExecutionPlan:
         """Create structured plan informed by exploration results.
 
         Args:
@@ -316,7 +322,7 @@ class PlanExecuteAgent(BaseAgent):
         # Build system context
         system_content = "You are a planning expert. Create clear, dependency-aware plans."
         try:
-            context = format_context_prompt()
+            context = await asyncio.to_thread(format_context_prompt)
             system_content = context + "\n" + system_content
         except Exception:
             pass
@@ -333,7 +339,7 @@ class PlanExecuteAgent(BaseAgent):
             LLMMessage(role="user", content=prompt),
         ]
 
-        response = self._call_llm(messages=messages)
+        response = await self._call_llm(messages=messages)
 
         # Track token usage
         if response.usage:
@@ -457,7 +463,7 @@ class PlanExecuteAgent(BaseAgent):
 
     # ==================== PHASE 3: EXECUTION ====================
 
-    def _execute_plan(self, plan: ExecutionPlan, global_scope: ScopedMemoryView) -> List[str]:
+    async def _execute_plan(self, plan: ExecutionPlan, global_scope: ScopedMemoryView) -> List[str]:
         """Execute plan with parallel steps and adaptive replanning.
 
         Args:
@@ -487,7 +493,7 @@ class PlanExecuteAgent(BaseAgent):
                     )
                     if self._should_replan(plan):
                         request = self._create_replan_request(plan)
-                        plan = self._replan(plan, request)
+                        plan = await self._replan(plan, request)
                         self._failure_count = 0
                         continue
                 break
@@ -504,7 +510,7 @@ class PlanExecuteAgent(BaseAgent):
                     f"[bold magenta]Step {completed_count + 1}/{total_steps}:[/bold magenta] "
                     f"[white]{step.description}[/white]"
                 )
-                result = self._execute_step(step, plan, execution_scope)
+                result = await self._execute_step(step, plan, execution_scope)
                 step_results.append(result)
             else:
                 # Parallel step execution
@@ -513,27 +519,27 @@ class PlanExecuteAgent(BaseAgent):
                     f"[bold magenta]Executing {len(batch)} steps in parallel[/bold magenta]"
                 )
                 for step in batch:
-                terminal_ui.console.print(f"  [dim]- {step.description}[/dim]")
+                    terminal_ui.console.print(f"  [dim]- {step.description}[/dim]")
 
                 try:
-                    results = self._execute_parallel_steps(batch, plan, execution_scope)
+                    results = await self._execute_parallel_steps(batch, plan, execution_scope)
                     step_results.extend(results)
                 except Exception as e:
                     logger.warning(f"Parallel execution failed: {e}")
                     # Fall back to sequential
                     for step in batch:
-                        result = self._execute_step(step, plan, execution_scope)
+                        result = await self._execute_step(step, plan, execution_scope)
                         step_results.append(result)
 
             # Check for replan triggers
             if self._should_replan(plan):
                 request = self._create_replan_request(plan)
-                plan = self._replan(plan, request)
+                plan = await self._replan(plan, request)
                 self._failure_count = 0
 
         return step_results
 
-    def _execute_step(
+    async def _execute_step(
         self, step: PlanStep, plan: ExecutionPlan, execution_scope: ScopedMemoryView
     ) -> str:
         """Execute a single step with full context.
@@ -566,7 +572,7 @@ class PlanExecuteAgent(BaseAgent):
         tools = self.tool_executor.get_tool_schemas()
 
         try:
-            result = self._react_loop(
+            result = await self._react_loop(
                 messages=messages,
                 tools=tools,
                 max_iterations=self.max_iterations,
@@ -587,6 +593,8 @@ class PlanExecuteAgent(BaseAgent):
                 )
             )
 
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             step.status = StepStatus.FAILED
             step.error = str(e)
@@ -604,7 +612,7 @@ class PlanExecuteAgent(BaseAgent):
 
         return f"{step.id}: {step.description}\nResult: {result}"
 
-    def _execute_parallel_steps(
+    async def _execute_parallel_steps(
         self,
         steps: List[PlanStep],
         plan: ExecutionPlan,
@@ -620,19 +628,21 @@ class PlanExecuteAgent(BaseAgent):
         Returns:
             List of step result strings
         """
-        # Preserve input ordering (asyncio.gather semantics)
-        futures = [
-            self._executor.submit(self._execute_step, step, plan, execution_scope)
-            for step in steps
-        ]
 
-        results: List[str] = []
-        for future in futures:
+        async def run_step(step: PlanStep) -> str:
             try:
-                results.append(future.result())
+                return await self._execute_step(step, plan, execution_scope)
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
-                results.append(f"Error: {e}")
-        return results
+                return f"Error: {e}"
+
+        tasks_list = []
+        async with asyncio.TaskGroup() as tg:
+            for step in steps:
+                tasks_list.append(tg.create_task(run_step(step)))
+
+        return [task.result() for task in tasks_list]
 
     def _build_step_context(self, step: PlanStep, plan: ExecutionPlan) -> str:
         """Build context string for step execution.
@@ -703,7 +713,7 @@ class PlanExecuteAgent(BaseAgent):
             reason="Multiple steps cannot proceed",
         )
 
-    def _replan(self, current_plan: ExecutionPlan, request: ReplanRequest) -> ExecutionPlan:
+    async def _replan(self, current_plan: ExecutionPlan, request: ReplanRequest) -> ExecutionPlan:
         """Generate a new plan based on current state and failure information.
 
         Args:
@@ -726,7 +736,7 @@ class PlanExecuteAgent(BaseAgent):
         )
 
         messages = [LLMMessage(role="user", content=prompt)]
-        response = self._call_llm(messages=messages)
+        response = await self._call_llm(messages=messages)
 
         # Track tokens
         if response.usage:
@@ -783,7 +793,7 @@ class PlanExecuteAgent(BaseAgent):
 
     # ==================== PHASE 4: SYNTHESIS ====================
 
-    def _synthesize(
+    async def _synthesize(
         self, task: str, step_results: List[str], global_scope: ScopedMemoryView
     ) -> str:
         """Synthesize final answer from all results.
@@ -807,7 +817,7 @@ class PlanExecuteAgent(BaseAgent):
         )
 
         messages = [LLMMessage(role="user", content=prompt)]
-        response = self._call_llm(messages=messages)
+        response = await self._call_llm(messages=messages)
 
         # Track tokens
         if response.usage:

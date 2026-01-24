@@ -1,5 +1,6 @@
 """Example usage of Plan-and-Execute Agent."""
 
+import asyncio
 import os
 import sys
 
@@ -14,7 +15,7 @@ from tools.file_ops import FileReadTool, FileSearchTool, FileWriteTool
 from tools.web_search import WebSearchTool
 
 
-def main():
+async def main():
     """Run Plan-and-Execute Agent example."""
     print("=" * 60)
     print("Plan-and-Execute Agent Example")
@@ -51,7 +52,7 @@ def main():
 
     # Example 1: Multi-step calculation and file writing
     print("\n--- Example 1: Multi-step Task ---")
-    result1 = agent.run(
+    result1 = await agent.run(
         "Calculate the sum of 123 + 456 + 789, then calculate the square of the result, "
         "and save both results to a file called 'calculations.txt'"
     )
@@ -59,7 +60,7 @@ def main():
 
     # Example 2: Research and summarization
     print("\n\n--- Example 2: Research Task ---")
-    result2 = agent.run(
+    result2 = await agent.run(
         "Search for information about 'AI agents', "
         "summarize the key concepts in 3 bullet points, "
         "and save the summary to 'ai_agents_summary.txt'"
@@ -68,7 +69,7 @@ def main():
 
     # Example 3: Complex multi-tool task
     print("\n\n--- Example 3: Complex Task ---")
-    result3 = agent.run(
+    result3 = await agent.run(
         "1. Find information about the ReAct paper "
         "2. Calculate how many years it's been since 2022 "
         "3. Write a brief summary with both pieces of information to 'react_info.txt'"
@@ -81,4 +82,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

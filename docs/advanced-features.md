@@ -2,6 +2,8 @@
 
 This guide covers advanced features and optimization techniques for the Agentic Loop system.
 
+Note: `agent.run(...)` is async; snippets that use `await` assume an async context (e.g., wrap with `asyncio.run(main())`).
+
 ## Automatic Retry with Exponential Backoff
 
 All LLM providers support automatic retry with exponential backoff when encountering rate limit errors (429). This is especially useful for free tier APIs.
@@ -422,7 +424,7 @@ signal.signal(signal.SIGALRM, timeout_handler)
 signal.alarm(300)
 
 try:
-    result = agent.run(task)
+    result = await agent.run(task)
 finally:
     signal.alarm(0)  # Cancel alarm
 ```
@@ -438,19 +440,19 @@ llm = LiteLLMLLM(model=f"{provider}/{model}", api_key=key)  # Auto-retry enabled
 ```python
 try:
     llm = LiteLLMLLM(model=f"anthropic/{model1}", api_key=key1)
-    result = agent.run(task)
+    result = await agent.run(task)
 except RateLimitError:
     llm = LiteLLMLLM(model=f"openai/{model2}", api_key=key2)
-    result = agent.run(task)
+    result = await agent.run(task)
 ```
 
 **Strategy 3**: Request throttling
 ```python
-import time
+import asyncio
 
 for task in tasks:
-    result = agent.run(task)
-    time.sleep(1)  # Rate limit to 60/minute
+    result = await agent.run(task)
+    await asyncio.sleep(1)  # Rate limit to 60/minute
 ```
 
 ## Debugging and Monitoring
@@ -464,7 +466,7 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("agentic_loop")
 
 # Now you'll see detailed logs
-agent.run(task)
+await agent.run(task)
 ```
 
 ### Track Metrics
@@ -473,7 +475,7 @@ agent.run(task)
 from time import time
 
 start = time()
-result = agent.run(task)
+result = await agent.run(task)
 duration = time() - start
 
 stats = agent.memory.get_stats()
@@ -485,14 +487,16 @@ print(f"Cost: ${stats['total_cost']:.4f}")
 ### Custom Callbacks
 
 ```python
+from time import time
+
 class MonitoredAgent(ReActAgent):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.metrics = []
 
-    def _call_llm(self, messages, tools=None):
+    async def _call_llm(self, messages, tools=None):
         start = time()
-        response = super()._call_llm(messages, tools)
+        response = await super()._call_llm(messages, tools)
         duration = time() - start
 
         self.metrics.append({
@@ -523,12 +527,12 @@ class MonitoredAgent(ReActAgent):
 # 1. Use Gemini Flash for initial search (cheap)
 search_llm = LiteLLMLLM(model="gemini/gemini-1.5-flash", api_key=key)
 searcher = ReActAgent(llm=search_llm, max_iterations=5)
-raw_data = searcher.run("Search for X")
+raw_data = await searcher.run("Search for X")
 
 # 2. Use Claude Sonnet for analysis (quality)
 analysis_llm = LiteLLMLLM(model="anthropic/claude-3-5-sonnet-20241022", api_key=key)
 analyzer = PlanExecuteAgent(llm=analysis_llm)
-final_report = analyzer.run(f"Analyze this data: {raw_data}")
+final_report = await analyzer.run(f"Analyze this data: {raw_data}")
 ```
 
 ### Pattern 2: Batch Processing with Rate Limiting
@@ -538,7 +542,7 @@ import time
 
 results = []
 for i, task in enumerate(tasks):
-    result = agent.run(task)
+    result = await agent.run(task)
     results.append(result)
 
     # Add delay every 10 requests
@@ -554,7 +558,7 @@ for i, task in enumerate(tasks):
 try:
     cheap_llm = LiteLLMLLM(model="gemini/gemini-1.5-flash", api_key=key)
     agent = ReActAgent(llm=cheap_llm, max_iterations=5)
-    result = agent.run(task)
+    result = await agent.run(task)
 
     # If result is low quality, retry with better model
     if not is_good_quality(result):
@@ -564,7 +568,7 @@ except (ValueError, Exception):
     print("Retrying with better model...")
     better_llm = LiteLLMLLM(model="anthropic/claude-3-5-sonnet-20241022", api_key=key)
     agent = ReActAgent(llm=better_llm, max_iterations=10)
-    result = agent.run(task)
+    result = await agent.run(task)
 ```
 
 ## Next Steps

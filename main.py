@@ -1,6 +1,7 @@
 """Main entry point for the agentic loop system."""
 
 import argparse
+import asyncio
 import warnings
 
 from agent.plan_execute_agent import PlanExecuteAgent
@@ -108,38 +109,43 @@ def main():
     # Create agent
     agent = create_agent(args.mode)
 
-    # If no task provided, enter interactive mode (default behavior)
-    if not args.task:
-        run_interactive_mode(agent, args.mode)
-        return
+    async def _run() -> None:
+        # If no task provided, enter interactive mode (default behavior)
+        if not args.task:
+            await run_interactive_mode(agent, args.mode)
+            return
 
-    # Single-turn mode: execute one task and exit
-    task = args.task
+        # Single-turn mode: execute one task and exit
+        task = args.task
 
-    # Display header and config
-    terminal_ui.print_header(
-        "🤖 Agentic Loop System", subtitle="Intelligent AI Agent with Tool-Calling Capabilities"
-    )
+        # Display header and config
+        terminal_ui.print_header(
+            "🤖 Agentic Loop System", subtitle="Intelligent AI Agent with Tool-Calling Capabilities"
+        )
 
-    config_dict = {
-        "LLM Provider": (
-            Config.LITELLM_MODEL.split("/")[0].upper() if "/" in Config.LITELLM_MODEL else "UNKNOWN"
-        ),
-        "Model": Config.LITELLM_MODEL,
-        "Mode": args.mode.upper(),
-        "Task": task if len(task) < 100 else task[:97] + "...",
-    }
-    terminal_ui.print_config(config_dict)
+        config_dict = {
+            "LLM Provider": (
+                Config.LITELLM_MODEL.split("/")[0].upper()
+                if "/" in Config.LITELLM_MODEL
+                else "UNKNOWN"
+            ),
+            "Model": Config.LITELLM_MODEL,
+            "Mode": args.mode.upper(),
+            "Task": task if len(task) < 100 else task[:97] + "...",
+        }
+        terminal_ui.print_config(config_dict)
 
-    # Run agent
-    result = agent.run(task)
+        # Run agent
+        result = await agent.run(task)
 
-    terminal_ui.print_final_answer(result)
+        terminal_ui.print_final_answer(result)
 
-    # Show log file location
-    log_file = get_log_file_path()
-    if log_file:
-        terminal_ui.print_log_location(log_file)
+        # Show log file location
+        log_file = get_log_file_path()
+        if log_file:
+            terminal_ui.print_log_location(log_file)
+
+    asyncio.run(_run())
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ This tool provides intelligent code navigation capabilities:
 """
 
 import ast
+import warnings
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TypedDict
 
@@ -15,7 +16,16 @@ from tools.base import BaseTool
 
 # Try to import tree-sitter-languages for multi-language support
 try:
-    from tree_sitter_languages import get_language, get_parser
+    # tree_sitter_languages may trigger a FutureWarning from tree_sitter about
+    # Language(path, name) being deprecated. This is a dependency-level warning
+    # and is safe to suppress locally to keep test output clean.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            category=FutureWarning,
+            module=r"^tree_sitter(\.|$)",
+        )
+        from tree_sitter_languages import get_language, get_parser
 
     HAS_TREE_SITTER = True
 except ImportError:
@@ -138,6 +148,21 @@ class CodeNavigatorTool(BaseTool):
         self.symbol_cache = {}  # {symbol_name: [(file, line, type, info)]}
         self.cache_loaded = False
         self._tree_sitter_available = HAS_TREE_SITTER
+
+    def _get_tree_sitter_parser_and_language(self, lang: str):
+        """Get a tree-sitter parser and language.
+
+        tree_sitter_languages currently triggers a FutureWarning via tree_sitter
+        (Language(path, name) deprecation). This is dependency-level noise, so we
+        suppress it locally around the calls that instantiate Language objects.
+        """
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                category=FutureWarning,
+                module=r"^tree_sitter(\.|$)",
+            )
+            return get_parser(lang), get_language(lang)
 
     @property
     def name(self) -> str:
@@ -275,8 +300,7 @@ WHEN TO USE GREP INSTEAD:
             return results
 
         try:
-            parser = get_parser(lang)
-            language = get_language(lang)
+            parser, language = self._get_tree_sitter_parser_and_language(lang)
             query = language.query(FUNCTION_QUERIES[lang])
 
             code = file_path.read_bytes()
@@ -334,8 +358,7 @@ WHEN TO USE GREP INSTEAD:
             return results
 
         try:
-            parser = get_parser(lang)
-            language = get_language(lang)
+            parser, language = self._get_tree_sitter_parser_and_language(lang)
             query = language.query(CLASS_QUERIES[lang])
 
             code = file_path.read_bytes()
@@ -634,8 +657,7 @@ WHEN TO USE GREP INSTEAD:
     def _show_structure_tree_sitter(self, path: Path, lang: str) -> str:
         """Show structure of file using tree-sitter."""
         try:
-            parser = get_parser(lang)
-            language = get_language(lang)
+            parser, language = self._get_tree_sitter_parser_and_language(lang)
 
             code = path.read_bytes()
             tree = parser.parse(code)

@@ -1,5 +1,7 @@
 """Tool execution engine for managing and executing tools."""
 
+import asyncio
+import inspect
 from typing import Any, Dict, List
 
 from tools.base import BaseTool
@@ -12,13 +14,17 @@ class ToolExecutor:
         """Initialize with a list of tools."""
         self.tools = {tool.name: tool for tool in tools}
 
-    def execute_tool_call(self, tool_name: str, tool_input: Dict[str, Any]) -> str:
+    async def execute_tool_call(self, tool_name: str, tool_input: Dict[str, Any]) -> str:
         """Execute a single tool call and return result."""
         if tool_name not in self.tools:
             return f"Error: Tool '{tool_name}' not found"
 
         try:
-            result = self.tools[tool_name].execute(**tool_input)
+            execute = self.tools[tool_name].execute
+            if inspect.iscoroutinefunction(execute):
+                result = await execute(**tool_input)
+            else:
+                result = await asyncio.to_thread(execute, **tool_input)
             return str(result)
         except Exception as e:
             return f"Error executing {tool_name}: {str(e)}"

@@ -40,7 +40,7 @@ def main():
     manager.add_message(LLMMessage(role="assistant", content="Hi there!"))
     print("   ✓ Added 2 messages")
 
-    # Save memory state (normally done automatically after agent.run())
+    # Save memory state (normally done automatically after await agent.run(...))
     manager.save_memory()
     print("   ✓ Saved to database")
 

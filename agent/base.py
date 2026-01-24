@@ -1,5 +1,6 @@
 """Base agent class for all agent types."""
 
+import asyncio
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, List, Optional
 
@@ -59,7 +60,7 @@ class BaseAgent(ABC):
         """Execute the agent on a task and return final answer."""
         pass
 
-    def _call_llm(
+    async def _call_llm(
         self, messages: List[LLMMessage], tools: Optional[List] = None, **kwargs
     ) -> LLMResponse:
         """Helper to call LLM with consistent parameters.
@@ -72,7 +73,9 @@ class BaseAgent(ABC):
         Returns:
             LLMResponse object
         """
-        return self.llm.call(messages=messages, tools=tools, max_tokens=4096, **kwargs)
+        return await asyncio.to_thread(
+            self.llm.call, messages=messages, tools=tools, max_tokens=4096, **kwargs
+        )
 
     def _extract_text(self, response: LLMResponse) -> str:
         """Extract text from LLM response.
@@ -85,7 +88,7 @@ class BaseAgent(ABC):
         """
         return self.llm.extract_text(response)
 
-    def _react_loop(
+    async def _react_loop(
         self,
         messages: List[LLMMessage],
         tools: List,
@@ -124,7 +127,7 @@ class BaseAgent(ABC):
                 context = messages
 
             # Call LLM with tools
-            response = self._call_llm(messages=context, tools=tools)
+            response = await self._call_llm(messages=context, tools=tools)
 
             # Save assistant response using response.to_message() for proper format
             assistant_msg = response.to_message()
@@ -183,7 +186,7 @@ class BaseAgent(ABC):
                     if verbose:
                         terminal_ui.print_tool_call(tc.name, tc.arguments)
 
-                    result = self.tool_executor.execute_tool_call(tc.name, tc.arguments)
+                    result = await self.tool_executor.execute_tool_call(tc.name, tc.arguments)
                     # Tool already handles size limits, no additional processing needed
 
                     if verbose:
@@ -214,7 +217,7 @@ class BaseAgent(ABC):
 
         return "Max iterations reached without completion."
 
-    def delegate_subtask(
+    async def delegate_subtask(
         self, subtask_description: str, max_iterations: int = 5, include_context: bool = False
     ) -> str:
         """Delegate a complex subtask to an isolated execution context.
@@ -271,7 +274,7 @@ Execute this subtask NOW and provide concrete results."""
             try:
                 from .context import format_context_prompt
 
-                context = format_context_prompt()
+                context = await asyncio.to_thread(format_context_prompt)
                 sub_system_prompt = context + "\n\n" + sub_system_prompt
             except Exception as e:
                 logger.debug(f"Failed to add context: {e}")
@@ -290,7 +293,7 @@ Execute this subtask NOW and provide concrete results."""
 
         # Execute in isolated context (no memory persistence)
         try:
-            result = self._react_loop(
+            result = await self._react_loop(
                 messages=sub_messages,
                 tools=tools,
                 max_iterations=max_iterations,

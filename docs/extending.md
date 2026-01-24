@@ -468,11 +468,13 @@ if __name__ == "__main__":
 
 ```python
 # test_my_agent.py
+import asyncio
+
 from agent.my_custom_agent import MyCustomAgent
 from llm import LiteLLMLLM
 from config import Config
 
-def test_my_agent():
+async def test_my_agent():
     llm = LiteLLMLLM(
         model=Config.LITELLM_MODEL,
         api_base=Config.LITELLM_API_BASE,
@@ -482,13 +484,13 @@ def test_my_agent():
     )
 
     agent = MyCustomAgent(llm=llm)
-    result = agent.run("Test task")
+    result = await agent.run("Test task")
 
     print(f"Result: {result}")
     assert result is not None
 
 if __name__ == "__main__":
-    test_my_agent()
+    asyncio.run(test_my_agent())
 ```
 
 ## Best Practices

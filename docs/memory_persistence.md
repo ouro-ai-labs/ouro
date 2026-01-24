@@ -12,8 +12,8 @@ Memory Persistence provides an embedded SQLite database for persisting conversat
 ## How It Works
 
 Memory is **automatically saved** when:
-- `ReActAgent.run()` completes a task
-- `PlanExecuteAgent.run()` completes a task
+- `await ReActAgent.run()` completes a task
+- `await PlanExecuteAgent.run()` completes a task
 
 You can also **manually save** by calling:
 ```python
@@ -25,6 +25,8 @@ This batch-save approach is more efficient than saving after every message.
 ## Quick Start
 
 ### 1. Using with Agent (Automatic Save)
+
+Note: `agent.run(...)` is async; examples assume an async context.
 
 ```python
 from agent import ReActAgent
@@ -43,7 +45,7 @@ agent = ReActAgent(
 )
 
 # Run task - memory is automatically saved when complete
-result = agent.run("Your task here")
+result = await agent.run("Your task here")
 
 print(f"Session ID: {agent.memory.session_id}")
 ```

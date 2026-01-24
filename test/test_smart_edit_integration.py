@@ -1,5 +1,6 @@
 """Quick integration test for SmartEditTool with Agent."""
 
+import asyncio
 import os
 import tempfile
 from pathlib import Path
@@ -72,7 +73,7 @@ Use mode="diff_replace", old_code="result = x + y", new_code="result = x + y  # 
         print(f"Task: {task}")
         print("-" * 60)
 
-        result = agent.run(task)
+        result = asyncio.run(agent.run(task))
 
         print("-" * 60)
         print(f"Agent result: {result}")

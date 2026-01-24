@@ -81,7 +81,7 @@ Input parameters:
             },
         }
 
-    def execute(
+    async def execute(
         self, subtask_description: str, max_iterations: int = 5, include_context: bool = False
     ) -> str:
         """Execute subtask delegation.
@@ -94,7 +94,7 @@ Input parameters:
         Returns:
             Compressed summary of subtask execution result
         """
-        return self.agent.delegate_subtask(
+        return await self.agent.delegate_subtask(
             subtask_description=subtask_description,
             max_iterations=max_iterations,
             include_context=include_context,

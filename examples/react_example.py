@@ -1,5 +1,6 @@
 """Example usage of ReAct Agent."""
 
+import asyncio
 import os
 import sys
 
@@ -14,7 +15,7 @@ from tools.file_ops import FileReadTool, FileWriteTool
 from tools.web_search import WebSearchTool
 
 
-def main():
+async def main():
     """Run ReAct Agent example."""
     print("=" * 60)
     print("ReAct Agent Example")
@@ -50,12 +51,12 @@ def main():
 
     # Example 1: Simple calculation
     print("\n--- Example 1: Simple Calculation ---")
-    result1 = agent.run("What is 12345 multiplied by 67890?")
+    result1 = await agent.run("What is 12345 multiplied by 67890?")
     print(f"\nResult: {result1}")
 
     # Example 2: File operations
     print("\n\n--- Example 2: File Operations ---")
-    result2 = agent.run(
+    result2 = await agent.run(
         "Create a file called 'test_output.txt' with the content 'Hello from ReAct Agent!', "
         "then read it back to verify."
     )
@@ -63,7 +64,9 @@ def main():
 
     # Example 3: Web search
     print("\n\n--- Example 3: Web Search ---")
-    result3 = agent.run("Search for 'Python agentic frameworks' and tell me the top 3 results")
+    result3 = await agent.run(
+        "Search for 'Python agentic frameworks' and tell me the top 3 results"
+    )
     print(f"\nResult: {result3}")
 
     print("\n" + "=" * 60)
@@ -72,4 +75,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

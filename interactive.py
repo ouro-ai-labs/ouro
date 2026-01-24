@@ -12,7 +12,7 @@ from memory.store import MemoryStore
 from utils import get_log_file_path, terminal_ui
 
 
-def run_interactive_mode(agent, mode: str):
+async def run_interactive_mode(agent, mode: str):
     """Run agent in interactive multi-turn conversation mode.
 
     Args:
@@ -110,7 +110,7 @@ def run_interactive_mode(agent, mode: str):
             terminal_ui.console.print(f"\n[dim]─── Turn {conversation_count} ───[/dim]\n")
 
             try:
-                result = agent.run(user_input)
+                result = await agent.run(user_input)
 
                 # Display agent response with Markdown rendering
                 terminal_ui.console.print()

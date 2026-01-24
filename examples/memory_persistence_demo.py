@@ -60,7 +60,7 @@ def demo_create_session():
         manager.add_message(msg)
         print(f"  Added message: [{msg.role}] {str(msg.content)[:50]}...")
 
-    # Save memory state (normally done automatically after agent.run())
+    # Save memory state (normally done automatically after await agent.run(...))
     manager.save_memory()
     print("\n💾 Saved memory to database")
 

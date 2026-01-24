@@ -374,7 +374,7 @@ agent = ReActAgent(
 )
 
 # Run task - memory works automatically
-result = agent.run("Complex multi-step task...")
+result = await agent.run("Complex multi-step task...")
 
 # View savings
 stats = agent.memory.get_stats()
@@ -388,7 +388,7 @@ print(f"Saved {stats['net_savings']} tokens (${stats['net_cost']:.4f})")
 config = MemoryConfig(enable_compression=False)
 
 agent = ReActAgent(llm=llm, tools=tools, memory_config=config)
-result = agent.run("Simple calculation")
+result = await agent.run("Simple calculation")
 ```
 
 ### Example 3: Custom Compression Strategy
