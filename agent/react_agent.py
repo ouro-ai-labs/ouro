@@ -1,7 +1,5 @@
 """ReAct (Reasoning + Acting) agent implementation."""
 
-import asyncio
-
 from llm import LLMMessage
 from utils import terminal_ui
 
@@ -139,7 +137,7 @@ DO NOT delegate simple operations that can be done in 1-2 tool calls.
         if not self.memory.system_messages:
             system_content = self.SYSTEM_PROMPT
             try:
-                context = await asyncio.to_thread(format_context_prompt)
+                context = await format_context_prompt()
                 system_content = context + "\n" + system_content
             except Exception:
                 # If context gathering fails, continue without it
@@ -167,7 +165,7 @@ DO NOT delegate simple operations that can be done in 1-2 tool calls.
         self._print_memory_stats()
 
         # Save memory state to database after task completion
-        self.memory.save_memory()
+        await self.memory.save_memory()
 
         return result
 

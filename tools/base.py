@@ -30,9 +30,9 @@ class BaseTool(ABC):
         pass
 
     @abstractmethod
-    def execute(self, **kwargs) -> str:
+    async def execute(self, **kwargs) -> str:
         """Execute the tool and return result as string."""
-        pass
+        raise NotImplementedError
 
     def to_anthropic_schema(self) -> Dict[str, Any]:
         """Convert to Anthropic tool schema format."""

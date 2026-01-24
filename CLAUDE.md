@@ -88,7 +88,7 @@ python -m isort .
 python -m ruff check --fix .
 ```
 
-Script: `./scripts/format.sh`
+Script: `./scripts/format.sh` (runs black + isort + ruff --fix)
 Unified entrypoint: `./scripts/dev.sh format`
 
 ### Lint / Typecheck
@@ -159,6 +159,7 @@ The runtime is migrating to an **asyncio-first** architecture. During this perio
 - **New runtime code must be async-first**: avoid introducing new blocking I/O in `agent/`, `llm/`, `memory/`, and `tools/`.
 - **Do not use `asyncio.run()` in library code**. Only entrypoints (e.g., `main.py`) should own the event loop.
 - If you must call a blocking library temporarily, ensure it’s executed behind an async boundary (e.g., `asyncio.to_thread`) and has a timeout/cancellation strategy.
+- **Strict async rule**: use native async libs where available (e.g., `aiofiles`, `httpx`). Use `aiofiles.os.path.*` for metadata checks. Only use `asyncio.to_thread` when no async API exists (e.g., glob/rglob). Avoid sync file copy; use async streaming instead.
 
 See `rfc/003-asyncio-migration.md` for phases and rules.
 

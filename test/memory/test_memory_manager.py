@@ -275,13 +275,13 @@ class TestToolCallMatching:
         for msg in context:
             if isinstance(msg.content, list):
                 for block in msg.content:
-                    if isinstance(block, dict):
-                        if (
-                            block.get("type") == "tool_use"
-                            and block.get("name") == "manage_todo_list"
-                        ):
-                            found_protected = True
-                            break
+                    if (
+                        isinstance(block, dict)
+                        and block.get("type") == "tool_use"
+                        and block.get("name") == "manage_todo_list"
+                    ):
+                        found_protected = True
+                        break
 
         assert found_protected, "Protected tool 'manage_todo_list' should be preserved in context"
 

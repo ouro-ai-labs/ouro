@@ -13,7 +13,7 @@ from .content_utils import (
 )
 
 # Import adapter
-from .litellm_adapter import LiteLLMLLM
+from .litellm_adapter import LiteLLMAdapter
 from .message_types import (
     FunctionCall,
     LLMMessage,
@@ -34,7 +34,7 @@ __all__ = [
     "FunctionCall",
     "StopReason",
     # Adapter
-    "LiteLLMLLM",
+    "LiteLLMAdapter",
     # Utilities
     "extract_text",
     "extract_text_from_message",

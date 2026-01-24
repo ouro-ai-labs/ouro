@@ -16,7 +16,7 @@ from .types import CompressedMemory, CompressionStrategy
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from llm import LiteLLMLLM
+    from llm import LiteLLMAdapter
 
 
 class MemoryManager:
@@ -24,7 +24,7 @@ class MemoryManager:
 
     def __init__(
         self,
-        llm: "LiteLLMLLM",
+        llm: "LiteLLMAdapter",
         store: Optional[MemoryStore] = None,
         session_id: Optional[str] = None,
         db_path: str = "data/memory.db",
@@ -72,10 +72,10 @@ class MemoryManager:
         self.SUMMARY_PREFIX = "[Conversation Summary]\n"
 
     @classmethod
-    def from_session(
+    async def from_session(
         cls,
         session_id: str,
-        llm: "LiteLLMLLM",
+        llm: "LiteLLMAdapter",
         store: Optional[MemoryStore] = None,
         db_path: str = "data/memory.db",
     ) -> "MemoryManager":
@@ -95,7 +95,7 @@ class MemoryManager:
             store = MemoryStore(db_path=db_path)
 
         # Load session data
-        session_data = store.load_session(session_id)
+        session_data = await store.load_session(session_id)
         if not session_data:
             raise ValueError(f"Session {session_id} not found")
 
@@ -121,14 +121,14 @@ class MemoryManager:
 
         return manager
 
-    def _ensure_session(self) -> None:
+    async def _ensure_session(self) -> None:
         """Lazily create session when first needed.
 
         This avoids creating empty sessions when MemoryManager is instantiated
         but no messages are ever added (e.g., user exits before running any task).
         """
         if not self._session_created:
-            self.session_id = self.store.create_session()
+            self.session_id = await self.store.create_session()
             self._session_created = True
             logger.info(f"Created new session: {self.session_id}")
 
@@ -141,7 +141,7 @@ class MemoryManager:
                           Format: {"input": int, "output": int}
         """
         # Ensure session exists before adding messages
-        self._ensure_session()
+        await self._ensure_session()
 
         # Track system messages separately
         if message.role == "system":
@@ -429,7 +429,7 @@ class MemoryManager:
             "total_cost": self.token_tracker.get_total_cost(self.llm.model),
         }
 
-    def save_memory(self):
+    async def save_memory(self):
         """Save current memory state to store.
 
         This saves the complete memory state including:
@@ -450,7 +450,7 @@ class MemoryManager:
             logger.debug(f"Skipping save_memory: no messages to save for session {self.session_id}")
             return
 
-        self.store.save_memory(
+        await self.store.save_memory(
             session_id=self.session_id,
             system_messages=self.system_messages,
             messages=messages,

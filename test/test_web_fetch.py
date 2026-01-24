@@ -4,8 +4,8 @@ import asyncio
 import json
 import types
 
+import httpx
 import pytest
-from requests.structures import CaseInsensitiveDict
 
 from tools.web_fetch import MAX_RESPONSE_BYTES, WebFetchError, WebFetchTool
 
@@ -14,7 +14,7 @@ class FakeResponse:
     def __init__(self, url: str, status_code: int = 200, headers=None, body: bytes = b""):
         self.url = url
         self.status_code = status_code
-        self.headers = CaseInsensitiveDict(headers or {})
+        self.headers = httpx.Headers(headers or {})
         self._body = body
         self.encoding = None
 

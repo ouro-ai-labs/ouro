@@ -25,35 +25,29 @@ When a rate limit is encountered:
 
 ### Default Configuration
 
-```python
-RetryConfig(
-    max_retries=5,          # Number of retry attempts
-    initial_delay=1.0,      # Start with 1 second
-    max_delay=60.0,         # Cap at 60 seconds
-    exponential_base=2.0,   # Double the delay each time
-    jitter=True            # Add randomness (±25%)
-)
-```
+Retry behavior is controlled by `Config` (or environment variables):
+
+- `RETRY_MAX_ATTEMPTS` (default: 3)
+- `RETRY_INITIAL_DELAY` (default: 1.0s)
+- `RETRY_MAX_DELAY` (default: 60.0s)
+- `RETRY_EXPONENTIAL_BASE` (default: 2.0)
+- `RETRY_JITTER` (default: true)
 
 ### Custom Retry Configuration
 
 For APIs with strict rate limits:
 
 ```python
-from llm import LiteLLMLLM
-from llm.retry import RetryConfig
+from llm import LiteLLMAdapter
+from config import Config
 
-llm = LiteLLMLLM(
-    model="gemini/gemini-1.5-flash",
-    api_key="your_key",
-    retry_config=RetryConfig(
-        max_retries=10,        # More retries for free tier
-        initial_delay=2.0,     # Start with 2s wait
-        max_delay=120.0,       # Cap at 2 minutes
-        exponential_base=2.0,  # Double each time
-        jitter=True           # Add randomness
-    )
-)
+Config.RETRY_MAX_ATTEMPTS = 10
+Config.RETRY_INITIAL_DELAY = 2.0
+Config.RETRY_MAX_DELAY = 120.0
+Config.RETRY_EXPONENTIAL_BASE = 2.0
+Config.RETRY_JITTER = True
+
+llm = LiteLLMAdapter(model="gemini/gemini-1.5-flash", api_key="your_key")
 ```
 
 ### Backoff Calculation
@@ -160,16 +154,16 @@ See [Memory Management](memory-management.md) for complete documentation.
 Easy switching between LLM providers:
 
 ```python
-from llm import LiteLLMLLM
+from llm import LiteLLMAdapter
 
 # Anthropic
-llm = LiteLLMLLM(model="anthropic/claude-3-5-sonnet-20241022", api_key=api_key)
+llm = LiteLLMAdapter(model="anthropic/claude-3-5-sonnet-20241022", api_key=api_key)
 
 # OpenAI
-llm = LiteLLMLLM(model="openai/gpt-4o", api_key=api_key)
+llm = LiteLLMAdapter(model="openai/gpt-4o", api_key=api_key)
 
 # Gemini
-llm = LiteLLMLLM(model="gemini/gemini-1.5-pro", api_key=api_key)
+llm = LiteLLMAdapter(model="gemini/gemini-1.5-pro", api_key=api_key)
 ```
 
 ### Provider Comparison
@@ -186,12 +180,12 @@ Use different providers for different tasks:
 
 ```python
 # Expensive model for planning
-planning_llm = LiteLLMLLM(model="anthropic/claude-3-opus-20240229", api_key=key)
+planning_llm = LiteLLMAdapter(model="anthropic/claude-3-opus-20240229", api_key=key)
 planner = PlanExecuteAgent(llm=planning_llm)
 plan = planner._get_plan(task)
 
 # Cheap model for execution
-execution_llm = LiteLLMLLM(model="gemini/gemini-1.5-flash", api_key=key)
+execution_llm = LiteLLMAdapter(model="gemini/gemini-1.5-flash", api_key=key)
 executor = ReActAgent(llm=execution_llm)
 results = [executor.run(step) for step in plan]
 ```
@@ -349,11 +343,11 @@ Use different models by task complexity:
 ```python
 def get_optimal_llm(task_type: str):
     if task_type == "simple":
-        return LiteLLMLLM(model="gemini/gemini-1.5-flash", api_key=key)
+        return LiteLLMAdapter(model="gemini/gemini-1.5-flash", api_key=key)
     elif task_type == "medium":
-        return LiteLLMLLM(model="openai/gpt-4o-mini", api_key=key)
+        return LiteLLMAdapter(model="openai/gpt-4o-mini", api_key=key)
     else:
-        return LiteLLMLLM(model="anthropic/claude-3-5-sonnet-20241022", api_key=key)
+        return LiteLLMAdapter(model="anthropic/claude-3-5-sonnet-20241022", api_key=key)
 ```
 
 ### Strategy 2: Memory Compression
@@ -402,13 +396,13 @@ Estimated costs for a 50-iteration task:
 ### Graceful Degradation
 
 ```python
-from llm import LiteLLMLLM
+from llm import LiteLLMAdapter
 
 try:
-    llm = LiteLLMLLM(model="anthropic/claude-3-5-sonnet-20241022", api_key=api_key)
+    llm = LiteLLMAdapter(model="anthropic/claude-3-5-sonnet-20241022", api_key=api_key)
 except Exception as e:
     print(f"Failed to initialize Anthropic, falling back to OpenAI")
-    llm = LiteLLMLLM(model="openai/gpt-4o-mini", api_key=api_key)
+    llm = LiteLLMAdapter(model="openai/gpt-4o-mini", api_key=api_key)
 ```
 
 ### Timeout Handling
@@ -433,16 +427,16 @@ finally:
 
 **Strategy 1**: Automatic retry (built-in)
 ```python
-llm = LiteLLMLLM(model=f"{provider}/{model}", api_key=key)  # Auto-retry enabled
+llm = LiteLLMAdapter(model=f"{provider}/{model}", api_key=key)  # Auto-retry enabled
 ```
 
 **Strategy 2**: Provider fallback
 ```python
 try:
-    llm = LiteLLMLLM(model=f"anthropic/{model1}", api_key=key1)
+    llm = LiteLLMAdapter(model=f"anthropic/{model1}", api_key=key1)
     result = await agent.run(task)
 except RateLimitError:
-    llm = LiteLLMLLM(model=f"openai/{model2}", api_key=key2)
+    llm = LiteLLMAdapter(model=f"openai/{model2}", api_key=key2)
     result = await agent.run(task)
 ```
 
@@ -525,12 +519,12 @@ class MonitoredAgent(ReActAgent):
 
 ```python
 # 1. Use Gemini Flash for initial search (cheap)
-search_llm = LiteLLMLLM(model="gemini/gemini-1.5-flash", api_key=key)
+search_llm = LiteLLMAdapter(model="gemini/gemini-1.5-flash", api_key=key)
 searcher = ReActAgent(llm=search_llm, max_iterations=5)
 raw_data = await searcher.run("Search for X")
 
 # 2. Use Claude Sonnet for analysis (quality)
-analysis_llm = LiteLLMLLM(model="anthropic/claude-3-5-sonnet-20241022", api_key=key)
+analysis_llm = LiteLLMAdapter(model="anthropic/claude-3-5-sonnet-20241022", api_key=key)
 analyzer = PlanExecuteAgent(llm=analysis_llm)
 final_report = await analyzer.run(f"Analyze this data: {raw_data}")
 ```
@@ -538,7 +532,7 @@ final_report = await analyzer.run(f"Analyze this data: {raw_data}")
 ### Pattern 2: Batch Processing with Rate Limiting
 
 ```python
-import time
+import asyncio
 
 results = []
 for i, task in enumerate(tasks):
@@ -548,7 +542,7 @@ for i, task in enumerate(tasks):
     # Add delay every 10 requests
     if (i + 1) % 10 == 0:
         print("Rate limiting... waiting 60s")
-        time.sleep(60)
+        await asyncio.sleep(60)
 ```
 
 ### Pattern 3: Progressive Enhancement
@@ -556,7 +550,7 @@ for i, task in enumerate(tasks):
 ```python
 # Try with cheap model first
 try:
-    cheap_llm = LiteLLMLLM(model="gemini/gemini-1.5-flash", api_key=key)
+    cheap_llm = LiteLLMAdapter(model="gemini/gemini-1.5-flash", api_key=key)
     agent = ReActAgent(llm=cheap_llm, max_iterations=5)
     result = await agent.run(task)
 
@@ -566,7 +560,7 @@ try:
 
 except (ValueError, Exception):
     print("Retrying with better model...")
-    better_llm = LiteLLMLLM(model="anthropic/claude-3-5-sonnet-20241022", api_key=key)
+    better_llm = LiteLLMAdapter(model="anthropic/claude-3-5-sonnet-20241022", api_key=key)
     agent = ReActAgent(llm=better_llm, max_iterations=10)
     result = await agent.run(task)
 ```

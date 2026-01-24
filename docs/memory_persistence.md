@@ -17,7 +17,7 @@ Memory is **automatically saved** when:
 
 You can also **manually save** by calling:
 ```python
-manager.save_memory()  # Saves current state to database
+await manager.save_memory()  # Saves current state to database
 ```
 
 This batch-save approach is more efficient than saving after every message.
@@ -73,7 +73,7 @@ await manager.add_message(LLMMessage(role="user", content="Hello"))
 await manager.add_message(LLMMessage(role="assistant", content="Hi!"))
 
 # Manually save to database
-manager.save_memory()
+await manager.save_memory()
 
 print(f"Session ID: {manager.session_id}")
 ```
@@ -89,7 +89,7 @@ llm = AnthropicLLM(api_key="your-key")
 
 # Restore from session
 session_id = "your-session-id-here"
-manager = MemoryManager.from_session(
+manager = await MemoryManager.from_session(
     session_id=session_id,
     llm=llm,
     db_path="data/memory.db"
@@ -99,7 +99,7 @@ manager = MemoryManager.from_session(
 await manager.add_message(LLMMessage(role="user", content="Continue..."))
 
 # Save after adding messages
-manager.save_memory()
+await manager.save_memory()
 ```
 
 ### 3. View Historical Sessions
@@ -270,27 +270,27 @@ store = MemoryStore(db_path="data/memory.db")
 
 **Main Methods**:
 
-- `create_session(metadata=None, config=None)` → str
+- `create_session(metadata=None, config=None)` → str (async, requires `await`)
   - Create new session
   - Returns session ID
 
-- `save_message(session_id, message, tokens=0)`
+- `save_message(session_id, message, tokens=0)` (async, requires `await`)
   - Save message
 
-- `save_summary(session_id, summary)`
+- `save_summary(session_id, summary)` (async, requires `await`)
   - Save compressed summary
 
-- `load_session(session_id)` → Dict
+- `load_session(session_id)` → Dict (async, requires `await`)
   - Load complete session data
   - Returns dict containing messages, summaries, stats
 
-- `list_sessions(limit=50, offset=0)` → List[Dict]
+- `list_sessions(limit=50, offset=0)` → List[Dict] (async, requires `await`)
   - List sessions
 
-- `get_session_stats(session_id)` → Dict
+- `get_session_stats(session_id)` → Dict (async, requires `await`)
   - Get session statistics
 
-- `delete_session(session_id)` → bool
+- `delete_session(session_id)` → bool (async, requires `await`)
   - Delete session
 
 ### MemoryManager Persistence
@@ -308,7 +308,7 @@ manager = MemoryManager(
 )
 
 # Method 2: Load from existing session
-manager = MemoryManager.from_session(
+manager = await MemoryManager.from_session(
     session_id="existing-id",
     llm=llm,
     db_path="data/memory.db"
@@ -328,7 +328,7 @@ print(f"Session ID: {manager.session_id}")  # Save this ID
 python tools/session_manager.py show <session_id> --messages
 
 # 3. Reload session in code for debugging
-manager = MemoryManager.from_session(session_id, llm)
+manager = await MemoryManager.from_session(session_id, llm)
 # Analyze memory state
 print(f"Summaries: {len(manager.summaries)}")
 print(f"Short-term: {manager.short_term.count()}")
@@ -344,7 +344,7 @@ save_to_config("last_session_id", session_id)
 
 # Day 2: Continue conversation
 session_id = load_from_config("last_session_id")
-manager = MemoryManager.from_session(session_id, llm)
+manager = await MemoryManager.from_session(session_id, llm)
 # Continue conversation...
 ```
 
@@ -355,11 +355,11 @@ manager = MemoryManager.from_session(session_id, llm)
 config_a = MemoryConfig(compression_ratio=0.3)
 config_b = MemoryConfig(compression_ratio=0.5)
 
-session_a = store.create_session(
+session_a = await store.create_session(
     metadata={"experiment": "config_a"},
     config=config_a
 )
-session_b = store.create_session(
+session_b = await store.create_session(
     metadata={"experiment": "config_b"},
     config=config_b
 )
@@ -368,8 +368,8 @@ session_b = store.create_session(
 # ...
 
 # Compare statistics
-stats_a = store.get_session_stats(session_a)
-stats_b = store.get_session_stats(session_b)
+stats_a = await store.get_session_stats(session_a)
+stats_b = await store.get_session_stats(session_b)
 
 print(f"Config A token savings: {stats_a['token_savings']}")
 print(f"Config B token savings: {stats_b['token_savings']}")
@@ -422,7 +422,7 @@ A: Use `python tools/session_manager.py delete <session_id>` or directly delete 
 **Q: Can I export session as JSON?**
 A: Yes, use the following in code:
 ```python
-session_data = store.load_session(session_id)
+session_data = await store.load_session(session_id)
 import json
 with open("session.json", "w") as f:
     json.dump(session_data, f, default=str, indent=2)

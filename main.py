@@ -8,7 +8,7 @@ from agent.plan_execute_agent import PlanExecuteAgent
 from agent.react_agent import ReActAgent
 from config import Config
 from interactive import run_interactive_mode
-from llm import LiteLLMLLM
+from llm import LiteLLMAdapter
 from tools.advanced_file_ops import EditTool, GlobTool, GrepTool
 from tools.calculator import CalculatorTool
 from tools.code_navigator import CodeNavigatorTool
@@ -49,7 +49,7 @@ def create_agent(mode: str = "react"):
     ]
 
     # Create LLM instance with LiteLLM (retry config is read from Config directly)
-    llm = LiteLLMLLM(
+    llm = LiteLLMAdapter(
         model=Config.LITELLM_MODEL,
         api_base=Config.LITELLM_API_BASE,
         drop_params=Config.LITELLM_DROP_PARAMS,

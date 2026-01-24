@@ -2,7 +2,7 @@
 
 import asyncio
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 from llm import LLMMessage
 from memory.scope import MemoryScope, ScopedMemoryView
@@ -28,6 +28,10 @@ from .prompts import (
 
 logger = get_logger(__name__)
 
+if TYPE_CHECKING:
+    from llm import LiteLLMAdapter
+    from tools.base import BaseTool
+
 
 class PlanExecuteAgent(BaseAgent):
     """Four-phase Plan-Execute agent with exploration and parallel execution.
@@ -47,9 +51,11 @@ class PlanExecuteAgent(BaseAgent):
     # Read-only tools for exploration phase
     EXPLORATION_TOOLS = {"glob_files", "grep_content", "read_file", "code_navigator"}
 
-    def __init__(self, *args, **kwargs):
+    def __init__(
+        self, llm: "LiteLLMAdapter", tools: List["BaseTool"], max_iterations: int = 10
+    ) -> None:
         """Initialize the enhanced plan-execute agent."""
-        super().__init__(*args, **kwargs)
+        super().__init__(llm=llm, tools=tools, max_iterations=max_iterations)
         self._exploration_results: Optional[ExplorationResult] = None
         self._current_plan: Optional[ExecutionPlan] = None
         self._failure_count = 0
@@ -101,7 +107,7 @@ class PlanExecuteAgent(BaseAgent):
         self._print_memory_stats()
 
         # Save memory state
-        self.memory.save_memory()
+        await self.memory.save_memory()
 
         return final_answer
 
@@ -208,12 +214,16 @@ class PlanExecuteAgent(BaseAgent):
         """
         results = {}
         for aspect, description in tasks:
-            try:
-                result = await self._run_single_exploration(aspect, description, main_task)
+            result_list = await asyncio.gather(
+                self._run_single_exploration(aspect, description, main_task),
+                return_exceptions=True,
+            )
+            result = result_list[0]
+            if isinstance(result, Exception):
+                logger.warning(f"Exploration {aspect} failed: {result}")
+                results[aspect] = {"error": str(result)}
+            else:
                 results[aspect] = result
-            except Exception as e:
-                logger.warning(f"Exploration {aspect} failed: {e}")
-                results[aspect] = {"error": str(e)}
         return results
 
     async def _run_single_exploration(self, aspect: str, description: str, main_task: str) -> dict:
@@ -255,7 +265,7 @@ class PlanExecuteAgent(BaseAgent):
     def _extract_files(self, results: Dict[str, dict]) -> List[str]:
         """Extract discovered file paths from exploration results."""
         files = []
-        for aspect, data in results.items():
+        for data in results.values():
             if isinstance(data, dict) and "findings" in data:
                 # Simple extraction - look for file paths in findings
                 findings = data["findings"]
@@ -315,7 +325,7 @@ class PlanExecuteAgent(BaseAgent):
         # Build system context
         system_content = "You are a planning expert. Create clear, dependency-aware plans."
         try:
-            context = await asyncio.to_thread(format_context_prompt)
+            context = await format_context_prompt()
             system_content = context + "\n" + system_content
         except Exception:
             pass
@@ -632,8 +642,7 @@ class PlanExecuteAgent(BaseAgent):
 
         tasks_list = []
         async with asyncio.TaskGroup() as tg:
-            for step in steps:
-                tasks_list.append(tg.create_task(run_step(step)))
+            tasks_list = [tg.create_task(run_step(step)) for step in steps]
 
         return [task.result() for task in tasks_list]
 

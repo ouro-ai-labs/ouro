@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Quick start: Using memory persistence."""
+
 import asyncio
 import sys
 from pathlib import Path
@@ -42,12 +43,14 @@ async def main():
     print("   ✓ Added 2 messages")
 
     # Save memory state (normally done automatically after await agent.run(...))
-    manager.save_memory()
+    await manager.save_memory()
     print("   ✓ Saved to database")
 
     # Option 2: Load existing session
     print(f"\n2️⃣  Loading session {session_id[:8]}...")
-    manager2 = MemoryManager.from_session(session_id=session_id, llm=llm, db_path="data/my_app.db")
+    manager2 = await MemoryManager.from_session(
+        session_id=session_id, llm=llm, db_path="data/my_app.db"
+    )
     print(f"   ✓ Loaded {manager2.short_term.count()} messages")
 
     # Continue conversation
@@ -56,7 +59,7 @@ async def main():
 
     # View sessions
     print("\n3️⃣  Viewing all sessions...")
-    sessions = manager.store.list_sessions(limit=5)
+    sessions = await manager.store.list_sessions(limit=5)
     for s in sessions:
         print(f"   • {s['id'][:8]}... - {s['message_count']} messages")
 

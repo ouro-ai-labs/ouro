@@ -1,8 +1,12 @@
 """File operation tools for reading, writing, and searching files."""
 
+import asyncio
 import glob
 import os
 from typing import Any, Dict
+
+import aiofiles
+import aiofiles.os
 
 from .base import BaseTool
 
@@ -38,11 +42,11 @@ class FileReadTool(BaseTool):
             },
         }
 
-    def execute(self, file_path: str, offset: int = 0, limit: int = None) -> str:
+    async def execute(self, file_path: str, offset: int = 0, limit: int = None) -> str:
         """Read file with optional pagination."""
         try:
             # Pre-check file size
-            file_size = os.path.getsize(file_path)
+            file_size = await aiofiles.os.path.getsize(file_path)
             estimated_tokens = file_size // self.CHARS_PER_TOKEN
 
             # If file too large and no pagination, return error
@@ -54,11 +58,11 @@ class FileReadTool(BaseTool):
                     f"or use grep_content to search for specific content."
                 )
 
-            with open(file_path, "r", encoding="utf-8") as f:
+            async with aiofiles.open(file_path, encoding="utf-8") as f:
                 if limit is None:
-                    return f.read()
+                    return await f.read()
                 # Pagination mode
-                lines = f.readlines()
+                lines = await f.readlines()
                 total_lines = len(lines)
                 selected = lines[offset : offset + limit]
                 result = "".join(selected)
@@ -97,13 +101,13 @@ class FileWriteTool(BaseTool):
             },
         }
 
-    def execute(self, file_path: str, content: str) -> str:
+    async def execute(self, file_path: str, content: str) -> str:
         """Write content to file."""
         try:
             # Create directory if it doesn't exist
-            os.makedirs(os.path.dirname(file_path) or ".", exist_ok=True)
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write(content)
+            await aiofiles.os.makedirs(os.path.dirname(file_path) or ".", exist_ok=True)
+            async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
+                await f.write(content)
             return f"Successfully wrote to {file_path}"
         except Exception as e:
             return f"Error writing file: {str(e)}"
@@ -133,11 +137,11 @@ class FileSearchTool(BaseTool):
             },
         }
 
-    def execute(self, directory: str = ".", pattern: str = "*") -> str:
+    async def execute(self, directory: str = ".", pattern: str = "*") -> str:
         """Search for files matching pattern."""
         try:
             search_path = os.path.join(directory, "**", pattern)
-            files = glob.glob(search_path, recursive=True)
+            files = await asyncio.to_thread(lambda: glob.glob(search_path, recursive=True))
             if files:
                 return "\n".join(files)
             else:

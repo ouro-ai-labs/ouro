@@ -58,10 +58,7 @@ class ShortTermMemory:
         Returns:
             List of removed messages
         """
-        removed = []
-        for _ in range(min(count, len(self.messages))):
-            removed.append(self.messages.popleft())
-        return removed
+        return [self.messages.popleft() for _ in range(min(count, len(self.messages)))]
 
     def is_full(self) -> bool:
         """Check if short-term memory is at capacity.

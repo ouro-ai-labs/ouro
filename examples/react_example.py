@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent.react_agent import ReActAgent
 from config import Config
-from llm import LiteLLMLLM
+from llm import LiteLLMAdapter
 from tools.calculator import CalculatorTool
 from tools.file_ops import FileReadTool, FileWriteTool
 from tools.web_search import WebSearchTool
@@ -29,10 +29,9 @@ async def main():
         print("Please configure your .env file (see .env.example)")
         return
 
-    llm = LiteLLMLLM(
+    llm = LiteLLMAdapter(
         model=Config.LITELLM_MODEL,
         api_base=Config.LITELLM_API_BASE,
-        retry_config=Config.get_retry_config(),
         drop_params=Config.LITELLM_DROP_PARAMS,
         timeout=Config.LITELLM_TIMEOUT,
     )

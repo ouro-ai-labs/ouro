@@ -75,9 +75,8 @@ def _extract_text_from_block(block: Any) -> str:
     if hasattr(block, "text"):
         return block.text
 
-    if hasattr(block, "type"):
-        if block.type == "text":
-            return getattr(block, "text", "")
+    if hasattr(block, "type") and block.type == "text":
+        return getattr(block, "text", "")
 
     return ""
 
@@ -129,11 +128,12 @@ def extract_tool_calls_from_content(content: Any) -> List[ToolCallBlock]:
     # Handle list of content blocks (Anthropic format)
     if isinstance(content, list):
         for block in content:
-            if isinstance(block, dict) and block.get("type") == "tool_use":
-                tool_call = _anthropic_to_openai_tool_call(block)
-                if tool_call:
-                    tool_calls.append(tool_call)
-            elif hasattr(block, "type") and block.type == "tool_use":
+            if (
+                isinstance(block, dict)
+                and block.get("type") == "tool_use"
+                or hasattr(block, "type")
+                and block.type == "tool_use"
+            ):
                 tool_call = _anthropic_to_openai_tool_call(block)
                 if tool_call:
                     tool_calls.append(tool_call)
@@ -206,10 +206,7 @@ def _anthropic_to_openai_tool_call(block: Any) -> Optional[ToolCallBlock]:
         return None
 
     # Convert input to JSON string
-    if isinstance(input_data, str):
-        arguments = input_data
-    else:
-        arguments = json.dumps(input_data)
+    arguments = input_data if isinstance(input_data, str) else json.dumps(input_data)
 
     return {
         "id": tool_id,
@@ -266,12 +263,10 @@ def content_has_tool_calls(content: Any) -> bool:
     # Check for tool_use blocks in list
     if isinstance(content, list):
         for block in content:
-            if isinstance(block, dict):
-                if block.get("type") in ("tool_use", "tool_calls"):
-                    return True
-            elif hasattr(block, "type"):
-                if block.type in ("tool_use", "tool_calls"):
-                    return True
+            if isinstance(block, dict) and block.get("type") in ("tool_use", "tool_calls"):
+                return True
+            if hasattr(block, "type") and block.type in ("tool_use", "tool_calls"):
+                return True
 
     return False
 

@@ -9,7 +9,7 @@ import pytest
 
 from agent.react_agent import ReActAgent
 from config import Config
-from llm import LiteLLMLLM
+from llm import LiteLLMAdapter
 from tools.file_ops import FileReadTool, FileWriteTool
 from tools.smart_edit import SmartEditTool
 
@@ -47,12 +47,11 @@ def test_smart_edit_in_agent():
 
     try:
         # Create minimal agent with just SmartEditTool
-        llm = LiteLLMLLM(
+        llm = LiteLLMAdapter(
             model=Config.LITELLM_MODEL,
             api_base=Config.LITELLM_API_BASE,
             drop_params=Config.LITELLM_DROP_PARAMS,
             timeout=Config.LITELLM_TIMEOUT,
-            retry_config=Config.get_retry_config(),
         )
 
         tools = [

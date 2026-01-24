@@ -53,7 +53,7 @@ class MyCustomTool(BaseTool):
             }
         }
 
-    def execute(self, input_text: str, option: str = "uppercase") -> str:
+    async def execute(self, input_text: str, option: str = "uppercase") -> str:
         """Execute the tool's logic.
 
         Args:
@@ -104,7 +104,7 @@ Here's a more complex example that makes HTTP requests:
 # tools/api_client.py
 from .base import BaseTool
 from typing import Dict, Any
-import requests
+import httpx
 
 class APIClientTool(BaseTool):
     """Tool for making HTTP API requests."""
@@ -141,25 +141,26 @@ class APIClientTool(BaseTool):
             }
         }
 
-    def execute(self, url: str, method: str = "GET",
+    async def execute(self, url: str, method: str = "GET",
                 headers: Dict = None, body: Dict = None) -> str:
         """Make an HTTP request."""
         try:
-            response = requests.request(
-                method=method,
-                url=url,
-                headers=headers or {},
-                json=body
-            )
-            response.raise_for_status()
+            async with httpx.AsyncClient() as client:
+                response = await client.request(
+                    method=method,
+                    url=url,
+                    headers=headers or {},
+                    json=body,
+                )
+                response.raise_for_status()
 
             return f"Status: {response.status_code}\n\n{response.text}"
-        except requests.exceptions.RequestException as e:
+        except httpx.HTTPError as e:
             return f"Error making request: {str(e)}"
 ```
 
-**Note**: During the asyncio migration, prefer an async HTTP client for new tools, or ensure any blocking
-HTTP is executed behind an async boundary (see `rfc/003-asyncio-migration.md`).
+**Note**: Use an async HTTP client for tools (e.g., `httpx.AsyncClient`). Avoid `requests` in runtime paths
+unless wrapped behind an async boundary (see `rfc/003-asyncio-migration.md`).
 
 ### Example: Database Tool
 
@@ -167,7 +168,7 @@ HTTP is executed behind an async boundary (see `rfc/003-asyncio-migration.md`).
 # tools/database.py
 from .base import BaseTool
 from typing import Dict, Any
-import sqlite3
+import aiosqlite
 
 class DatabaseTool(BaseTool):
     """Tool for executing SQL queries."""
@@ -192,30 +193,28 @@ class DatabaseTool(BaseTool):
             }
         }
 
-    def execute(self, query: str) -> str:
+    async def execute(self, query: str) -> str:
         """Execute a SQL query."""
         # Safety check: only allow SELECT queries
         if not query.strip().upper().startswith("SELECT"):
             return "Error: Only SELECT queries are allowed for safety"
 
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute(query)
-            results = cursor.fetchall()
-            conn.close()
+            async with aiosqlite.connect(self.db_path) as conn:
+                async with conn.execute(query) as cursor:
+                    results = await cursor.fetchall()
 
             if not results:
                 return "Query returned no results"
 
             # Format results as a table
             return "\n".join([str(row) for row in results])
-        except sqlite3.Error as e:
+        except aiosqlite.Error as e:
             return f"Database error: {str(e)}"
 ```
 
-**Note**: During the asyncio migration, prefer an async SQLite strategy for new runtime code, or ensure
-blocking DB calls are executed behind an async boundary (see `rfc/003-asyncio-migration.md`).
+**Note**: During the asyncio migration, prefer `aiosqlite` for new runtime code, or ensure blocking
+DB calls are executed behind an async boundary (see `rfc/003-asyncio-migration.md`).
 
 ## Creating New Agent Modes
 
@@ -238,7 +237,7 @@ class MyCustomAgent(BaseAgent):
         super().__init__(llm, max_iterations, tools)
         # Add custom initialization here
 
-    def run(self, task: str) -> str:
+    async def run(self, task: str) -> str:
         """Execute the agent's main loop.
 
         Args:
@@ -262,7 +261,7 @@ class MyCustomAgent(BaseAgent):
             # 2. Execute any tool calls
             if response.tool_calls:
                 for tool_call in response.tool_calls:
-                    result = self.tool_executor.execute(
+                    result = await self.tool_executor.execute_tool_call(
                         tool_call.name,
                         tool_call.arguments
                     )
@@ -447,21 +446,23 @@ MY_PROVIDER_BASE_URL=  # Optional: custom API endpoint
 # test_my_tool.py
 from tools.my_custom_tool import MyCustomTool
 
-def test_my_custom_tool():
+async def test_my_custom_tool():
     tool = MyCustomTool()
 
     # Test basic functionality
-    result = tool.execute("hello", "uppercase")
+    result = await tool.execute("hello", "uppercase")
     assert result == "HELLO"
 
     # Test different options
-    result = tool.execute("WORLD", "lowercase")
+    result = await tool.execute("WORLD", "lowercase")
     assert result == "world"
 
     print("All tests passed!")
 
 if __name__ == "__main__":
-    test_my_custom_tool()
+    import asyncio
+
+    asyncio.run(test_my_custom_tool())
 ```
 
 ### Testing Agents
@@ -471,16 +472,15 @@ if __name__ == "__main__":
 import asyncio
 
 from agent.my_custom_agent import MyCustomAgent
-from llm import LiteLLMLLM
+from llm import LiteLLMAdapter
 from config import Config
 
 async def test_my_agent():
-    llm = LiteLLMLLM(
+    llm = LiteLLMAdapter(
         model=Config.LITELLM_MODEL,
         api_base=Config.LITELLM_API_BASE,
         drop_params=Config.LITELLM_DROP_PARAMS,
         timeout=Config.LITELLM_TIMEOUT,
-        retry_config=Config.get_retry_config(),
     )
 
     agent = MyCustomAgent(llm=llm)

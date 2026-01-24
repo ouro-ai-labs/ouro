@@ -97,9 +97,9 @@ def tool():
 class TestFindFunction:
     """Test find_function functionality."""
 
-    def test_find_single_function(self, tool, sample_python_files):
+    async def test_find_single_function(self, tool, sample_python_files):
         """Test finding a function that exists once."""
-        result = tool.execute(
+        result = await tool.execute(
             target="helper_function", search_type="find_function", path=str(sample_python_files)
         )
 
@@ -108,9 +108,9 @@ class TestFindFunction:
         assert "def helper_function(x, y)" in result
         assert "Helper for calculations" in result
 
-    def test_find_multiple_functions(self, tool, sample_python_files):
+    async def test_find_multiple_functions(self, tool, sample_python_files):
         """Test finding a function that exists in multiple files."""
-        result = tool.execute(
+        result = await tool.execute(
             target="transform_task", search_type="find_function", path=str(sample_python_files)
         )
 
@@ -118,9 +118,9 @@ class TestFindFunction:
         assert "base.py" in result
         assert "utils.py" in result
 
-    def test_function_not_found(self, tool, sample_python_files):
+    async def test_function_not_found(self, tool, sample_python_files):
         """Test searching for non-existent function."""
-        result = tool.execute(
+        result = await tool.execute(
             target="nonexistent_function",
             search_type="find_function",
             path=str(sample_python_files),
@@ -129,9 +129,9 @@ class TestFindFunction:
         assert "No function named" in result
         assert "nonexistent_function" in result
 
-    def test_function_with_type_hints(self, tool, sample_python_files):
+    async def test_function_with_type_hints(self, tool, sample_python_files):
         """Test that type hints are captured in signature."""
-        result = tool.execute(
+        result = await tool.execute(
             target="run", search_type="find_function", path=str(sample_python_files)
         )
 
@@ -142,9 +142,9 @@ class TestFindFunction:
 class TestFindClass:
     """Test find_class functionality."""
 
-    def test_find_class(self, tool, sample_python_files):
+    async def test_find_class(self, tool, sample_python_files):
         """Test finding a class."""
-        result = tool.execute(
+        result = await tool.execute(
             target="BaseAgent", search_type="find_class", path=str(sample_python_files)
         )
 
@@ -155,9 +155,9 @@ class TestFindClass:
         assert "run" in result
         assert "_process" in result
 
-    def test_find_subclass(self, tool, sample_python_files):
+    async def test_find_subclass(self, tool, sample_python_files):
         """Test finding a subclass shows inheritance."""
-        result = tool.execute(
+        result = await tool.execute(
             target="ReActAgent", search_type="find_class", path=str(sample_python_files)
         )
 
@@ -165,9 +165,9 @@ class TestFindClass:
         assert "BaseAgent" in result  # Should show base class
         assert "agent.py" in result
 
-    def test_class_not_found(self, tool, sample_python_files):
+    async def test_class_not_found(self, tool, sample_python_files):
         """Test searching for non-existent class."""
-        result = tool.execute(
+        result = await tool.execute(
             target="NonExistentClass", search_type="find_class", path=str(sample_python_files)
         )
 
@@ -177,10 +177,10 @@ class TestFindClass:
 class TestShowStructure:
     """Test show_structure functionality."""
 
-    def test_show_structure(self, tool, sample_python_files):
+    async def test_show_structure(self, tool, sample_python_files):
         """Test showing file structure."""
         base_file = sample_python_files / "base.py"
-        result = tool.execute(target=str(base_file), search_type="show_structure")
+        result = await tool.execute(target=str(base_file), search_type="show_structure")
 
         # Check for imports section
         assert "IMPORTS" in result
@@ -196,17 +196,17 @@ class TestShowStructure:
         assert "transform_task" in result
         assert "helper_function" in result
 
-    def test_show_structure_nonexistent_file(self, tool):
+    async def test_show_structure_nonexistent_file(self, tool):
         """Test show_structure on non-existent file."""
-        result = tool.execute(target="/nonexistent/file.py", search_type="show_structure")
+        result = await tool.execute(target="/nonexistent/file.py", search_type="show_structure")
 
         assert "Error" in result
         assert "does not exist" in result
 
-    def test_show_structure_with_line_numbers(self, tool, sample_python_files):
+    async def test_show_structure_with_line_numbers(self, tool, sample_python_files):
         """Test that line numbers are included."""
         base_file = sample_python_files / "base.py"
-        result = tool.execute(target=str(base_file), search_type="show_structure")
+        result = await tool.execute(target=str(base_file), search_type="show_structure")
 
         assert "Line" in result
 
@@ -214,9 +214,9 @@ class TestShowStructure:
 class TestFindUsages:
     """Test find_usages functionality."""
 
-    def test_find_function_usages(self, tool, sample_python_files):
+    async def test_find_function_usages(self, tool, sample_python_files):
         """Test finding where a function is called."""
-        result = tool.execute(
+        result = await tool.execute(
             target="transform_task", search_type="find_usages", path=str(sample_python_files)
         )
 
@@ -224,18 +224,18 @@ class TestFindUsages:
         # Should find usages in both base.py and agent.py
         assert "usage" in result.lower()
 
-    def test_find_class_usages(self, tool, sample_python_files):
+    async def test_find_class_usages(self, tool, sample_python_files):
         """Test finding where a class is used."""
-        result = tool.execute(
+        result = await tool.execute(
             target="BaseAgent", search_type="find_usages", path=str(sample_python_files)
         )
 
         # Should find import and inheritance
         assert "BaseAgent" in result
 
-    def test_usages_not_found(self, tool, sample_python_files):
+    async def test_usages_not_found(self, tool, sample_python_files):
         """Test finding usages of something not used."""
-        result = tool.execute(
+        result = await tool.execute(
             target="never_used_function", search_type="find_usages", path=str(sample_python_files)
         )
 
@@ -245,18 +245,18 @@ class TestFindUsages:
 class TestErrorHandling:
     """Test error handling."""
 
-    def test_invalid_search_type(self, tool, sample_python_files):
+    async def test_invalid_search_type(self, tool, sample_python_files):
         """Test invalid search type."""
-        result = tool.execute(
+        result = await tool.execute(
             target="something", search_type="invalid_type", path=str(sample_python_files)
         )
 
         assert "Error" in result
         assert "Unknown search_type" in result
 
-    def test_invalid_path(self, tool):
+    async def test_invalid_path(self, tool):
         """Test with invalid path."""
-        result = tool.execute(
+        result = await tool.execute(
             target="something", search_type="find_function", path="/nonexistent/path"
         )
 
@@ -267,7 +267,7 @@ class TestErrorHandling:
 class TestPerformance:
     """Test performance characteristics."""
 
-    def test_handles_syntax_errors_gracefully(self, tool, tmp_path):
+    async def test_handles_syntax_errors_gracefully(self, tool, tmp_path):
         """Test that files with syntax errors are skipped."""
         # Create a file with syntax error
         bad_file = tmp_path / "bad.py"
@@ -278,12 +278,14 @@ class TestPerformance:
         good_file.write_text("def working():\n    pass")
 
         # Should still find the working function
-        result = tool.execute(target="working", search_type="find_function", path=str(tmp_path))
+        result = await tool.execute(
+            target="working", search_type="find_function", path=str(tmp_path)
+        )
 
         assert "working" in result
         assert "good.py" in result
 
-    def test_large_number_of_files(self, tool, tmp_path):
+    async def test_large_number_of_files(self, tool, tmp_path):
         """Test handling many files."""
         # Create 20 files with functions
         for i in range(20):
@@ -291,7 +293,9 @@ class TestPerformance:
             file.write_text(f"def function_{i}():\n    pass")
 
         # Should find all functions quickly
-        result = tool.execute(target="function_10", search_type="find_function", path=str(tmp_path))
+        result = await tool.execute(
+            target="function_10", search_type="find_function", path=str(tmp_path)
+        )
 
         assert "function_10" in result
 
@@ -299,18 +303,18 @@ class TestPerformance:
 class TestRealWorldScenarios:
     """Test with real-world scenarios."""
 
-    def test_find_init_method(self, tool, sample_python_files):
+    async def test_find_init_method(self, tool, sample_python_files):
         """Test finding __init__ methods."""
-        result = tool.execute(
+        result = await tool.execute(
             target="__init__", search_type="find_function", path=str(sample_python_files)
         )
 
         assert "__init__" in result
         assert "Found 2 function(s)" in result  # BaseAgent and ReActAgent
 
-    def test_private_methods(self, tool, sample_python_files):
+    async def test_private_methods(self, tool, sample_python_files):
         """Test finding private methods."""
-        result = tool.execute(
+        result = await tool.execute(
             target="_process", search_type="find_function", path=str(sample_python_files)
         )
 
@@ -321,45 +325,45 @@ class TestRealWorldScenarios:
 class TestLanguageDetection:
     """Test language detection functionality."""
 
-    def test_python_extension(self, tmp_path):
+    async def test_python_extension(self, tmp_path):
         """Test Python file detection."""
         from pathlib import Path
 
         assert detect_language(Path("test.py")) == "python"
 
-    def test_javascript_extensions(self, tmp_path):
+    async def test_javascript_extensions(self, tmp_path):
         """Test JavaScript file detection."""
         from pathlib import Path
 
         assert detect_language(Path("test.js")) == "javascript"
         assert detect_language(Path("test.jsx")) == "javascript"
 
-    def test_typescript_extensions(self, tmp_path):
+    async def test_typescript_extensions(self, tmp_path):
         """Test TypeScript file detection."""
         from pathlib import Path
 
         assert detect_language(Path("test.ts")) == "typescript"
         assert detect_language(Path("test.tsx")) == "typescript"
 
-    def test_go_extension(self, tmp_path):
+    async def test_go_extension(self, tmp_path):
         """Test Go file detection."""
         from pathlib import Path
 
         assert detect_language(Path("test.go")) == "go"
 
-    def test_rust_extension(self, tmp_path):
+    async def test_rust_extension(self, tmp_path):
         """Test Rust file detection."""
         from pathlib import Path
 
         assert detect_language(Path("test.rs")) == "rust"
 
-    def test_java_extension(self, tmp_path):
+    async def test_java_extension(self, tmp_path):
         """Test Java file detection."""
         from pathlib import Path
 
         assert detect_language(Path("test.java")) == "java"
 
-    def test_cpp_extensions(self, tmp_path):
+    async def test_cpp_extensions(self, tmp_path):
         """Test C++ file detection."""
         from pathlib import Path
 
@@ -367,13 +371,13 @@ class TestLanguageDetection:
         assert detect_language(Path("test.cc")) == "cpp"
         assert detect_language(Path("test.hpp")) == "cpp"
 
-    def test_c_extension(self, tmp_path):
+    async def test_c_extension(self, tmp_path):
         """Test C file detection."""
         from pathlib import Path
 
         assert detect_language(Path("test.c")) == "c"
 
-    def test_supported_languages(self):
+    async def test_supported_languages(self):
         """Test that supported languages list is correct."""
         langs = get_supported_languages()
         assert "python" in langs
@@ -557,9 +561,9 @@ void printMessage(const std::string& msg) {
 
         return tmp_path
 
-    def test_find_javascript_function(self, tool, multi_lang_files):
+    async def test_find_javascript_function(self, tool, multi_lang_files):
         """Test finding JavaScript function."""
-        result = tool.execute(
+        result = await tool.execute(
             target="greet",
             search_type="find_function",
             path=str(multi_lang_files),
@@ -570,9 +574,9 @@ void printMessage(const std::string& msg) {
         assert "app.js" in result
         assert "[javascript]" in result
 
-    def test_find_javascript_class(self, tool, multi_lang_files):
+    async def test_find_javascript_class(self, tool, multi_lang_files):
         """Test finding JavaScript class."""
-        result = tool.execute(
+        result = await tool.execute(
             target="UserService",
             search_type="find_class",
             path=str(multi_lang_files),
@@ -582,9 +586,9 @@ void printMessage(const std::string& msg) {
         assert "UserService" in result
         assert "app.js" in result
 
-    def test_find_typescript_function(self, tool, multi_lang_files):
+    async def test_find_typescript_function(self, tool, multi_lang_files):
         """Test finding TypeScript function."""
-        result = tool.execute(
+        result = await tool.execute(
             target="processData",
             search_type="find_function",
             path=str(multi_lang_files),
@@ -594,9 +598,9 @@ void printMessage(const std::string& msg) {
         assert "processData" in result
         assert "service.ts" in result
 
-    def test_find_typescript_class(self, tool, multi_lang_files):
+    async def test_find_typescript_class(self, tool, multi_lang_files):
         """Test finding TypeScript class and interface."""
-        result = tool.execute(
+        result = await tool.execute(
             target="ApiService",
             search_type="find_class",
             path=str(multi_lang_files),
@@ -606,9 +610,9 @@ void printMessage(const std::string& msg) {
         assert "ApiService" in result
         assert "service.ts" in result
 
-    def test_find_go_function(self, tool, multi_lang_files):
+    async def test_find_go_function(self, tool, multi_lang_files):
         """Test finding Go function."""
-        result = tool.execute(
+        result = await tool.execute(
             target="greet",
             search_type="find_function",
             path=str(multi_lang_files),
@@ -619,9 +623,9 @@ void printMessage(const std::string& msg) {
         assert "main.go" in result
         assert "[go]" in result
 
-    def test_find_go_struct(self, tool, multi_lang_files):
+    async def test_find_go_struct(self, tool, multi_lang_files):
         """Test finding Go struct (treated as class)."""
-        result = tool.execute(
+        result = await tool.execute(
             target="Server",
             search_type="find_class",
             path=str(multi_lang_files),
@@ -631,9 +635,9 @@ void printMessage(const std::string& msg) {
         assert "Server" in result
         assert "main.go" in result
 
-    def test_find_rust_function(self, tool, multi_lang_files):
+    async def test_find_rust_function(self, tool, multi_lang_files):
         """Test finding Rust function."""
-        result = tool.execute(
+        result = await tool.execute(
             target="calculate",
             search_type="find_function",
             path=str(multi_lang_files),
@@ -644,9 +648,9 @@ void printMessage(const std::string& msg) {
         assert "lib.rs" in result
         assert "[rust]" in result
 
-    def test_find_rust_struct(self, tool, multi_lang_files):
+    async def test_find_rust_struct(self, tool, multi_lang_files):
         """Test finding Rust struct."""
-        result = tool.execute(
+        result = await tool.execute(
             target="Calculator",
             search_type="find_class",
             path=str(multi_lang_files),
@@ -656,9 +660,9 @@ void printMessage(const std::string& msg) {
         assert "Calculator" in result
         assert "lib.rs" in result
 
-    def test_find_java_method(self, tool, multi_lang_files):
+    async def test_find_java_method(self, tool, multi_lang_files):
         """Test finding Java method."""
-        result = tool.execute(
+        result = await tool.execute(
             target="add",
             search_type="find_function",
             path=str(multi_lang_files),
@@ -669,9 +673,9 @@ void printMessage(const std::string& msg) {
         assert "Main.java" in result
         assert "[java]" in result
 
-    def test_find_java_class(self, tool, multi_lang_files):
+    async def test_find_java_class(self, tool, multi_lang_files):
         """Test finding Java class."""
-        result = tool.execute(
+        result = await tool.execute(
             target="Helper",
             search_type="find_class",
             path=str(multi_lang_files),
@@ -681,9 +685,9 @@ void printMessage(const std::string& msg) {
         assert "Helper" in result
         assert "Main.java" in result
 
-    def test_find_cpp_function(self, tool, multi_lang_files):
+    async def test_find_cpp_function(self, tool, multi_lang_files):
         """Test finding C++ function."""
-        result = tool.execute(
+        result = await tool.execute(
             target="calculate",
             search_type="find_function",
             path=str(multi_lang_files),
@@ -694,9 +698,9 @@ void printMessage(const std::string& msg) {
         assert "app.cpp" in result
         assert "[cpp]" in result
 
-    def test_find_cpp_class(self, tool, multi_lang_files):
+    async def test_find_cpp_class(self, tool, multi_lang_files):
         """Test finding C++ class."""
-        result = tool.execute(
+        result = await tool.execute(
             target="Engine",
             search_type="find_class",
             path=str(multi_lang_files),
@@ -706,10 +710,10 @@ void printMessage(const std::string& msg) {
         assert "Engine" in result
         assert "app.cpp" in result
 
-    def test_cross_language_search(self, tool, multi_lang_files):
+    async def test_cross_language_search(self, tool, multi_lang_files):
         """Test finding function across multiple languages."""
         # 'greet' exists in both JS and Go
-        result = tool.execute(
+        result = await tool.execute(
             target="greet",
             search_type="find_function",
             path=str(multi_lang_files),
@@ -719,27 +723,27 @@ void printMessage(const std::string& msg) {
         # Should find in both files
         assert "Found" in result
 
-    def test_show_structure_javascript(self, tool, multi_lang_files):
+    async def test_show_structure_javascript(self, tool, multi_lang_files):
         """Test showing structure of JavaScript file."""
         js_file = multi_lang_files / "app.js"
-        result = tool.execute(target=str(js_file), search_type="show_structure")
+        result = await tool.execute(target=str(js_file), search_type="show_structure")
 
         assert "[javascript]" in result
         assert "CLASSES" in result or "FUNCTIONS" in result
         assert "UserService" in result or "greet" in result
 
-    def test_show_structure_go(self, tool, multi_lang_files):
+    async def test_show_structure_go(self, tool, multi_lang_files):
         """Test showing structure of Go file."""
         go_file = multi_lang_files / "main.go"
-        result = tool.execute(target=str(go_file), search_type="show_structure")
+        result = await tool.execute(target=str(go_file), search_type="show_structure")
 
         assert "[go]" in result
         assert "FUNCTIONS" in result
         assert "main" in result or "greet" in result
 
-    def test_find_usages_cross_language(self, tool, multi_lang_files):
+    async def test_find_usages_cross_language(self, tool, multi_lang_files):
         """Test finding usages across languages."""
-        result = tool.execute(
+        result = await tool.execute(
             target="calculate",
             search_type="find_usages",
             path=str(multi_lang_files),
@@ -748,10 +752,10 @@ void printMessage(const std::string& msg) {
         # Should find in Rust, Java, and C++
         assert "calculate" in result
 
-    def test_language_filter(self, tool, multi_lang_files):
+    async def test_language_filter(self, tool, multi_lang_files):
         """Test that language filter works correctly."""
         # Search only in Python (should find nothing in multi_lang_files)
-        result = tool.execute(
+        result = await tool.execute(
             target="greet",
             search_type="find_function",
             path=str(multi_lang_files),

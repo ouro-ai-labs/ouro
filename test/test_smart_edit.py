@@ -44,9 +44,9 @@ def tool():
 class TestDiffReplace:
     """Test diff_replace mode."""
 
-    def test_exact_match_replace(self, tool, temp_file):
+    async def test_exact_match_replace(self, tool, temp_file):
         """Test exact string replacement."""
-        result = tool.execute(
+        result = await tool.execute(
             file_path=str(temp_file),
             mode="diff_replace",
             old_code="result = x + y",
@@ -58,10 +58,10 @@ class TestDiffReplace:
         content = temp_file.read_text()
         assert "# computed sum" in content
 
-    def test_fuzzy_match_with_whitespace(self, tool, temp_file):
+    async def test_fuzzy_match_with_whitespace(self, tool, temp_file):
         """Test fuzzy matching handles whitespace differences."""
         # Code with different indentation
-        result = tool.execute(
+        result = await tool.execute(
             file_path=str(temp_file),
             mode="diff_replace",
             old_code='def calculate(x, y):\n"""Calculate sum of x and y."""\nresult = x + y',
@@ -74,9 +74,9 @@ class TestDiffReplace:
         content = temp_file.read_text()
         assert "updated" in content or "Result:" in content
 
-    def test_no_match_found(self, tool, temp_file):
+    async def test_no_match_found(self, tool, temp_file):
         """Test error when code not found."""
-        result = tool.execute(
+        result = await tool.execute(
             file_path=str(temp_file),
             mode="diff_replace",
             old_code="nonexistent code",
@@ -88,9 +88,9 @@ class TestDiffReplace:
         assert "Error" in result
         assert "not found" in result.lower()
 
-    def test_backup_creation(self, tool, temp_file):
+    async def test_backup_creation(self, tool, temp_file):
         """Test that backup files are created."""
-        result = tool.execute(
+        result = await tool.execute(
             file_path=str(temp_file),
             mode="diff_replace",
             old_code="result = x + y",
@@ -107,11 +107,11 @@ class TestDiffReplace:
         assert "result = x + y" in backup_content
         assert "backup test" not in backup_content
 
-    def test_dry_run_no_changes(self, tool, temp_file):
+    async def test_dry_run_no_changes(self, tool, temp_file):
         """Test dry_run mode doesn't modify file."""
         original_content = temp_file.read_text()
 
-        result = tool.execute(
+        result = await tool.execute(
             file_path=str(temp_file),
             mode="diff_replace",
             old_code="result = x + y",
@@ -128,9 +128,9 @@ class TestDiffReplace:
 class TestSmartInsert:
     """Test smart_insert mode."""
 
-    def test_insert_after_anchor(self, tool, temp_file):
+    async def test_insert_after_anchor(self, tool, temp_file):
         """Test inserting code after anchor line."""
-        result = tool.execute(
+        result = await tool.execute(
             file_path=str(temp_file),
             mode="smart_insert",
             anchor="class Calculator:",
@@ -148,9 +148,9 @@ class TestSmartInsert:
         calc_idx = next(i for i, line in enumerate(lines) if "class Calculator:" in line)
         assert "# New calculator class" in lines[calc_idx + 1]
 
-    def test_insert_before_anchor(self, tool, temp_file):
+    async def test_insert_before_anchor(self, tool, temp_file):
         """Test inserting code before anchor line."""
-        result = tool.execute(
+        result = await tool.execute(
             file_path=str(temp_file),
             mode="smart_insert",
             anchor="def calculate",
@@ -163,9 +163,9 @@ class TestSmartInsert:
         content = temp_file.read_text()
         assert "# Helper function" in content
 
-    def test_anchor_not_found(self, tool, temp_file):
+    async def test_anchor_not_found(self, tool, temp_file):
         """Test error when anchor not found."""
-        result = tool.execute(
+        result = await tool.execute(
             file_path=str(temp_file),
             mode="smart_insert",
             anchor="nonexistent anchor",
@@ -181,10 +181,10 @@ class TestSmartInsert:
 class TestBlockEdit:
     """Test block_edit mode."""
 
-    def test_replace_line_range(self, tool, temp_file):
+    async def test_replace_line_range(self, tool, temp_file):
         """Test replacing a range of lines."""
         # Replace lines 2-4 (the docstring and result line)
-        result = tool.execute(
+        result = await tool.execute(
             file_path=str(temp_file),
             mode="block_edit",
             start_line=2,
@@ -198,9 +198,9 @@ class TestBlockEdit:
         assert "New docstring" in content
         assert "simplified" in content
 
-    def test_invalid_line_range(self, tool, temp_file):
+    async def test_invalid_line_range(self, tool, temp_file):
         """Test error for invalid line range."""
-        result = tool.execute(
+        result = await tool.execute(
             file_path=str(temp_file),
             mode="block_edit",
             start_line=100,
@@ -212,10 +212,10 @@ class TestBlockEdit:
         assert "Error" in result
         assert "exceeds file length" in result
 
-    def test_line_numbers_validation(self, tool, temp_file):
+    async def test_line_numbers_validation(self, tool, temp_file):
         """Test line number validation."""
         # Start > end
-        result = tool.execute(
+        result = await tool.execute(
             file_path=str(temp_file),
             mode="block_edit",
             start_line=5,
@@ -227,7 +227,7 @@ class TestBlockEdit:
         assert "Error" in result
 
         # Negative line numbers
-        result = tool.execute(
+        result = await tool.execute(
             file_path=str(temp_file),
             mode="block_edit",
             start_line=-1,
@@ -242,9 +242,9 @@ class TestBlockEdit:
 class TestDiffPreview:
     """Test diff preview functionality."""
 
-    def test_diff_shown_by_default(self, tool, temp_file):
+    async def test_diff_shown_by_default(self, tool, temp_file):
         """Test that diff is shown by default."""
-        result = tool.execute(
+        result = await tool.execute(
             file_path=str(temp_file),
             mode="diff_replace",
             old_code="result = x + y",
@@ -257,9 +257,9 @@ class TestDiffPreview:
         assert "---" in result  # Unified diff format
         assert "+++" in result
 
-    def test_diff_hidden_when_disabled(self, tool, temp_file):
+    async def test_diff_hidden_when_disabled(self, tool, temp_file):
         """Test diff can be hidden."""
-        result = tool.execute(
+        result = await tool.execute(
             file_path=str(temp_file),
             mode="diff_replace",
             old_code="result = x + y",
@@ -277,9 +277,9 @@ class TestDiffPreview:
 class TestErrorHandling:
     """Test error handling."""
 
-    def test_file_not_exist(self, tool):
+    async def test_file_not_exist(self, tool):
         """Test error for non-existent file."""
-        result = tool.execute(
+        result = await tool.execute(
             file_path="/nonexistent/file.py",
             mode="diff_replace",
             old_code="code",
@@ -289,16 +289,18 @@ class TestErrorHandling:
         assert "Error" in result
         assert "does not exist" in result
 
-    def test_missing_required_params(self, tool, temp_file):
+    async def test_missing_required_params(self, tool, temp_file):
         """Test error for missing required parameters."""
         # diff_replace without old_code
-        result = tool.execute(file_path=str(temp_file), mode="diff_replace", new_code="new code")
+        result = await tool.execute(
+            file_path=str(temp_file), mode="diff_replace", new_code="new code"
+        )
 
         assert "Error" in result
         assert "old_code" in result.lower()
 
         # smart_insert without anchor
-        result = tool.execute(file_path=str(temp_file), mode="smart_insert", code="new code")
+        result = await tool.execute(file_path=str(temp_file), mode="smart_insert", code="new code")
 
         assert "Error" in result
 
@@ -306,10 +308,10 @@ class TestErrorHandling:
 class TestFuzzyMatching:
     """Test fuzzy matching algorithm."""
 
-    def test_fuzzy_threshold(self, tool, temp_file):
+    async def test_fuzzy_threshold(self, tool, temp_file):
         """Test fuzzy matching with different thresholds."""
         # Very different code should not match
-        result = tool.execute(
+        result = await tool.execute(
             file_path=str(temp_file),
             mode="diff_replace",
             old_code="completely different code that doesn't exist",
@@ -320,10 +322,10 @@ class TestFuzzyMatching:
 
         assert "Error" in result or "not find" in result.lower()
 
-    def test_fuzzy_match_info(self, tool, temp_file):
+    async def test_fuzzy_match_info(self, tool, temp_file):
         """Test that fuzzy match shows similarity info."""
         # Use slightly different formatting (without docstring to make it more similar)
-        result = tool.execute(
+        result = await tool.execute(
             file_path=str(temp_file),
             mode="diff_replace",
             old_code='def calculate(x,y):\n    """Calculate sum of x and y."""\n    result=x+y\n    return result',
