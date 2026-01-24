@@ -1,22 +1,3 @@
-<!-- OPENSPEC:START -->
-# OpenSpec Instructions
-
-These instructions are for AI assistants working in this project.
-
-Always open `@/openspec/AGENTS.md` when the request:
-- Mentions planning or proposals (words like proposal, spec, change, plan)
-- Introduces new capabilities, breaking changes, architecture shifts, or big performance/security work
-- Sounds ambiguous and you need the authoritative spec before coding
-
-Use `@/openspec/AGENTS.md` to learn:
-- How to create and apply change proposals
-- Spec format and conventions
-- Project structure and guidelines
-
-Keep this managed block so 'openspec update' can refresh the instructions.
-
-<!-- OPENSPEC:END -->
-
 # AgenticLoop — Agent Instructions
 
 This file defines the **operational workflow** for making changes in this repo (how to set up, run, test, format, build, and publish). Keep it short, specific, and executable; link to docs for long explanations.
@@ -95,11 +76,15 @@ python main.py --task "Calculate 1+1"
 
 ### Format
 
-This repo uses `black` + `isort` (see `pyproject.toml`).
+This repo uses `black` + `isort` + `ruff` (see `pyproject.toml`).
+
+**IMPORTANT**: Always run formatting before committing to avoid CI failures:
 
 ```bash
+source .venv/bin/activate
 python -m black .
 python -m isort .
+python -m ruff check --fix .
 ```
 
 Script: `./scripts/format.sh`
@@ -108,6 +93,7 @@ Unified entrypoint: `./scripts/dev.sh format`
 ### Lint / Typecheck
 
 - Lint (format check): `./scripts/dev.sh lint`
+- Ruff (linter with auto-fix): `python -m ruff check --fix .`
 - Pre-commit (recommended): `./scripts/dev.sh precommit`
 - Typecheck (best-effort): `./scripts/dev.sh typecheck` (set `TYPECHECK_STRICT=1` to fail on errors)
 
