@@ -1,12 +1,13 @@
 """Tests for WebFetchTool."""
 
+import asyncio
 import json
 import types
 
 import pytest
 from requests.structures import CaseInsensitiveDict
 
-from tools.web_fetch import MAX_RESPONSE_BYTES, WebFetchTool
+from tools.web_fetch import MAX_RESPONSE_BYTES, WebFetchError, WebFetchTool
 
 
 class FakeResponse:
@@ -21,6 +22,10 @@ class FakeResponse:
         for idx in range(0, len(self._body), chunk_size):
             yield self._body[idx : idx + chunk_size]
 
+    async def aiter_bytes(self):
+        for idx in range(0, len(self._body), 65536):
+            yield self._body[idx : idx + 65536]
+
 
 def parse_result(result: str):
     data = json.loads(result)
@@ -31,35 +36,44 @@ def parse_result(result: str):
 def build_tool(monkeypatch, responses):
     tool = WebFetchTool()
 
-    def fake_request(self, session, url, headers, timeout):
+    async def fake_request(self, client, url, headers, timeout):
         if url not in responses:
             raise AssertionError(f"Unexpected URL: {url}")
-        return responses[url]
+        response = responses[url]
+        content_length = response.headers.get("content-length")
+        if content_length and int(content_length) > MAX_RESPONSE_BYTES:
+            raise WebFetchError(
+                "too_large",
+                "Response too large (exceeds 5MB limit)",
+                {"content_length": int(content_length)},
+            )
+        return response, response._body
+
+    async def fake_resolve_host(_self, _host, _port):
+        return ["93.184.216.34"]
 
     monkeypatch.setattr(tool, "_request", types.MethodType(fake_request, tool))
-    monkeypatch.setattr(
-        tool, "_resolve_host", types.MethodType(lambda _self, _host, _port: ["93.184.216.34"], tool)
-    )
+    monkeypatch.setattr(tool, "_resolve_host", types.MethodType(fake_resolve_host, tool))
     return tool
 
 
 def test_invalid_url_requires_scheme():
     tool = WebFetchTool()
-    result = parse_result(tool.execute(url="example.com"))
+    result = parse_result(asyncio.run(tool.execute(url="example.com")))
     assert result["ok"] is False
     assert result["error_code"] == "invalid_url"
 
 
 def test_blocked_localhost():
     tool = WebFetchTool()
-    result = parse_result(tool.execute(url="http://localhost"))
+    result = parse_result(asyncio.run(tool.execute(url="http://localhost")))
     assert result["ok"] is False
     assert result["error_code"] == "blocked_host"
 
 
 def test_blocked_ip_literal():
     tool = WebFetchTool()
-    result = parse_result(tool.execute(url="http://127.0.0.1"))
+    result = parse_result(asyncio.run(tool.execute(url="http://127.0.0.1")))
     assert result["ok"] is False
     assert result["error_code"] == "blocked_ip"
 
@@ -73,7 +87,7 @@ def test_redirect_blocked(monkeypatch):
         )
     }
     tool = build_tool(monkeypatch, responses)
-    result = parse_result(tool.execute(url="http://example.com"))
+    result = parse_result(asyncio.run(tool.execute(url="http://example.com")))
     assert result["ok"] is False
     assert result["error_code"] == "redirect_blocked"
 
@@ -88,7 +102,7 @@ def test_too_large(monkeypatch):
         )
     }
     tool = build_tool(monkeypatch, responses)
-    result = parse_result(tool.execute(url="http://example.com", format="text"))
+    result = parse_result(asyncio.run(tool.execute(url="http://example.com", format="text")))
     assert result["ok"] is False
     assert result["error_code"] == "too_large"
 
@@ -104,7 +118,7 @@ def test_html_markdown_success(monkeypatch):
         )
     }
     tool = build_tool(monkeypatch, responses)
-    result = parse_result(tool.execute(url="http://example.com", format="markdown"))
+    result = parse_result(asyncio.run(tool.execute(url="http://example.com", format="markdown")))
     assert result["ok"] is True
     assert "Title" in result["output"]
 
@@ -121,5 +135,5 @@ def test_format_variants(monkeypatch, format_value):
         )
     }
     tool = build_tool(monkeypatch, responses)
-    result = parse_result(tool.execute(url="http://example.com", format=format_value))
+    result = parse_result(asyncio.run(tool.execute(url="http://example.com", format=format_value)))
     assert result["ok"] is True

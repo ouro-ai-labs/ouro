@@ -4,8 +4,8 @@ This module provides comprehensive git tools for version control operations,
 enabling agents to interact with git repositories effectively.
 """
 
+import asyncio
 import os
-import subprocess
 from typing import Any, Dict, List, Optional
 
 from .base import BaseTool
@@ -14,7 +14,7 @@ from .base import BaseTool
 class GitBaseTool(BaseTool):
     """Base class for git tools with common functionality."""
 
-    def _run_git_command(self, args: List[str], cwd: Optional[str] = None) -> str:
+    async def _run_git_command(self, args: List[str], cwd: Optional[str] = None) -> str:
         """Execute a git command and return the output.
 
         Args:
@@ -25,20 +25,28 @@ class GitBaseTool(BaseTool):
             Command output or error message
         """
         try:
-            result = subprocess.run(
-                ["git"] + args,
+            process = await asyncio.create_subprocess_exec(
+                "git",
+                *args,
                 cwd=cwd or os.getcwd(),
-                capture_output=True,
-                text=True,
-                timeout=30,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
-            if result.returncode != 0:
-                return f"Error: {result.stderr.strip() or result.stdout.strip()}"
-            return result.stdout.strip()
+            try:
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+            except TimeoutError:
+                process.kill()
+                await process.communicate()
+                return "Error: Git command timed out"
+
+            stdout_text = stdout.decode() if stdout else ""
+            stderr_text = stderr.decode() if stderr else ""
+
+            if process.returncode != 0:
+                return f"Error: {stderr_text.strip() or stdout_text.strip()}"
+            return stdout_text.strip()
         except FileNotFoundError:
             return "Error: git command not found. Is git installed?"
-        except subprocess.TimeoutExpired:
-            return "Error: Git command timed out"
         except Exception as e:
             return f"Error executing git command: {str(e)}"
 
@@ -71,9 +79,9 @@ Use this to understand the current state before making changes."""
             }
         }
 
-    def execute(self, path: str = ".") -> str:
+    async def execute(self, path: str = ".") -> str:
         """Execute git status command."""
-        return self._run_git_command(["status"], cwd=path)
+        return await self._run_git_command(["status"], cwd=path)
 
 
 class GitDiffTool(GitBaseTool):
@@ -118,7 +126,7 @@ Examples:
             "path": {"type": "string", "description": "Path to git repository"},
         }
 
-    def execute(
+    async def execute(
         self,
         mode: str = "staged",
         files: Optional[List[str]] = None,
@@ -139,7 +147,7 @@ Examples:
         elif mode == "commits" and commit_range:
             args.append(commit_range)
 
-        return self._run_git_command(args, cwd=path)
+        return await self._run_git_command(args, cwd=path)
 
 
 class GitAddTool(GitBaseTool):
@@ -172,17 +180,17 @@ Always check git_status first to see what you're staging."""
             "path": {"type": "string", "description": "Path to git repository"},
         }
 
-    def execute(self, files: List[str], path: str = ".", **kwargs) -> str:
+    async def execute(self, files: List[str], path: str = ".", **kwargs) -> str:
         """Execute git add command."""
         if not files:
             return "Error: No files specified"
 
         args = ["add"] + files
-        result = self._run_git_command(args, cwd=path)
+        result = await self._run_git_command(args, cwd=path)
 
         if "Error" not in result:
             # Show what was staged
-            staged = self._run_git_command(["diff", "--cached", "--name-only"], cwd=path)
+            staged = await self._run_git_command(["diff", "--cached", "--name-only"], cwd=path)
             if staged:
                 return f"Staged files:\n{staged}"
             return "Files staged successfully"
@@ -226,7 +234,7 @@ Example message format:
             "path": {"type": "string", "description": "Path to git repository"},
         }
 
-    def execute(self, message: str, verify: bool = False, path: str = ".", **kwargs) -> str:
+    async def execute(self, message: str, verify: bool = False, path: str = ".", **kwargs) -> str:
         """Execute git commit command."""
         if not message:
             return "Error: Commit message is required"
@@ -235,7 +243,7 @@ Example message format:
         if not verify:
             args.append("--no-verify")
 
-        return self._run_git_command(args, cwd=path)
+        return await self._run_git_command(args, cwd=path)
 
 
 class GitLogTool(GitBaseTool):
@@ -265,7 +273,7 @@ Returns commit hash, author, date, and message."""
             "path": {"type": "string", "description": "Path to git repository"},
         }
 
-    def execute(
+    async def execute(
         self,
         limit: int = 10,
         oneline: bool = True,
@@ -285,7 +293,7 @@ Returns commit hash, author, date, and message."""
         if branch:
             args.append(branch)
 
-        return self._run_git_command(args, cwd=path)
+        return await self._run_git_command(args, cwd=path)
 
 
 class GitBranchTool(GitBaseTool):
@@ -331,7 +339,7 @@ Examples:
             "path": {"type": "string", "description": "Path to git repository"},
         }
 
-    def execute(
+    async def execute(
         self,
         operation: str = "list",
         branch: Optional[str] = None,
@@ -341,15 +349,15 @@ Examples:
     ) -> str:
         """Execute git branch command."""
         if operation == "list":
-            return self._run_git_command(["branch", "-v"], cwd=path)
+            return await self._run_git_command(["branch", "-v"], cwd=path)
 
         elif operation == "current":
-            return self._run_git_command(["branch", "--show-current"], cwd=path)
+            return await self._run_git_command(["branch", "--show-current"], cwd=path)
 
         elif operation == "create":
             if not branch:
                 return "Error: Branch name required for create operation"
-            return self._run_git_command(["branch", branch], cwd=path)
+            return await self._run_git_command(["branch", branch], cwd=path)
 
         elif operation == "delete":
             if not branch:
@@ -360,7 +368,7 @@ Examples:
             else:
                 args.append("-d")
             args.append(branch)
-            return self._run_git_command(args, cwd=path)
+            return await self._run_git_command(args, cwd=path)
 
         return "Error: Unknown operation"
 
@@ -397,7 +405,7 @@ Examples:
             "path": {"type": "string", "description": "Path to git repository"},
         }
 
-    def execute(
+    async def execute(
         self,
         branch: Optional[str] = None,
         new_branch: Optional[str] = None,
@@ -410,23 +418,23 @@ Examples:
         args = ["checkout"]
 
         if new_branch:
-            result = self._run_git_command(["checkout", "-b", new_branch], cwd=path)
+            result = await self._run_git_command(["checkout", "-b", new_branch], cwd=path)
             if "Error" not in result:
                 return f"Created and switched to branch: {new_branch}"
             return result
 
         if branch:
             args.append(branch)
-            return self._run_git_command(args, cwd=path)
+            return await self._run_git_command(args, cwd=path)
 
         if file:
             args.append("--")
             args.append(file)
-            return self._run_git_command(args, cwd=path)
+            return await self._run_git_command(args, cwd=path)
 
         if commit:
             args.append(commit)
-            return self._run_git_command(args, cwd=path)
+            return await self._run_git_command(args, cwd=path)
 
         return "Error: Specify branch, new_branch, file, or commit"
 
@@ -471,7 +479,7 @@ WARNING: Force push can overwrite remote history. Use only when you know what yo
             "path": {"type": "string", "description": "Path to git repository"},
         }
 
-    def execute(
+    async def execute(
         self,
         remote: str = "origin",
         branch: Optional[str] = None,
@@ -495,12 +503,12 @@ WARNING: Force push can overwrite remote history. Use only when you know what yo
             args.append(branch)
         else:
             # Get current branch
-            branch = self._run_git_command(["branch", "--show-current"], cwd=path)
+            branch = await self._run_git_command(["branch", "--show-current"], cwd=path)
             if "Error" in branch:
                 return "Error: Could not determine current branch"
             args.append(branch)
 
-        return self._run_git_command(args, cwd=path)
+        return await self._run_git_command(args, cwd=path)
 
 
 class GitPullTool(GitBaseTool):
@@ -536,7 +544,7 @@ Options:
             "path": {"type": "string", "description": "Path to git repository"},
         }
 
-    def execute(
+    async def execute(
         self,
         remote: str = "origin",
         branch: Optional[str] = None,
@@ -556,12 +564,12 @@ Options:
             args.append(branch)
         else:
             # Get current branch
-            branch = self._run_git_command(["branch", "--show-current"], cwd=path)
+            branch = await self._run_git_command(["branch", "--show-current"], cwd=path)
             if "Error" in branch:
                 return "Error: Could not determine current branch"
             args.append(branch)
 
-        return self._run_git_command(args, cwd=path)
+        return await self._run_git_command(args, cwd=path)
 
 
 class GitRemoteTool(GitBaseTool):
@@ -595,7 +603,7 @@ Operations:
             "path": {"type": "string", "description": "Path to git repository"},
         }
 
-    def execute(
+    async def execute(
         self,
         operation: str = "list",
         name: Optional[str] = None,
@@ -608,31 +616,31 @@ Operations:
 
         if operation == "list":
             args.append("-v")
-            return self._run_git_command(args, cwd=path)
+            return await self._run_git_command(args, cwd=path)
 
         elif operation == "add":
             if not name or not url:
                 return "Error: Both name and url required for add operation"
             args.extend(["add", name, url])
-            return self._run_git_command(args, cwd=path)
+            return await self._run_git_command(args, cwd=path)
 
         elif operation == "remove":
             if not name:
                 return "Error: Name required for remove operation"
             args.extend(["remove", name])
-            return self._run_git_command(args, cwd=path)
+            return await self._run_git_command(args, cwd=path)
 
         elif operation == "get-url":
             if not name:
                 return "Error: Name required for get-url operation"
             args.extend(["get-url", name])
-            return self._run_git_command(args, cwd=path)
+            return await self._run_git_command(args, cwd=path)
 
         elif operation == "set-url":
             if not name or not url:
                 return "Error: Both name and url required for set-url operation"
             args.extend(["set-url", name, url])
-            return self._run_git_command(args, cwd=path)
+            return await self._run_git_command(args, cwd=path)
 
         return "Error: Unknown operation"
 
@@ -668,7 +676,7 @@ Useful for temporarily saving work to switch branches."""
             "path": {"type": "string", "description": "Path to git repository"},
         }
 
-    def execute(
+    async def execute(
         self, operation: str = "push", message: Optional[str] = None, path: str = ".", **kwargs
     ) -> str:
         """Execute git stash command."""
@@ -678,19 +686,19 @@ Useful for temporarily saving work to switch branches."""
             args.append("push")
             if message:
                 args.extend(["-m", message])
-            return self._run_git_command(args, cwd=path)
+            return await self._run_git_command(args, cwd=path)
 
         elif operation == "list":
             args.append("list")
-            return self._run_git_command(args, cwd=path)
+            return await self._run_git_command(args, cwd=path)
 
         elif operation == "pop":
             args.append("pop")
-            return self._run_git_command(args, cwd=path)
+            return await self._run_git_command(args, cwd=path)
 
         elif operation == "drop":
             args.append("drop")
-            return self._run_git_command(args, cwd=path)
+            return await self._run_git_command(args, cwd=path)
 
         return "Error: Unknown operation"
 
@@ -736,7 +744,7 @@ Always use dry_run first to see what will be deleted."""
             "path": {"type": "string", "description": "Path to git repository"},
         }
 
-    def execute(
+    async def execute(
         self,
         dry_run: bool = True,
         force: bool = False,
@@ -758,7 +766,7 @@ Always use dry_run first to see what will be deleted."""
         if directories:
             args.append("-d")  # Remove untracked directories
 
-        result = self._run_git_command(args, cwd=path)
+        result = await self._run_git_command(args, cwd=path)
 
         if dry_run and "Would remove" in result:
             return f"DRY RUN - Files that would be removed:\n{result}"

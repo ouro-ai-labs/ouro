@@ -1,6 +1,6 @@
 """Shell command execution tool."""
 
-import subprocess
+import asyncio
 from typing import Any, Dict
 
 from .base import BaseTool
@@ -26,17 +26,24 @@ class ShellTool(BaseTool):
             }
         }
 
-    def execute(self, command: str) -> str:
+    async def execute(self, command: str) -> str:
         """Execute shell command and return output."""
         try:
-            result = subprocess.run(
+            process = await asyncio.create_subprocess_shell(
                 command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=30,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
-            output = result.stdout + result.stderr if result.stderr else result.stdout
+            try:
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+            except TimeoutError:
+                process.kill()
+                await process.communicate()
+                return "Error: Command timed out after 30 seconds"
+
+            stdout_text = stdout.decode() if stdout else ""
+            stderr_text = stderr.decode() if stderr else ""
+            output = stdout_text + stderr_text if stderr_text else stdout_text
             if not output:
                 return "Command executed (no output)"
 
@@ -49,7 +56,5 @@ class ShellTool(BaseTool):
                     f"head/tail/grep, or redirect to a file and read specific portions."
                 )
             return output
-        except subprocess.TimeoutExpired:
-            return "Error: Command timed out after 30 seconds"
         except Exception as e:
             return f"Error executing command: {str(e)}"

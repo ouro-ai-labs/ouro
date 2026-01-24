@@ -2,10 +2,7 @@
 
 from typing import Any, Dict
 
-try:
-    from ddgs import DDGS
-except ImportError:  # pragma: no cover
-    DDGS = None  # type: ignore[assignment]
+from duckduckgo_search import AsyncDDGS
 
 from .base import BaseTool
 
@@ -30,16 +27,16 @@ class WebSearchTool(BaseTool):
             }
         }
 
-    def execute(self, query: str) -> str:
+    async def execute(self, query: str) -> str:
         """Execute web search and return results."""
-        if DDGS is None:
-            return "Error: Search dependency missing (ddgs). Reinstall dependencies."
-
         try:
             results = []
-            with DDGS() as ddgs:
-                for r in ddgs.text(query, max_results=5):
-                    results.append(f"[{r['title']}]({r['href']})\n{r['body']}\n")
+            async with AsyncDDGS() as ddgs_client:
+                for r in await ddgs_client.text(query, max_results=5):
+                    title = r.get("title", "")
+                    href = r.get("href", "")
+                    body = r.get("body", "")
+                    results.append(f"[{title}]({href})\n{body}\n")
             return "\n---\n".join(results) if results else "No results found"
         except Exception as e:
             return f"Error searching web: {str(e)}"

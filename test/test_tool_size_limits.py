@@ -4,6 +4,7 @@ Each tool now handles its own size limit checking and returns appropriate
 error messages when output exceeds the maximum allowed tokens.
 """
 
+import asyncio
 import shlex
 import sys
 
@@ -83,7 +84,7 @@ class TestShellToolSizeLimits:
     def test_small_output_passthrough(self):
         """Small command output should pass through."""
         tool = ShellTool()
-        result = tool.execute("echo 'Hello, World!'")
+        result = asyncio.run(tool.execute("echo 'Hello, World!'"))
 
         assert "Hello, World!" in result
 
@@ -92,7 +93,7 @@ class TestShellToolSizeLimits:
         tool = ShellTool()
         # Generate large output (more than 25000 * 4 = 100KB)
         python_cmd = shlex.quote(sys.executable)
-        result = tool.execute(f"{python_cmd} -c \"print('x' * 150000)\"")
+        result = asyncio.run(tool.execute(f"{python_cmd} -c \"print('x' * 150000)\""))
 
         assert "Error: Command output" in result
         assert "exceeds" in result
@@ -101,7 +102,7 @@ class TestShellToolSizeLimits:
     def test_command_no_output(self):
         """Commands with no output should return appropriate message."""
         tool = ShellTool()
-        result = tool.execute("true")
+        result = asyncio.run(tool.execute("true"))
 
         assert "no output" in result.lower() or result.strip() == ""
 

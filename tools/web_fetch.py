@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import ipaddress
 import json
@@ -12,7 +13,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union
 from urllib.parse import urljoin, urlparse
 
-import requests
+import httpx
 import trafilatura
 from lxml import html as lxml_html
 from requests.utils import get_encoding_from_headers
@@ -166,7 +167,7 @@ class WebFetchTool(BaseTool):
             },
         }
 
-    def execute(self, **kwargs) -> str:
+    async def execute(self, **kwargs) -> str:
         """Execute web fetch with format conversion."""
         url = kwargs.get("url")
         format_value = kwargs.get("format", "markdown")
@@ -190,7 +191,7 @@ class WebFetchTool(BaseTool):
                     result["metadata"]["duration_ms"] = int((time.time() - start) * 1000)
                     return json.dumps(result, ensure_ascii=False)
 
-            result = self._execute(
+            result = await self._execute(
                 url=url, format=format_value, timeout=timeout, start_time=start, save_to=save_to
             )
 
@@ -217,7 +218,7 @@ class WebFetchTool(BaseTool):
             }
             return json.dumps(error_result, ensure_ascii=False)
 
-    def _execute(
+    async def _execute(
         self,
         url: str,
         format: str,
@@ -232,24 +233,23 @@ class WebFetchTool(BaseTool):
                 {"requested_format": format},
             )
 
-        parsed_url = self._validate_url(url)
+        parsed_url = await self._validate_url(url)
         timeout_seconds = (
             DEFAULT_TIMEOUT_SECONDS
             if timeout is None
             else max(1.0, min(float(timeout), MAX_TIMEOUT_SECONDS))
         )
 
-        response, redirects = self._fetch_with_redirects(
+        response, content_bytes, redirects = await self._fetch_with_redirects(
             parsed_url.geturl(), format, timeout_seconds
         )
 
         content_type_header = response.headers.get("content-type", "")
         content_type = content_type_header.partition(";")[0].strip().lower()
-        content_bytes = self._read_response(response)
         encoding = (
             get_encoding_from_headers(response.headers)
-            or response.encoding
-            or response.apparent_encoding
+            or getattr(response, "encoding", None)
+            or getattr(response, "apparent_encoding", None)
             or "utf-8"
         )
         content = content_bytes.decode(encoding, errors="replace")
@@ -259,7 +259,7 @@ class WebFetchTool(BaseTool):
         # Extract structured links from HTML content
         links: List[ExtractedLink] = []
         if "html" in content_type or content_type in {"application/xhtml+xml"}:
-            links = self._extract_links(content, response.url)
+            links = self._extract_links(content, str(response.url))
 
         # Save content to file if save_to is specified
         saved_path = None
@@ -268,7 +268,7 @@ class WebFetchTool(BaseTool):
 
         metadata: Dict[str, Any] = {
             "requested_url": url,
-            "final_url": response.url,
+            "final_url": str(response.url),
             "status_code": response.status_code,
             "content_type": content_type_header,
             "charset": encoding,
@@ -335,7 +335,7 @@ class WebFetchTool(BaseTool):
 
         return abs_path
 
-    def _validate_url(self, url: str):
+    async def _validate_url(self, url: str):
         if not url.startswith(("http://", "https://")):
             raise WebFetchError(
                 "invalid_url",
@@ -374,10 +374,10 @@ class WebFetchTool(BaseTool):
                 {"host": host, "port": port},
             )
 
-        self._ensure_host_safe(host, port)
+        await self._ensure_host_safe(host, port)
         return parsed
 
-    def _ensure_host_safe(self, host: str, port: int) -> None:
+    async def _ensure_host_safe(self, host: str, port: int) -> None:
         try:
             ip = ipaddress.ip_address(host)
         except ValueError:
@@ -392,7 +392,7 @@ class WebFetchTool(BaseTool):
                 )
             return
 
-        resolved_ips = self._resolve_host(host, port)
+        resolved_ips = await self._resolve_host(host, port)
         if not resolved_ips:
             raise WebFetchError(
                 "dns_error",
@@ -409,9 +409,10 @@ class WebFetchTool(BaseTool):
                     {"host": host, "ip": str(ip_value)},
                 )
 
-    def _resolve_host(self, host: str, port: int) -> List[str]:
+    async def _resolve_host(self, host: str, port: int) -> List[str]:
         try:
-            infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+            loop = asyncio.get_running_loop()
+            infos = await loop.getaddrinfo(host, port, type=socket.SOCK_STREAM)
         except socket.gaierror:
             return []
         addresses = []
@@ -426,10 +427,9 @@ class WebFetchTool(BaseTool):
             return False
         return ip.is_global
 
-    def _fetch_with_redirects(
+    async def _fetch_with_redirects(
         self, url: str, format: str, timeout: float
-    ) -> Tuple[requests.Response, List[str]]:
-        session = requests.Session()
+    ) -> Tuple[httpx.Response, bytes, List[str]]:
         headers = {
             "User-Agent": "Mozilla/5.0 (compatible; AgenticLoop/1.0)",
             "Accept": ACCEPT_HEADERS.get(format, "*/*"),
@@ -438,56 +438,60 @@ class WebFetchTool(BaseTool):
 
         redirects: List[str] = []
         current_url = url
-        for _ in range(MAX_REDIRECTS + 1):
-            parsed = self._validate_url(current_url)
-            try:
-                response = self._request(session, parsed.geturl(), headers, timeout)
-            except requests.Timeout as exc:
-                raise WebFetchError(
-                    "timeout",
-                    "Request timed out",
-                    {"requested_url": current_url},
-                ) from exc
-            except requests.RequestException as exc:
-                raise WebFetchError(
-                    "request_error",
-                    "Failed to fetch URL",
-                    {"requested_url": current_url, "error": str(exc)},
-                ) from exc
+        timeout_config = httpx.Timeout(timeout)
+        async with httpx.AsyncClient(follow_redirects=False, timeout=timeout_config) as client:
+            for _ in range(MAX_REDIRECTS + 1):
+                parsed = await self._validate_url(current_url)
+                try:
+                    response, content_bytes = await self._request(
+                        client, parsed.geturl(), headers, timeout
+                    )
+                except httpx.TimeoutException as exc:
+                    raise WebFetchError(
+                        "timeout",
+                        "Request timed out",
+                        {"requested_url": current_url},
+                    ) from exc
+                except httpx.RequestError as exc:
+                    raise WebFetchError(
+                        "request_error",
+                        "Failed to fetch URL",
+                        {"requested_url": current_url, "error": str(exc)},
+                    ) from exc
 
-            if response.status_code in {301, 302, 303, 307, 308}:
-                location = response.headers.get("location")
-                if not location:
+                if response.status_code in {301, 302, 303, 307, 308}:
+                    location = response.headers.get("location")
+                    if not location:
+                        raise WebFetchError(
+                            "http_error",
+                            "Redirect response missing Location header",
+                            {"requested_url": current_url, "status_code": response.status_code},
+                        )
+                    next_url = urljoin(current_url, location)
+                    try:
+                        await self._validate_url(next_url)
+                    except WebFetchError as exc:
+                        raise WebFetchError(
+                            "redirect_blocked",
+                            "Redirect target is not allowed",
+                            {
+                                "requested_url": current_url,
+                                "redirect_url": next_url,
+                                "redirect_error": exc.code,
+                            },
+                        ) from exc
+                    redirects.append(next_url)
+                    current_url = next_url
+                    continue
+
+                if response.status_code >= 400:
                     raise WebFetchError(
                         "http_error",
-                        "Redirect response missing Location header",
+                        f"Request failed with status code: {response.status_code}",
                         {"requested_url": current_url, "status_code": response.status_code},
                     )
-                next_url = urljoin(current_url, location)
-                try:
-                    self._validate_url(next_url)
-                except WebFetchError as exc:
-                    raise WebFetchError(
-                        "redirect_blocked",
-                        "Redirect target is not allowed",
-                        {
-                            "requested_url": current_url,
-                            "redirect_url": next_url,
-                            "redirect_error": exc.code,
-                        },
-                    ) from exc
-                redirects.append(next_url)
-                current_url = next_url
-                continue
 
-            if response.status_code >= 400:
-                raise WebFetchError(
-                    "http_error",
-                    f"Request failed with status code: {response.status_code}",
-                    {"requested_url": current_url, "status_code": response.status_code},
-                )
-
-            return response, redirects
+                return response, content_bytes, redirects
 
         raise WebFetchError(
             "redirect_blocked",
@@ -495,14 +499,18 @@ class WebFetchTool(BaseTool):
             {"requested_url": url, "redirects": redirects},
         )
 
-    def _request(
-        self, session: requests.Session, url: str, headers: Dict[str, str], timeout: float
-    ) -> requests.Response:
-        return session.get(
-            url, headers=headers, timeout=timeout, stream=True, allow_redirects=False
-        )
+    async def _request(
+        self, client: httpx.AsyncClient, url: str, headers: Dict[str, str], timeout: float
+    ) -> Tuple[httpx.Response, bytes]:
+        async with client.stream("GET", url, headers=headers, follow_redirects=False) as response:
+            if response.status_code in {301, 302, 303, 307, 308}:
+                return response, b""
+            if response.status_code >= 400:
+                return response, b""
+            content_bytes = await self._read_response(response)
+            return response, content_bytes
 
-    def _read_response(self, response: requests.Response) -> bytes:
+    async def _read_response(self, response: httpx.Response) -> bytes:
         content_length = response.headers.get("content-length")
         if content_length:
             try:
@@ -517,7 +525,7 @@ class WebFetchTool(BaseTool):
 
         chunks: List[bytes] = []
         total = 0
-        for chunk in response.iter_content(chunk_size=65536):
+        async for chunk in response.aiter_bytes():
             if not chunk:
                 continue
             total += len(chunk)
