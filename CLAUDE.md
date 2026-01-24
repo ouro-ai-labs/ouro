@@ -152,6 +152,16 @@ Avoid over-specifying implementation details; focus on the "what" and "why", not
 
 Review existing RFCs before implementation to understand design decisions and constraints.
 
+## AsyncIO Migration (RFC 003)
+
+The runtime is migrating to an **asyncio-first** architecture. During this period:
+
+- **New runtime code must be async-first**: avoid introducing new blocking I/O in `agent/`, `llm/`, `memory/`, and `tools/`.
+- **Do not use `asyncio.run()` in library code**. Only entrypoints (e.g., `main.py`) should own the event loop.
+- If you must call a blocking library temporarily, ensure it’s executed behind an async boundary (e.g., `asyncio.to_thread`) and has a timeout/cancellation strategy.
+
+See `rfc/003-asyncio-migration.md` for phases and rules.
+
 ## When Changing Key Areas
 
 - If you change CLI flags / behavior: update `README.md` and `docs/examples.md`.

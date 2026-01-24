@@ -6,6 +6,16 @@ This guide shows you how to extend the Agentic Loop system with custom tools, ag
 
 Tools are the building blocks that agents use to interact with the world. Here's how to create custom tools.
 
+## AsyncIO Migration Note (RFC 003)
+
+AgenticLoop is migrating to an **asyncio-first** runtime. While this migration is in progress:
+
+- Prefer **non-blocking** implementations for new tools (async HTTP/subprocess/DB where possible).
+- Avoid introducing new blocking calls (`requests`, `sqlite3`, `subprocess.run`, `time.sleep`) in runtime paths.
+- Do **not** call `asyncio.run()` inside tools or agents; only entrypoints should own the event loop.
+
+See `rfc/003-asyncio-migration.md` for the phased plan and rules.
+
 ### Basic Tool Structure
 
 1. Create a new file in the `tools/` directory:
@@ -148,6 +158,9 @@ class APIClientTool(BaseTool):
             return f"Error making request: {str(e)}"
 ```
 
+**Note**: During the asyncio migration, prefer an async HTTP client for new tools, or ensure any blocking
+HTTP is executed behind an async boundary (see `rfc/003-asyncio-migration.md`).
+
 ### Example: Database Tool
 
 ```python
@@ -200,6 +213,9 @@ class DatabaseTool(BaseTool):
         except sqlite3.Error as e:
             return f"Database error: {str(e)}"
 ```
+
+**Note**: During the asyncio migration, prefer an async SQLite strategy for new runtime code, or ensure
+blocking DB calls are executed behind an async boundary (see `rfc/003-asyncio-migration.md`).
 
 ## Creating New Agent Modes
 
