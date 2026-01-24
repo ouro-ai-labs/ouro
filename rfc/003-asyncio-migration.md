@@ -231,7 +231,7 @@ Prioritize by impact:
 These are reliability/consistency improvements now that async migration is complete:
 
 - **Unify tool timeouts** at the executor layer (with per-tool overrides) to simplify tool code and ensure consistent cancellation behavior.
-- **Serialize memory persistence writes** (e.g., `asyncio.Lock` or a single writer task) to avoid concurrent write hazards when steps run in parallel.
+- **Serialize memory persistence writes** (e.g., `asyncio.Lock` or a single writer task) to avoid concurrent write hazards when steps run in parallel. (Implemented: `MemoryStore` write lock)
 
 ### Phase 5 — Optional constrained parallel tool calls (Deferred)
 

@@ -36,6 +36,7 @@ class MemoryStore:
         self.db_path = db_path
         self._db_initialized = False
         self._init_lock = asyncio.Lock()
+        self._write_lock = asyncio.Lock()
 
         logger.info(f"MemoryStore initialized at {db_path}")
 
@@ -81,7 +82,7 @@ class MemoryStore:
         now = datetime.now().isoformat()
 
         # Initialize with empty lists
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with self._write_lock, aiosqlite.connect(self.db_path) as conn:
             await conn.execute(
                 """
                 INSERT INTO sessions (id, created_at, messages, system_messages, summaries)
@@ -109,7 +110,7 @@ class MemoryStore:
             tokens: Token count for this message
         """
         await self._ensure_db()
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with self._write_lock, aiosqlite.connect(self.db_path) as conn:
             field = "system_messages" if message.role == "system" else "messages"
 
             async with conn.execute(
@@ -126,7 +127,8 @@ class MemoryStore:
             messages.append(msg_data)
 
             await conn.execute(
-                f"UPDATE sessions SET {field} = ? WHERE id = ?", (json.dumps(messages), session_id)
+                f"UPDATE sessions SET {field} = ? WHERE id = ?",
+                (json.dumps(messages), session_id),
             )
             await conn.commit()
 
@@ -138,7 +140,7 @@ class MemoryStore:
             summary: CompressedMemory object
         """
         await self._ensure_db()
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with self._write_lock, aiosqlite.connect(self.db_path) as conn:
             async with conn.execute(
                 "SELECT summaries FROM sessions WHERE id = ?", (session_id,)
             ) as cursor:
@@ -270,7 +272,7 @@ class MemoryStore:
             summaries: List of compressed memory summaries
         """
         await self._ensure_db()
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with self._write_lock, aiosqlite.connect(self.db_path) as conn:
             async with conn.execute(
                 "SELECT id FROM sessions WHERE id = ?", (session_id,)
             ) as cursor:
@@ -460,7 +462,7 @@ class MemoryStore:
             True if deleted, False if not found
         """
         await self._ensure_db()
-        async with aiosqlite.connect(self.db_path) as conn:
+        async with self._write_lock, aiosqlite.connect(self.db_path) as conn:
             cursor = await conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
             deleted = cursor.rowcount > 0
             await conn.commit()
