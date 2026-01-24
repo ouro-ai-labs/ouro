@@ -58,6 +58,7 @@ python main.py --task "Calculate 1+1"
 - `docs/`: user/developer documentation
 - `scripts/`: packaging/publishing scripts
 - `test/`: tests (some require API keys; memory tests are mostly mocked)
+- `rfc/`: RFC design documents for significant changes
 
 ## Commands (Golden Path)
 
@@ -126,9 +127,35 @@ Unified entrypoint: `./scripts/dev.sh build`
 - Avoid running destructive shell commands; keep file edits scoped and reversible.
 - Publishing/releasing steps require explicit human intent (see `docs/packaging.md`).
 
+## RFC Design Documents
+
+**IMPORTANT**: Before starting significant changes, check `rfc/` for existing design documents and create new ones when needed.
+
+When to write an RFC:
+- Adding new agent types or major agent behavior changes
+- Significant architectural changes (new modules, major refactors)
+- New tool categories or substantial tool modifications
+- Changes to memory system, persistence, or compression strategies
+- New LLM provider integrations or API changes
+- Breaking changes to CLI or configuration
+
+RFC file naming: `rfc/NNN-short-description.md` (e.g., `rfc/001-plan-execute-agent.md`)
+
+RFC should focus on design thinking:
+- Problem statement: what problem are we solving and why now?
+- Design goals and constraints
+- Proposed approach and alternatives considered (with trade-offs)
+- Key design decisions and rationale
+- Open questions and risks
+
+Avoid over-specifying implementation details; focus on the "what" and "why", not the "how".
+
+Review existing RFCs before implementation to understand design decisions and constraints.
+
 ## When Changing Key Areas
 
 - If you change CLI flags / behavior: update `README.md` and `docs/examples.md`.
 - If you change configuration/env vars: update `docs/configuration.md` and `.env.example`.
 - If you change packaging/versioning: update `pyproject.toml` and `docs/packaging.md`.
 - If you change memory/compression/persistence: add/adjust tests under `test/memory/` and update `docs/memory-management.md` / `docs/memory_persistence.md`.
+- **Significant changes**: write an RFC in `rfc/` before implementation (see RFC Design Documents section above).
