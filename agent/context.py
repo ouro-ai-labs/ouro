@@ -41,8 +41,9 @@ async def _run_git_command(args: list[str], timeout: float = 2.0) -> tuple[int, 
         process.kill()
         await process.communicate()
         raise
+    returncode = process.returncode if process.returncode is not None else 0
     return (
-        process.returncode,
+        returncode,
         stdout.decode(errors="ignore").strip(),
         stderr.decode(errors="ignore").strip(),
     )

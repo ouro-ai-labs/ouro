@@ -51,6 +51,10 @@ def _get_encoding_from_headers(headers: httpx.Headers) -> str | None:
     charset = message.get_param("charset")
     if not charset:
         return None
+    if isinstance(charset, tuple):
+        charset = charset[0]
+    if not isinstance(charset, str):
+        return None
     return charset.strip("'\"")
 
 

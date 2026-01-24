@@ -52,7 +52,8 @@ class MemoryStore:
     async def _init_db(self) -> None:
         """Initialize database schema with single table."""
         async with aiosqlite.connect(self.db_path) as conn:
-            await conn.execute("""
+            await conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS sessions (
                     id TEXT PRIMARY KEY,
                     created_at TEXT NOT NULL,
@@ -60,7 +61,8 @@ class MemoryStore:
                     system_messages TEXT,
                     summaries TEXT
                 )
-            """)
+            """
+            )
             await conn.commit()
             logger.debug("Database schema initialized")
 

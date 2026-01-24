@@ -906,7 +906,7 @@ WHEN TO USE GREP INSTEAD:
         for r in unique_results:
             lang_tag = f" [{r.get('language', 'python')}]" if r.get("language") else ""
             output_parts.append(f"📍 {r['file']}:{r['line']}{lang_tag}")
-            context = r["context"]
+            context = str(r["context"])
             if len(context) > 80:
                 context = context[:80] + "..."
             output_parts.append(f"   {context}\n")
