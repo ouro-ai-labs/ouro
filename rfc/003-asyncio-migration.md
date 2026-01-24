@@ -117,10 +117,8 @@ This is a large mechanical change but keeps code paths singular (no parallel syn
 Tool execution becomes awaitable at the executor layer.
 
 Migration invariant (Phase 2–4 compatibility):
-- Tools may remain synchronous during early phases, but any blocking work must run behind an **async boundary** in the runtime (e.g., the tool executor uses `await asyncio.to_thread(...)`).
-- To avoid API bloat, tools should converge on a single name (`execute`) that is **awaitable**. During migration, the executor may accept either:
-  - `execute(...) -> str` (sync), or
-  - `async def execute(...) -> str` (async), detected by “is this awaitable?” rather than by a second method name.
+- Tool interfaces converge on a single **async** entrypoint: `async def execute(...) -> str`.
+- The tool executor assumes async execution (no sync fallbacks / `to_thread` in runtime paths).
 - New/modified tools should prefer native async libraries for I/O-heavy work (HTTP, subprocess, DB) so timeouts and cancellation can be enforced reliably.
 
 Notes:

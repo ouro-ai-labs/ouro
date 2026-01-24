@@ -88,7 +88,7 @@ python -m isort .
 python -m ruff check --fix .
 ```
 
-Script: `./scripts/format.sh`
+Script: `./scripts/format.sh` (runs black + isort + ruff --fix)
 Unified entrypoint: `./scripts/dev.sh format`
 
 ### Lint / Typecheck

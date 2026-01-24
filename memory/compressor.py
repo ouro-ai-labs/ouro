@@ -12,7 +12,7 @@ from .types import CompressedMemory, CompressionStrategy
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from llm import LiteLLMLLM
+    from llm import LiteLLMAdapter
 
 
 class WorkingMemoryCompressor:
@@ -36,7 +36,7 @@ Original messages ({count} messages, ~{tokens} tokens):
 
     Provide a concise but comprehensive summary that captures the essential information. Be specific and include concrete details. Target length: {target_tokens} tokens."""
 
-    def __init__(self, llm: "LiteLLMLLM"):
+    def __init__(self, llm: "LiteLLMAdapter"):
         """Initialize compressor.
 
         Args:

@@ -222,19 +222,21 @@ See [Memory Management](memory-management.md) for more details.
 import asyncio
 
 from agent.react_agent import ReActAgent
-from llm import LiteLLMLLM
-from llm.retry import RetryConfig
+from llm import LiteLLMAdapter
 from tools import CalculatorTool, FileReadTool
 from config import Config
 
 async def main():
     # Create custom LLM with retry config
-    llm = LiteLLMLLM(
+    Config.RETRY_MAX_ATTEMPTS = 10
+    Config.RETRY_INITIAL_DELAY = 2.0
+    Config.RETRY_MAX_DELAY = 60.0
+
+    llm = LiteLLMAdapter(
         model=Config.LITELLM_MODEL,
         api_base=Config.LITELLM_API_BASE,
         drop_params=Config.LITELLM_DROP_PARAMS,
         timeout=Config.LITELLM_TIMEOUT,
-        retry_config=RetryConfig(max_retries=10, initial_delay=2.0, max_delay=60.0),
     )
 
     # Create agent with specific tools
@@ -276,7 +278,7 @@ class CustomTool(BaseTool):
             }
         }
 
-    def execute(self, param1: str) -> str:
+    async def execute(self, param1: str) -> str:
         # Your custom logic
         return f"Processed: {param1}"
 

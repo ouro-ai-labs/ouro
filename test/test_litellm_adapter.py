@@ -3,7 +3,7 @@
 from unittest.mock import MagicMock
 
 from llm.content_utils import extract_text
-from llm.litellm_adapter import LiteLLMLLM
+from llm.litellm_adapter import LiteLLMAdapter
 from llm.message_types import LLMMessage
 
 
@@ -12,7 +12,7 @@ class TestMessageConversion:
 
     def setup_method(self):
         """Set up test fixtures."""
-        self.adapter = LiteLLMLLM(model="gpt-3.5-turbo")
+        self.adapter = LiteLLMAdapter(model="gpt-3.5-turbo")
 
     def test_convert_simple_string_content(self):
         """Test conversion of simple string content."""
@@ -179,7 +179,7 @@ class TestToolConversion:
 
     def setup_method(self):
         """Set up test fixtures."""
-        self.adapter = LiteLLMLLM(model="gpt-3.5-turbo")
+        self.adapter = LiteLLMAdapter(model="gpt-3.5-turbo")
 
     def test_convert_tools_to_openai_format(self):
         """Test conversion of Anthropic tool format to OpenAI format."""

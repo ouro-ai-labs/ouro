@@ -1,8 +1,8 @@
 """Context injection module for providing environment information to agents."""
 
+import asyncio
 import os
 import platform
-import subprocess
 from datetime import datetime
 from typing import Any, Dict
 
@@ -29,43 +29,47 @@ def get_platform_info() -> Dict[str, str]:
     }
 
 
-def get_git_status() -> Dict[str, Any]:
+async def _run_git_command(args: list[str], timeout: float = 2.0) -> tuple[int, str, str]:
+    process = await asyncio.create_subprocess_exec(
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        process.kill()
+        await process.communicate()
+        raise
+    return (
+        process.returncode,
+        stdout.decode(errors="ignore").strip(),
+        stderr.decode(errors="ignore").strip(),
+    )
+
+
+async def get_git_status() -> Dict[str, Any]:
     """Get git repository information if available.
 
     Returns:
         Dictionary with git information or is_repo=False
     """
     try:
-        # Check if we're in a git repository
-        subprocess.run(
-            ["git", "rev-parse", "--git-dir"], capture_output=True, check=True, timeout=2
-        )
+        returncode, _, _ = await _run_git_command(["git", "rev-parse", "--git-dir"], timeout=2)
+        if returncode != 0:
+            return {"is_repo": False}
 
-        # Get current branch
-        branch = subprocess.check_output(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"], text=True, timeout=2
-        ).strip()
+        _, branch, _ = await _run_git_command(["git", "rev-parse", "--abbrev-ref", "HEAD"], 2)
+        _, status, _ = await _run_git_command(["git", "status", "--short"], 2)
+        _, recent_commits, _ = await _run_git_command(["git", "log", "-5", "--oneline"], 2)
 
-        # Get status (short format)
-        status = subprocess.check_output(["git", "status", "--short"], text=True, timeout=2).strip()
-
-        # Get recent commits
-        recent_commits = subprocess.check_output(
-            ["git", "log", "-5", "--oneline"], text=True, timeout=2
-        ).strip()
-
-        # Get main/master branch name
         try:
-            main_branch = (
-                subprocess.check_output(
-                    ["git", "symbolic-ref", "refs/remotes/origin/HEAD"], text=True, timeout=2
-                )
-                .strip()
-                .split("/")[-1]
+            _, remote_head, _ = await _run_git_command(
+                ["git", "symbolic-ref", "refs/remotes/origin/HEAD"], 2
             )
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
-            # Fallback: try to find main or master
-            main_branch = "main"  # Default assumption
+            main_branch = remote_head.split("/")[-1] if remote_head else "main"
+        except asyncio.TimeoutError:
+            main_branch = "main"
 
         return {
             "is_repo": True,
@@ -76,11 +80,11 @@ def get_git_status() -> Dict[str, Any]:
             "has_uncommitted_changes": bool(status),
         }
 
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+    except (asyncio.TimeoutError, FileNotFoundError):
         return {"is_repo": False}
 
 
-def format_context_prompt() -> str:
+async def format_context_prompt() -> str:
     """Format environment context as a prompt section.
 
     Returns:
@@ -88,7 +92,7 @@ def format_context_prompt() -> str:
     """
     cwd = get_working_directory()
     platform_info = get_platform_info()
-    git_info = get_git_status()
+    git_info = await get_git_status()
     today = datetime.now().strftime("%Y-%m-%d")
 
     # Build context string
@@ -117,7 +121,7 @@ def format_context_prompt() -> str:
     return "\n".join(lines)
 
 
-def get_context_dict() -> Dict[str, Any]:
+async def get_context_dict() -> Dict[str, Any]:
     """Get context information as a dictionary.
 
     Returns:
@@ -126,7 +130,7 @@ def get_context_dict() -> Dict[str, Any]:
     return {
         "working_directory": get_working_directory(),
         "platform": get_platform_info(),
-        "git": get_git_status(),
+        "git": await get_git_status(),
         "date": datetime.now().strftime("%Y-%m-%d"),
         "timestamp": datetime.now().isoformat(),
     }

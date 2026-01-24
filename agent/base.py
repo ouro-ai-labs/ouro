@@ -13,7 +13,7 @@ from .todo import TodoList
 from .tool_executor import ToolExecutor
 
 if TYPE_CHECKING:
-    from llm import LiteLLMLLM
+    from llm import LiteLLMAdapter
 
 logger = get_logger(__name__)
 
@@ -23,7 +23,7 @@ class BaseAgent(ABC):
 
     def __init__(
         self,
-        llm: "LiteLLMLLM",
+        llm: "LiteLLMAdapter",
         tools: List[BaseTool],
         max_iterations: int = 10,
     ):
@@ -271,7 +271,7 @@ Execute this subtask NOW and provide concrete results."""
             try:
                 from .context import format_context_prompt
 
-                context = format_context_prompt()
+                context = await format_context_prompt()
                 sub_system_prompt = context + "\n\n" + sub_system_prompt
             except Exception as e:
                 logger.debug(f"Failed to add context: {e}")

@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent.react_agent import ReActAgent
 from config import Config
-from llm import LiteLLMLLM
+from llm import LiteLLMAdapter
 from tools.web_fetch import WebFetchTool
 
 
@@ -25,10 +25,9 @@ async def main():
         print("Please set your API key in the .env file")
         return
 
-    llm = LiteLLMLLM(
+    llm = LiteLLMAdapter(
         model=Config.LITELLM_MODEL,
         api_base=Config.LITELLM_API_BASE,
-        retry_config=Config.get_retry_config(),
         drop_params=Config.LITELLM_DROP_PARAMS,
         timeout=Config.LITELLM_TIMEOUT,
     )

@@ -74,7 +74,7 @@ EXAMPLES:
             },
         }
 
-    def execute(
+    async def execute(
         self,
         operation: str,
         content: str = "",

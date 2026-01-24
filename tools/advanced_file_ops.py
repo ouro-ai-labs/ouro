@@ -1,10 +1,12 @@
 """Advanced file operation tools inspired by Claude Code."""
 
+import asyncio
 import re
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+import aiofiles
 
 from tools.base import BaseTool
 
@@ -41,7 +43,7 @@ Returns sorted list of matching file paths."""
             },
         }
 
-    def execute(self, pattern: str, path: str = ".") -> str:
+    async def execute(self, pattern: str, path: str = ".") -> str:
         """Find files matching glob pattern."""
         try:
             base_path = Path(path)
@@ -140,7 +142,7 @@ Examples:
             },
         }
 
-    def execute(
+    async def execute(
         self,
         pattern: str,
         path: str = ".",
@@ -161,7 +163,7 @@ Examples:
 
         # Use ripgrep if available
         if self._has_ripgrep:
-            return self._execute_ripgrep(
+            return await self._execute_ripgrep(
                 pattern=pattern,
                 path=path,
                 mode=mode,
@@ -185,7 +187,7 @@ Examples:
                 max_count=max_count,
             )
 
-    def _execute_ripgrep(
+    async def _execute_ripgrep(
         self,
         pattern: str,
         path: str,
@@ -249,21 +251,25 @@ Examples:
         cmd.extend(["--", pattern, path])
 
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=30,
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
+            try:
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.communicate()
+                return "Error: Search timed out after 30 seconds"
 
-            output = result.stdout
-            if not output and result.returncode == 1:
+            output = stdout.decode(errors="ignore")
+            error_output = stderr.decode(errors="ignore")
+            if not output and process.returncode == 1:
                 return f"No matches found for pattern '{pattern}'"
-            elif result.returncode not in (0, 1):
-                # returncode 1 means no matches, 0 means matches found
-                # Other codes indicate errors
-                if result.stderr:
-                    return f"Error executing ripgrep: {result.stderr.strip()}"
+            elif process.returncode not in (0, 1):
+                if error_output:
+                    return f"Error executing ripgrep: {error_output.strip()}"
                 return f"No matches found for pattern '{pattern}'"
 
             # Limit output size
@@ -283,8 +289,6 @@ Examples:
 
             return output
 
-        except subprocess.TimeoutExpired:
-            return "Error: Search timed out after 30 seconds"
         except Exception as e:
             return f"Error executing ripgrep: {str(e)}"
 
@@ -470,7 +474,7 @@ IMPORTANT: Use this for small, targeted edits to save tokens."""
             },
         }
 
-    def execute(
+    async def execute(
         self,
         file_path: str,
         operation: str,
@@ -491,22 +495,24 @@ IMPORTANT: Use this for small, targeted edits to save tokens."""
                 if not old_text:
                     return "Error: old_text parameter is required for replace operation"
 
-                content = path.read_text(encoding="utf-8")
+                async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
+                    content = await f.read()
 
                 if old_text not in content:
                     return f"Error: Text not found in {file_path}"
 
                 # Replace only the first occurrence
                 content = content.replace(old_text, new_text, 1)
-                path.write_text(content, encoding="utf-8")
+                async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
+                    await f.write(content)
                 return f"Successfully replaced text in {file_path}"
 
             elif operation == "append":
                 if not text:
                     return "Error: text parameter is required for append operation"
 
-                with path.open("a", encoding="utf-8") as f:
-                    f.write(text)
+                async with aiofiles.open(file_path, "a", encoding="utf-8") as f:
+                    await f.write(text)
                 return f"Successfully appended to {file_path}"
 
             elif operation == "insert_at_line":
@@ -515,7 +521,9 @@ IMPORTANT: Use this for small, targeted edits to save tokens."""
                 if line_number <= 0:
                     return "Error: line_number must be positive (1-indexed)"
 
-                lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+                async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
+                    content = await f.read()
+                lines = content.splitlines(keepends=True)
 
                 # Insert at the specified line (1-indexed)
                 if line_number > len(lines) + 1:
@@ -525,7 +533,8 @@ IMPORTANT: Use this for small, targeted edits to save tokens."""
                 insert_text = text if text.endswith("\n") else text + "\n"
                 lines.insert(line_number - 1, insert_text)
 
-                path.write_text("".join(lines), encoding="utf-8")
+                async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
+                    await f.write("".join(lines))
                 return f"Successfully inserted text at line {line_number} in {file_path}"
 
             else:

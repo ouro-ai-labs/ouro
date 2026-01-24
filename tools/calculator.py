@@ -27,7 +27,7 @@ class CalculatorTool(BaseTool):
             }
         }
 
-    def execute(self, code: str) -> str:
+    async def execute(self, code: str) -> str:
         """Execute Python code and return output."""
         # Capture stdout
         old_stdout = sys.stdout

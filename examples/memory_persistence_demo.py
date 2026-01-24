@@ -62,11 +62,11 @@ async def demo_create_session():
         print(f"  Added message: [{msg.role}] {str(msg.content)[:50]}...")
 
     # Save memory state (normally done automatically after await agent.run(...))
-    manager.save_memory()
+    await manager.save_memory()
     print("\n💾 Saved memory to database")
 
     # Get stats
-    stats = manager.store.get_session_stats(session_id)
+    stats = await manager.store.get_session_stats(session_id)
     print("\n📊 Session Stats:")
     print(f"  Messages: {stats['message_count']}")
     print(f"  System Messages: {stats['system_message_count']}")
@@ -85,7 +85,7 @@ async def demo_load_session(session_id: str):
     llm = MockLLM()
 
     # Load session
-    manager = MemoryManager.from_session(
+    manager = await MemoryManager.from_session(
         session_id=session_id, llm=llm, db_path="data/demo_memory.db"
     )
 
@@ -107,17 +107,17 @@ async def demo_load_session(session_id: str):
         print(f"  Added: [{msg.role}] {str(msg.content)[:50]}...")
 
     # Save memory state
-    manager.save_memory()
+    await manager.save_memory()
     print("\n💾 Saved memory to database")
 
     # Get updated stats
-    stats = manager.store.get_session_stats(session_id)
+    stats = await manager.store.get_session_stats(session_id)
     print("\n📊 Updated Stats:")
     print(f"  Messages: {stats['message_count']}")
     print(f"  Compressions: {stats['compression_count']}")
 
 
-def demo_list_sessions():
+async def demo_list_sessions():
     """Demo: List all sessions."""
     print("\n" + "=" * 80)
     print("Demo 3: List all sessions")
@@ -127,7 +127,7 @@ def demo_list_sessions():
     from memory.store import MemoryStore
 
     store = MemoryStore(db_path="data/demo_memory.db")
-    sessions = store.list_sessions(limit=10)
+    sessions = await store.list_sessions(limit=10)
 
     print(f"\n📚 Found {len(sessions)} sessions:")
     for session in sessions:
@@ -149,7 +149,7 @@ async def main():
     await demo_load_session(session_id)
 
     # Demo 3: List all sessions
-    demo_list_sessions()
+    await demo_list_sessions()
 
     print("\n" + "=" * 80)
     print("✅ Demo complete!")

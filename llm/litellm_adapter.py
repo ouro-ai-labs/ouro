@@ -28,7 +28,7 @@ litellm_logger.setLevel(logging.WARNING)  # Only show warnings and errors
 litellm_logger.propagate = False  # Don't propagate to root logger
 
 
-class LiteLLMLLM:
+class LiteLLMAdapter:
     """LiteLLM adapter supporting 100+ LLM providers."""
 
     def __init__(self, model: str, **kwargs):

@@ -101,7 +101,7 @@ class PlanExecuteAgent(BaseAgent):
         self._print_memory_stats()
 
         # Save memory state
-        self.memory.save_memory()
+        await self.memory.save_memory()
 
         return final_answer
 
@@ -315,7 +315,7 @@ class PlanExecuteAgent(BaseAgent):
         # Build system context
         system_content = "You are a planning expert. Create clear, dependency-aware plans."
         try:
-            context = await asyncio.to_thread(format_context_prompt)
+            context = await format_context_prompt()
             system_content = context + "\n" + system_content
         except Exception:
             pass

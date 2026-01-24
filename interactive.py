@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+import aiofiles
 from prompt_toolkit import PromptSession
 from prompt_toolkit.styles import Style
 
@@ -89,7 +90,7 @@ async def run_interactive_mode(agent, mode: str):
                     continue
 
                 elif command == "/history":
-                    _show_history()
+                    await _show_history()
                     continue
 
                 elif command == "/dump-memory":
@@ -100,7 +101,7 @@ async def run_interactive_mode(agent, mode: str):
                         terminal_ui.console.print("[dim]Usage: /dump-memory <session_id>[/dim]\n")
                     else:
                         session_id = command_parts[1]
-                        _dump_memory(session_id)
+                        await _dump_memory(session_id)
                     continue
 
                 else:
@@ -180,12 +181,12 @@ def _show_stats(agent):
     terminal_ui.console.print()
 
 
-def _show_history():
+async def _show_history():
     """Display all saved conversation sessions."""
     try:
         # Initialize store with default database
         store = MemoryStore(db_path="data/memory.db")
-        sessions = store.list_sessions(limit=20)
+        sessions = await store.list_sessions(limit=20)
 
         if not sessions:
             terminal_ui.console.print("\n[yellow]No saved sessions found.[/yellow]")
@@ -223,7 +224,7 @@ def _show_history():
         terminal_ui.console.print(f"\n[bold red]Error loading sessions:[/bold red] {str(e)}\n")
 
 
-def _dump_memory(session_id: str):
+async def _dump_memory(session_id: str):
     """Export a session's memory to a JSON file.
 
     Args:
@@ -234,7 +235,7 @@ def _dump_memory(session_id: str):
         store = MemoryStore(db_path="data/memory.db")
 
         # Load session
-        session_data = store.load_session(session_id)
+        session_data = await store.load_session(session_id)
 
         if not session_data:
             terminal_ui.console.print(
@@ -275,8 +276,9 @@ def _dump_memory(session_id: str):
         output_path = output_dir / filename
 
         # Write to file
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(export_data, f, indent=2, ensure_ascii=False, default=str)
+        async with aiofiles.open(output_path, "w", encoding="utf-8") as f:
+            payload = json.dumps(export_data, indent=2, ensure_ascii=False, default=str)
+            await f.write(payload)
 
         terminal_ui.console.print("\n[bold green]✓ Memory dumped successfully![/bold green]")
         terminal_ui.console.print(f"[dim]Location:[/dim] {output_path}")

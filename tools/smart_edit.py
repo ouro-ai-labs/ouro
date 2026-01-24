@@ -124,7 +124,7 @@ IMPORTANT:
             },
         }
 
-    def execute(
+    async def execute(
         self,
         file_path: str,
         mode: str,

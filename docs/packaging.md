@@ -134,6 +134,7 @@ Before publishing a new version:
 
 - [ ] Update version in `pyproject.toml`
 - [ ] Update CHANGELOG.md
+- [ ] Format: `./scripts/dev.sh format`
 - [ ] Run tests: `pytest`
 - [ ] Build package: `./scripts/dev.sh build`
 - [ ] Test locally: `pip install dist/*.whl`

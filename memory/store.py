@@ -1,12 +1,14 @@
 """Persistent storage for memory using embedded SQLite database."""
 
+import asyncio
 import json
 import logging
-import sqlite3
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+import aiosqlite
 
 from llm.message_types import LLMMessage
 from memory.types import CompressedMemory
@@ -31,23 +33,26 @@ class MemoryStore:
             db_path: Path to SQLite database file
         """
         self.db_path = db_path
+        self._db_initialized = False
+        self._init_lock = asyncio.Lock()
 
         # Ensure directory exists
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-
-        # Initialize database
-        self._init_db()
-
         logger.info(f"MemoryStore initialized at {db_path}")
 
-    def _init_db(self):
-        """Initialize database schema with single table."""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
+    async def _ensure_db(self) -> None:
+        if self._db_initialized:
+            return
+        async with self._init_lock:
+            if self._db_initialized:
+                return
+            await self._init_db()
+            self._db_initialized = True
 
-            # Single sessions table with all data stored as JSON
-            cursor.execute(
-                """
+    async def _init_db(self) -> None:
+        """Initialize database schema with single table."""
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute("""
                 CREATE TABLE IF NOT EXISTS sessions (
                     id TEXT PRIMARY KEY,
                     created_at TEXT NOT NULL,
@@ -55,13 +60,11 @@ class MemoryStore:
                     system_messages TEXT,
                     summaries TEXT
                 )
-            """
-            )
-
-            conn.commit()
+            """)
+            await conn.commit()
             logger.debug("Database schema initialized")
 
-    def create_session(self, metadata: Optional[Dict[str, Any]] = None) -> str:
+    async def create_session(self, metadata: Optional[Dict[str, Any]] = None) -> str:
         """Create a new session.
 
         Args:
@@ -70,14 +73,14 @@ class MemoryStore:
         Returns:
             Session ID (UUID)
         """
+        await self._ensure_db()
         session_id = str(uuid.uuid4())
         # Store as ISO 8601 text to avoid sqlite3's deprecated default datetime adapter (Python 3.12+).
         now = datetime.now().isoformat()
 
         # Initialize with empty lists
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(
                 """
                 INSERT INTO sessions (id, created_at, messages, system_messages, summaries)
                 VALUES (?, ?, ?, ?, ?)
@@ -90,12 +93,12 @@ class MemoryStore:
                     json.dumps([]),  # Empty summaries list
                 ),
             )
-            conn.commit()
+            await conn.commit()
 
         logger.info(f"Created session {session_id}")
         return session_id
 
-    def save_message(self, session_id: str, message: LLMMessage, tokens: int = 0):
+    async def save_message(self, session_id: str, message: LLMMessage, tokens: int = 0):
         """Save a message to the database.
 
         Args:
@@ -103,56 +106,49 @@ class MemoryStore:
             message: LLMMessage to save
             tokens: Token count for this message
         """
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-
-            # Determine which field to update
+        await self._ensure_db()
+        async with aiosqlite.connect(self.db_path) as conn:
             if message.role == "system":
                 field = "system_messages"
             else:
                 field = "messages"
 
-            # Load current messages
-            cursor.execute(f"SELECT {field} FROM sessions WHERE id = ?", (session_id,))
-            row = cursor.fetchone()
-            if not row:
-                logger.warning(f"Session {session_id} not found")
-                return
+            async with conn.execute(
+                f"SELECT {field} FROM sessions WHERE id = ?", (session_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
+                if not row:
+                    logger.warning(f"Session {session_id} not found")
+                    return
 
             messages = json.loads(row[0]) if row[0] else []
-
-            # Append new message with serialized content (using new format)
             msg_data = self._serialize_message(message)
             msg_data["tokens"] = tokens
             messages.append(msg_data)
 
-            # Update the field
-            cursor.execute(
+            await conn.execute(
                 f"UPDATE sessions SET {field} = ? WHERE id = ?", (json.dumps(messages), session_id)
             )
+            await conn.commit()
 
-            conn.commit()
-
-    def save_summary(self, session_id: str, summary: CompressedMemory):
+    async def save_summary(self, session_id: str, summary: CompressedMemory):
         """Save a compression summary to the database.
 
         Args:
             session_id: Session ID
             summary: CompressedMemory object
         """
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-
-            # Load current summaries
-            cursor.execute("SELECT summaries FROM sessions WHERE id = ?", (session_id,))
-            row = cursor.fetchone()
-            if not row:
-                logger.warning(f"Session {session_id} not found")
-                return
+        await self._ensure_db()
+        async with aiosqlite.connect(self.db_path) as conn:
+            async with conn.execute(
+                "SELECT summaries FROM sessions WHERE id = ?", (session_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
+                if not row:
+                    logger.warning(f"Session {session_id} not found")
+                    return
 
             summaries = json.loads(row[0]) if row[0] else []
-
-            # Append new summary with serialized content
             summaries.append(
                 {
                     "summary": summary.summary,
@@ -169,13 +165,11 @@ class MemoryStore:
                 }
             )
 
-            # Update summaries field
-            cursor.execute(
+            await conn.execute(
                 "UPDATE sessions SET summaries = ? WHERE id = ?",
                 (json.dumps(summaries), session_id),
             )
-
-            conn.commit()
+            await conn.commit()
 
     def _serialize_content(self, content):
         """Serialize message content, handling complex objects.
@@ -258,7 +252,7 @@ class MemoryStore:
             name=data.get("name"),
         )
 
-    def save_memory(
+    async def save_memory(
         self,
         session_id: str,
         system_messages: List[LLMMessage],
@@ -276,21 +270,19 @@ class MemoryStore:
             messages: List of regular messages (short-term memory)
             summaries: List of compressed memory summaries
         """
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
+        await self._ensure_db()
+        async with aiosqlite.connect(self.db_path) as conn:
+            async with conn.execute(
+                "SELECT id FROM sessions WHERE id = ?", (session_id,)
+            ) as cursor:
+                if not await cursor.fetchone():
+                    logger.warning(f"Session {session_id} not found")
+                    return
 
-            # Check if session exists
-            cursor.execute("SELECT id FROM sessions WHERE id = ?", (session_id,))
-            if not cursor.fetchone():
-                logger.warning(f"Session {session_id} not found")
-                return
-
-            # Serialize system messages using new format
             system_messages_json = json.dumps(
                 [self._serialize_message(msg) for msg in system_messages]
             )
 
-            # Serialize regular messages using new format
             messages_list = []
             for msg in messages:
                 msg_data = self._serialize_message(msg)
@@ -298,7 +290,6 @@ class MemoryStore:
                 messages_list.append(msg_data)
             messages_json = json.dumps(messages_list)
 
-            # Serialize summaries
             summaries_json = json.dumps(
                 [
                     {
@@ -317,8 +308,7 @@ class MemoryStore:
                 ]
             )
 
-            # Update all fields in one transaction
-            cursor.execute(
+            await conn.execute(
                 """
                 UPDATE sessions
                 SET system_messages = ?,
@@ -328,8 +318,7 @@ class MemoryStore:
                 """,
                 (system_messages_json, messages_json, summaries_json, session_id),
             )
-
-            conn.commit()
+            await conn.commit()
             logger.debug(
                 f"Saved memory for session {session_id}: "
                 f"{len(system_messages)} system msgs, "
@@ -337,7 +326,7 @@ class MemoryStore:
                 f"{len(summaries)} summaries"
             )
 
-    def load_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+    async def load_session(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Load complete session state.
 
         Args:
@@ -353,13 +342,11 @@ class MemoryStore:
                 "stats": {...}
             }
         """
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            # Load session info
-            cursor.execute("SELECT * FROM sessions WHERE id = ?", (session_id,))
-            session_row = cursor.fetchone()
+        await self._ensure_db()
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            async with conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)) as cursor:
+                session_row = await cursor.fetchone()
 
             if not session_row:
                 logger.warning(f"Session {session_id} not found")
@@ -413,7 +400,7 @@ class MemoryStore:
                 },
             }
 
-    def list_sessions(
+    async def list_sessions(
         self, limit: int = 50, offset: int = 0, order_by: str = "created_at"
     ) -> List[Dict[str, Any]]:
         """List all sessions.
@@ -426,15 +413,14 @@ class MemoryStore:
         Returns:
             List of session summaries
         """
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
+        await self._ensure_db()
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
 
-            # Validate order_by
             if order_by not in ["created_at"]:
                 order_by = "created_at"
 
-            cursor.execute(
+            async with conn.execute(
                 f"""
                 SELECT id, created_at, messages, system_messages, summaries
                 FROM sessions
@@ -442,10 +428,11 @@ class MemoryStore:
                 LIMIT ? OFFSET ?
                 """,
                 (limit, offset),
-            )
+            ) as cursor:
+                rows = await cursor.fetchall()
 
             sessions = []
-            for row in cursor.fetchall():
+            for row in rows:
                 messages_data = json.loads(row["messages"]) if row["messages"] else []
                 system_messages_data = (
                     json.loads(row["system_messages"]) if row["system_messages"] else []
@@ -464,7 +451,7 @@ class MemoryStore:
 
             return sessions
 
-    def delete_session(self, session_id: str) -> bool:
+    async def delete_session(self, session_id: str) -> bool:
         """Delete a session and all its data.
 
         Args:
@@ -473,11 +460,11 @@ class MemoryStore:
         Returns:
             True if deleted, False if not found
         """
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+        await self._ensure_db()
+        async with aiosqlite.connect(self.db_path) as conn:
+            cursor = await conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
             deleted = cursor.rowcount > 0
-            conn.commit()
+            await conn.commit()
 
         if deleted:
             logger.info(f"Deleted session {session_id}")
@@ -486,7 +473,7 @@ class MemoryStore:
 
         return deleted
 
-    def get_session_stats(self, session_id: str) -> Optional[Dict[str, Any]]:
+    async def get_session_stats(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Get session statistics.
 
         Args:
@@ -495,15 +482,13 @@ class MemoryStore:
         Returns:
             Session statistics or None if not found
         """
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            cursor.execute("SELECT * FROM sessions WHERE id = ?", (session_id,))
-
-            row = cursor.fetchone()
-            if not row:
-                return None
+        await self._ensure_db()
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            async with conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)) as cursor:
+                row = await cursor.fetchone()
+                if not row:
+                    return None
 
             # Parse JSON fields
             messages_data = json.loads(row["messages"]) if row["messages"] else []

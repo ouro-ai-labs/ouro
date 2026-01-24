@@ -233,7 +233,7 @@ WHEN TO USE GREP INSTEAD:
             },
         }
 
-    def execute(
+    async def execute(
         self, target: str, search_type: str, path: str = ".", language: str = None, **kwargs
     ) -> str:
         """Execute code navigation search."""

@@ -7,7 +7,9 @@ Usage:
     python tools/session_manager.py delete <session_id>
     python tools/session_manager.py stats <session_id>
 """
+
 import argparse
+import asyncio
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -27,9 +29,9 @@ def format_timestamp(ts: str) -> str:
         return ts
 
 
-def list_sessions(store: MemoryStore, limit: int = 50):
+async def list_sessions(store: MemoryStore, limit: int = 50):
     """List all sessions."""
-    sessions = store.list_sessions(limit=limit)
+    sessions = await store.list_sessions(limit=limit)
 
     if not sessions:
         print("No sessions found.")
@@ -51,9 +53,9 @@ def list_sessions(store: MemoryStore, limit: int = 50):
     print("=" * 100)
 
 
-def show_session(store: MemoryStore, session_id: str, show_messages: bool = False):
+async def show_session(store: MemoryStore, session_id: str, show_messages: bool = False):
     """Show detailed session information."""
-    session_data = store.load_session(session_id)
+    session_data = await store.load_session(session_id)
 
     if not session_data:
         print(f"❌ Session {session_id} not found")
@@ -100,9 +102,9 @@ def show_session(store: MemoryStore, session_id: str, show_messages: bool = Fals
     print("=" * 100)
 
 
-def show_stats(store: MemoryStore, session_id: str):
+async def show_stats(store: MemoryStore, session_id: str):
     """Show session statistics."""
-    stats = store.get_session_stats(session_id)
+    stats = await store.get_session_stats(session_id)
 
     if not stats:
         print(f"❌ Session {session_id} not found")
@@ -136,7 +138,7 @@ def show_stats(store: MemoryStore, session_id: str):
     print("=" * 80)
 
 
-def delete_session(store: MemoryStore, session_id: str, confirm: bool = False):
+async def delete_session(store: MemoryStore, session_id: str, confirm: bool = False):
     """Delete a session."""
     if not confirm:
         response = input(f"Are you sure you want to delete session {session_id}? (yes/no): ")
@@ -144,14 +146,14 @@ def delete_session(store: MemoryStore, session_id: str, confirm: bool = False):
             print("Cancelled.")
             return
 
-    success = store.delete_session(session_id)
+    success = await store.delete_session(session_id)
     if success:
         print(f"✅ Session {session_id} deleted")
     else:
         print(f"❌ Session {session_id} not found")
 
 
-def main():
+async def main():
     parser = argparse.ArgumentParser(
         description="Manage memory sessions",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -212,14 +214,14 @@ Examples:
 
     # Execute command
     if args.command == "list":
-        list_sessions(store, limit=args.limit)
+        await list_sessions(store, limit=args.limit)
     elif args.command == "show":
-        show_session(store, args.session_id, show_messages=args.messages)
+        await show_session(store, args.session_id, show_messages=args.messages)
     elif args.command == "stats":
-        show_stats(store, args.session_id)
+        await show_stats(store, args.session_id)
     elif args.command == "delete":
-        delete_session(store, args.session_id, confirm=args.yes)
+        await delete_session(store, args.session_id, confirm=args.yes)
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
