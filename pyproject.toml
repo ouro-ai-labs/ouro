@@ -26,7 +26,7 @@ classifiers = [
 
 dependencies = [
     "python-dotenv>=1.0.0",
-    "duckduckgo-search>=5.1.0,<6",
+    "duckduckgo-search>=6.0.0,<7",
     "rich>=13.0.0",
     "prompt_toolkit>=3.0.0",
     "httpx>=0.28.0",

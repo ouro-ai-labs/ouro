@@ -126,11 +126,18 @@ class MemoryManager:
 
         This avoids creating empty sessions when MemoryManager is instantiated
         but no messages are ever added (e.g., user exits before running any task).
+
+        Raises:
+            RuntimeError: If session creation fails
         """
         if not self._session_created:
-            self.session_id = await self.store.create_session()
-            self._session_created = True
-            logger.info(f"Created new session: {self.session_id}")
+            try:
+                self.session_id = await self.store.create_session()
+                self._session_created = True
+                logger.info(f"Created new session: {self.session_id}")
+            except Exception as e:
+                logger.error(f"Failed to create session: {e}")
+                raise RuntimeError(f"Failed to create memory session: {e}") from e
 
     async def add_message(self, message: LLMMessage, actual_tokens: Dict[str, int] = None) -> None:
         """Add a message to memory and trigger compression if needed.
