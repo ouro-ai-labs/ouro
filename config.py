@@ -27,6 +27,7 @@ class Config:
     LITELLM_API_BASE = os.getenv("LITELLM_API_BASE")
     LITELLM_DROP_PARAMS = os.getenv("LITELLM_DROP_PARAMS", "true").lower() == "true"
     LITELLM_TIMEOUT = int(os.getenv("LITELLM_TIMEOUT", "600"))
+    TOOL_TIMEOUT = float(os.getenv("TOOL_TIMEOUT", "600"))
 
     # Agent Configuration
     MAX_ITERATIONS = int(os.getenv("MAX_ITERATIONS", "1000"))

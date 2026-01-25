@@ -81,7 +81,7 @@ memory = MemoryManager(config, llm)
 ```
 
 **Key Methods**:
-- `add_message()`: Add a message to memory (async, requires `await`)
+- `add_message()`: Add a message to memory
 - `get_context_for_llm()`: Get optimized context
 - `get_stats()`: Get usage statistics
 

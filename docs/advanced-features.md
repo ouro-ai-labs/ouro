@@ -2,8 +2,6 @@
 
 This guide covers advanced features and optimization techniques for the Agentic Loop system.
 
-Note: `agent.run(...)` is async; snippets that use `await` assume an async context (e.g., wrap with `asyncio.run(main())`).
-
 ## Automatic Retry with Exponential Backoff
 
 All LLM providers support automatic retry with exponential backoff when encountering rate limit errors (429). This is especially useful for free tier APIs.

@@ -85,14 +85,14 @@ Implication for AgenticLoop:
 
 ## Phases at a Glance
 
-| Phase | Primary change | Key acceptance |
-|------:|----------------|----------------|
-| 0 | RFC + repo rules | Docs point to RFC |
-| 1 | Single loop ownership | No `asyncio.run()` in library code |
-| 2 | Async agent loop + async tool executor boundary | ReAct works end-to-end; tool order unchanged |
-| 3 | Async LLM + async retry backoff | Retries don’t block; cancellation stops backoff |
-| 4 | Convert high-impact blocking tools | HTTP/subprocess/DB no longer depend on `to_thread` |
-| 5 | Optional constrained tool parallelism | Faster when safe; still deterministic outputs |
+| Phase | Status | Primary change | Key acceptance |
+|------:|--------|----------------|----------------|
+| 0 | Done | RFC + repo rules | Docs point to RFC |
+| 1 | Done | Single loop ownership | No `asyncio.run()` in library code |
+| 2 | Done | Async agent loop + async tool executor boundary | ReAct works end-to-end; tool order unchanged |
+| 3 | Done | Async LLM + async retry backoff | Retries don’t block; cancellation stops backoff |
+| 4 | Done | Convert high-impact blocking tools | HTTP/subprocess/DB no longer depend on `to_thread` |
+| 5 | Deferred (Optional) | Constrained tool parallelism | Faster when safe; still deterministic outputs |
 
 ## Design Overview
 
@@ -186,6 +186,9 @@ Recommended primitives (Python 3.12+):
 - No `asyncio.run()` outside entrypoints.
 - CLI still works; plan/execute exploration and step batching still run.
 
+**Status**
+- Completed.
+
 ### Phase 2 — Async core loop + tool executor (PR 3–4)
 
 - Convert `BaseAgent._react_loop` to async.
@@ -196,6 +199,9 @@ Recommended primitives (Python 3.12+):
 - ReAct agent completes tasks end-to-end under `asyncio.run()` from the entrypoint.
 - Tool calls behave the same (order, outputs).
 
+**Status**
+- Completed.
+
 ### Phase 3 — Async LLM + retry backoff (PR 5)
 
 - Add async LLM call path (depending on LiteLLM support) and update the agent to await it.
@@ -203,6 +209,9 @@ Recommended primitives (Python 3.12+):
 
 **Acceptance**
 - Retries no longer block the loop; cancellation interrupts backoff.
+
+**Status**
+- Completed.
 
 ### Phase 4 — Convert high-impact blocking tools (PR 6+)
 
@@ -214,7 +223,17 @@ Prioritize by impact:
 **Acceptance**
 - These tools no longer require `to_thread` and respect timeouts/cancellation.
 
-### Phase 5 — Optional constrained parallel tool calls (PR N)
+**Status**
+- Completed.
+
+### Post-Phase-4 Follow-ups (Recommended)
+
+These are reliability/consistency improvements now that async migration is complete:
+
+- **Unify tool timeouts** at the executor layer (with per-tool overrides) to simplify tool code and ensure consistent cancellation behavior.
+- **Serialize memory persistence writes** (e.g., `asyncio.Lock` or a single writer task) to avoid concurrent write hazards when steps run in parallel. (Implemented: `MemoryStore` write lock)
+
+### Phase 5 — Optional constrained parallel tool calls (Deferred)
 
 - Introduce tool concurrency metadata (read-only / writes-paths / external side effects).
 - Allow parallel execution when safe, with a global concurrency cap.

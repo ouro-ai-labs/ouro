@@ -56,6 +56,12 @@ LITELLM_DROP_PARAMS=true
 LITELLM_TIMEOUT=600
 ```
 
+## Tool Configuration
+
+```bash
+TOOL_TIMEOUT=600
+```
+
 ### Legacy (Compatibility)
 
 This repo does not support legacy `LLM_PROVIDER` / `MODEL` configuration. Use `LITELLM_MODEL`.

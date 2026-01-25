@@ -26,8 +26,6 @@ This batch-save approach is more efficient than saving after every message.
 
 ### 1. Using with Agent (Automatic Save)
 
-Note: `agent.run(...)` is async; examples assume an async context.
-
 ```python
 from agent import ReActAgent
 from memory import MemoryConfig
@@ -270,27 +268,29 @@ store = MemoryStore(db_path="data/memory.db")
 
 **Main Methods**:
 
-- `create_session(metadata=None, config=None)` → str (async, requires `await`)
+All methods below are awaitable.
+
+- `create_session(metadata=None, config=None)` → str
   - Create new session
   - Returns session ID
 
-- `save_message(session_id, message, tokens=0)` (async, requires `await`)
+- `save_message(session_id, message, tokens=0)`
   - Save message
 
-- `save_summary(session_id, summary)` (async, requires `await`)
+- `save_summary(session_id, summary)`
   - Save compressed summary
 
-- `load_session(session_id)` → Dict (async, requires `await`)
+- `load_session(session_id)` → Dict
   - Load complete session data
   - Returns dict containing messages, summaries, stats
 
-- `list_sessions(limit=50, offset=0)` → List[Dict] (async, requires `await`)
+- `list_sessions(limit=50, offset=0)` → List[Dict]
   - List sessions
 
-- `get_session_stats(session_id)` → Dict (async, requires `await`)
+- `get_session_stats(session_id)` → Dict
   - Get session statistics
 
-- `delete_session(session_id)` → bool (async, requires `await`)
+- `delete_session(session_id)` → bool
   - Delete session
 
 ### MemoryManager Persistence
