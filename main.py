@@ -15,6 +15,7 @@ from tools.code_navigator import CodeNavigatorTool
 from tools.delegation import DelegationTool
 from tools.file_ops import FileReadTool, FileSearchTool, FileWriteTool
 from tools.shell import ShellTool
+from tools.shell_background import BackgroundTaskManager, ShellTaskStatusTool
 from tools.smart_edit import SmartEditTool
 from tools.web_fetch import WebFetchTool
 from tools.web_search import WebSearchTool
@@ -32,6 +33,9 @@ def create_agent(mode: str = "react"):
     Returns:
         Configured agent instance
     """
+    # Initialize background task manager (shared between shell tools)
+    task_manager = BackgroundTaskManager.get_instance()
+
     # Initialize base tools
     tools = [
         FileReadTool(),
@@ -45,7 +49,8 @@ def create_agent(mode: str = "react"):
         EditTool(),
         SmartEditTool(),
         CodeNavigatorTool(),
-        ShellTool(),
+        ShellTool(task_manager=task_manager),
+        ShellTaskStatusTool(task_manager=task_manager),
     ]
 
     # Create LLM instance with LiteLLM (retry config is read from Config directly)
