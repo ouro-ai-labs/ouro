@@ -1,6 +1,7 @@
 """Background task management for shell command execution."""
 
 import asyncio
+import contextlib
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -129,10 +130,8 @@ class BackgroundTaskManager:
             task.completed_at = time.time()
             if task.process:
                 task.process.kill()
-                try:
+                with contextlib.suppress(Exception):
                     await task.process.communicate()
-                except Exception:
-                    pass
 
         except asyncio.CancelledError:
             task.status = TaskStatus.CANCELLED
@@ -140,10 +139,8 @@ class BackgroundTaskManager:
             if task.process:
                 task.process.kill()
                 # Use wait() instead of communicate() to avoid nested cancellation issues
-                try:
+                with contextlib.suppress(Exception):
                     await asyncio.wait_for(task.process.wait(), timeout=1.0)
-                except Exception:
-                    pass
             # Re-raise to properly propagate cancellation
             raise
 
@@ -234,10 +231,8 @@ class BackgroundTaskManager:
         monitor = self._monitor_tasks.get(task_id)
         if monitor:
             monitor.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await monitor
-            except asyncio.CancelledError:
-                pass
 
         return True
 
@@ -269,9 +264,12 @@ class BackgroundTaskManager:
 
         for task_id, task in self._tasks.items():
             # Remove completed tasks older than expiry time
-            if task.status != TaskStatus.RUNNING:
-                if task.completed_at and (now - task.completed_at) > self.TASK_EXPIRY_SECONDS:
-                    to_remove.append(task_id)
+            if (
+                task.status != TaskStatus.RUNNING
+                and task.completed_at
+                and (now - task.completed_at) > self.TASK_EXPIRY_SECONDS
+            ):
+                to_remove.append(task_id)
 
         # If we still have too many tasks, remove oldest completed ones
         if len(self._tasks) - len(to_remove) > self.MAX_TASKS:

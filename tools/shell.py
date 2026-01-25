@@ -94,11 +94,8 @@ class ShellTool(BaseTool):
                 stderr=asyncio.subprocess.PIPE,
             )
 
-            # Determine actual timeout
-            if wait_for_completion:
-                actual_timeout = self.MAX_WAIT_TIMEOUT
-            else:
-                actual_timeout = max(timeout, 1.0)  # Minimum 1 second
+            # Determine actual timeout (minimum 1 second if not waiting for completion)
+            actual_timeout = self.MAX_WAIT_TIMEOUT if wait_for_completion else max(timeout, 1.0)
 
             try:
                 stdout, stderr = await asyncio.wait_for(
