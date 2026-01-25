@@ -214,17 +214,31 @@ class PlanExecuteAgent(BaseAgent):
         """
         results = {}
         for aspect, description in tasks:
-            result_list = await asyncio.gather(
-                self._run_single_exploration(aspect, description, main_task),
-                return_exceptions=True,
+            results[aspect] = await self._run_exploration_with_fallback(
+                aspect, description, main_task
             )
-            result = result_list[0]
-            if isinstance(result, Exception):
-                logger.warning(f"Exploration {aspect} failed: {result}")
-                results[aspect] = {"error": str(result)}
-            else:
-                results[aspect] = result
         return results
+
+    async def _run_exploration_with_fallback(
+        self, aspect: str, description: str, main_task: str
+    ) -> dict:
+        """Run a single exploration with error handling.
+
+        Args:
+            aspect: The aspect being explored
+            description: Description of the exploration focus
+            main_task: The main task context
+
+        Returns:
+            Dict with exploration result or error
+        """
+        try:
+            return await self._run_single_exploration(aspect, description, main_task)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.warning(f"Exploration {aspect} failed: {e}")
+            return {"error": str(e)}
 
     async def _run_single_exploration(self, aspect: str, description: str, main_task: str) -> dict:
         """Run a single exploration using isolated mini-loop.

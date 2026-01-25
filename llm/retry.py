@@ -74,9 +74,16 @@ def _log_before_sleep(retry_state) -> None:
 
 
 def with_retry():
-    """Decorator to add async retry logic with exponential backoff."""
+    """Decorator to add async retry logic with exponential backoff.
+
+    The total number of attempts is RETRY_MAX_ATTEMPTS + 1:
+    - 1 initial attempt
+    - RETRY_MAX_ATTEMPTS retry attempts (if initial fails)
+    """
 
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        # stop_after_attempt counts total attempts, not retries
+        # So for N retries, we need N+1 total attempts
         return retry(
             retry=retry_if_exception(is_retryable_error),
             stop=stop_after_attempt(Config.RETRY_MAX_ATTEMPTS + 1),
