@@ -8,6 +8,7 @@ from memory import MemoryManager
 from tools.base import BaseTool
 from tools.todo import TodoTool
 from utils import get_logger, terminal_ui
+from utils.tui.progress import AsyncSpinner
 
 from .todo import TodoList
 from .tool_executor import ToolExecutor
@@ -57,19 +58,27 @@ class BaseAgent(ABC):
         pass
 
     async def _call_llm(
-        self, messages: List[LLMMessage], tools: Optional[List] = None, **kwargs
+        self,
+        messages: List[LLMMessage],
+        tools: Optional[List] = None,
+        spinner_message: str = "Thinking...",
+        **kwargs,
     ) -> LLMResponse:
         """Helper to call LLM with consistent parameters.
 
         Args:
             messages: List of conversation messages
             tools: Optional list of tool schemas
+            spinner_message: Message to display with spinner
             **kwargs: Additional LLM-specific parameters
 
         Returns:
             LLMResponse object
         """
-        return await self.llm.call_async(messages=messages, tools=tools, max_tokens=4096, **kwargs)
+        async with AsyncSpinner(terminal_ui.console, spinner_message):
+            return await self.llm.call_async(
+                messages=messages, tools=tools, max_tokens=4096, **kwargs
+            )
 
     def _extract_text(self, response: LLMResponse) -> str:
         """Extract text from LLM response.
@@ -86,10 +95,8 @@ class BaseAgent(ABC):
         self,
         messages: List[LLMMessage],
         tools: List,
-        max_iterations: int,
         use_memory: bool = True,
         save_to_memory: bool = True,
-        verbose: bool = True,
         task: str = "",
     ) -> str:
         """Execute a ReAct (Reasoning + Acting) loop.
@@ -101,24 +108,23 @@ class BaseAgent(ABC):
         Args:
             messages: Initial message list (ignored if use_memory=True)
             tools: List of available tool schemas
-            max_iterations: Maximum number of loop iterations
             use_memory: If True, use self.memory for context; if False, use local messages list
             save_to_memory: If True, save messages to self.memory (only when use_memory=True)
-            verbose: If True, print iteration and tool call information
             task: Optional task description for context in tool result processing
 
         Returns:
             Final answer as a string
         """
-        for iteration in range(max_iterations):
-            if verbose:
-                terminal_ui.print_iteration(iteration + 1, max_iterations)
-
+        while True:
             # Get context (either from memory or local messages)
             context = self.memory.get_context_for_llm() if use_memory else messages
 
             # Call LLM with tools
-            response = await self._call_llm(messages=context, tools=tools)
+            response = await self._call_llm(
+                messages=context,
+                tools=tools,
+                spinner_message="Analyzing request...",
+            )
 
             # Save assistant response using response.to_message() for proper format
             assistant_msg = response.to_message()
@@ -152,8 +158,7 @@ class BaseAgent(ABC):
             # Check if we're done (no tool calls)
             if response.stop_reason == StopReason.STOP:
                 final_answer = self._extract_text(response)
-                if verbose:
-                    terminal_ui.console.print("\n[bold green]✓ Final answer received[/bold green]")
+                terminal_ui.console.print("\n[bold green]✓ Final answer received[/bold green]")
                 return final_answer
 
             # Execute tool calls
@@ -166,7 +171,7 @@ class BaseAgent(ABC):
                     return final_answer if final_answer else "No response generated."
 
                 # Print thinking/reasoning if available
-                if verbose and hasattr(self.llm, "extract_thinking"):
+                if hasattr(self.llm, "extract_thinking"):
                     thinking = self.llm.extract_thinking(response)
                     if thinking:
                         terminal_ui.print_thinking(thinking)
@@ -174,14 +179,14 @@ class BaseAgent(ABC):
                 # Execute each tool call
                 tool_results = []
                 for tc in tool_calls:
-                    if verbose:
-                        terminal_ui.print_tool_call(tc.name, tc.arguments)
+                    terminal_ui.print_tool_call(tc.name, tc.arguments)
 
-                    result = await self.tool_executor.execute_tool_call(tc.name, tc.arguments)
+                    # Execute tool with spinner
+                    async with AsyncSpinner(terminal_ui.console, f"Executing {tc.name}..."):
+                        result = await self.tool_executor.execute_tool_call(tc.name, tc.arguments)
                     # Tool already handles size limits, no additional processing needed
 
-                    if verbose:
-                        terminal_ui.print_tool_result(result)
+                    terminal_ui.print_tool_result(result)
 
                     # Log result (truncated)
                     logger.debug(f"Tool result: {result[:200]}{'...' if len(result) > 200 else ''}")
@@ -206,10 +211,8 @@ class BaseAgent(ABC):
                     else:
                         messages.append(result_messages)
 
-        return "Max iterations reached without completion."
-
     async def delegate_subtask(
-        self, subtask_description: str, max_iterations: int = 5, include_context: bool = False
+        self, subtask_description: str, include_context: bool = False
     ) -> str:
         """Delegate a complex subtask to an isolated execution context.
 
@@ -221,15 +224,12 @@ class BaseAgent(ABC):
 
         Args:
             subtask_description: Clear description of the subtask
-            max_iterations: Maximum iterations for subtask (default: 5)
             include_context: Whether to include system context in sub-agent
 
         Returns:
             Compressed summary of subtask execution result
         """
-        logger.info(
-            f"🔀 Delegating subtask (max {max_iterations} iterations): {subtask_description[:100]}..."
-        )
+        logger.info(f"🔀 Delegating subtask: {subtask_description[:100]}...")
 
         # Build sub-agent system prompt
         sub_system_prompt = """<role>
@@ -287,10 +287,8 @@ Execute this subtask NOW and provide concrete results."""
             result = await self._react_loop(
                 messages=sub_messages,
                 tools=tools,
-                max_iterations=max_iterations,
                 use_memory=False,  # KEY: Don't use main memory
                 save_to_memory=False,  # KEY: Don't save to main memory
-                verbose=True,  # Still show progress
             )
 
             logger.info(f"✅ Subtask completed. Result length: {len(result)} chars")

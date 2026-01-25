@@ -254,10 +254,8 @@ class PlanExecuteAgent(BaseAgent):
         result = await self._react_loop(
             messages=messages,
             tools=exploration_tools,
-            max_iterations=self.max_iterations,
             use_memory=False,
             save_to_memory=False,
-            verbose=False,
         )
 
         return {"aspect": aspect, "findings": result}
@@ -578,10 +576,8 @@ class PlanExecuteAgent(BaseAgent):
             result = await self._react_loop(
                 messages=messages,
                 tools=tools,
-                max_iterations=self.max_iterations,
                 use_memory=False,
                 save_to_memory=False,
-                verbose=True,
             )
 
             step.status = StepStatus.COMPLETED

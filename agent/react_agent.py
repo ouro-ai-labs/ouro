@@ -155,10 +155,8 @@ DO NOT delegate simple operations that can be done in 1-2 tool calls.
         result = await self._react_loop(
             messages=[],  # Not used when use_memory=True
             tools=tools,
-            max_iterations=self.max_iterations,
             use_memory=True,
             save_to_memory=True,
-            verbose=True,
             task=task,
         )
 

@@ -49,7 +49,6 @@ You'll receive the result without your context being filled with execution detai
 
 Input parameters:
 - subtask_description (required): Clear, detailed description of what the subtask should accomplish
-- max_iterations (optional, default=5): Maximum number of iterations for sub-agent execution
 - include_context (optional, default=false): Whether to provide system context (git, env) to sub-agent"""
 
     @property
@@ -58,10 +57,6 @@ Input parameters:
             "subtask_description": {
                 "type": "string",
                 "description": "Clear, detailed description of the subtask to execute",
-            },
-            "max_iterations": {
-                "type": "integer",
-                "description": "Maximum iterations for subtask execution (default: 5)",
             },
             "include_context": {
                 "type": "boolean",
@@ -81,14 +76,11 @@ Input parameters:
             },
         }
 
-    async def execute(
-        self, subtask_description: str, max_iterations: int = 5, include_context: bool = False
-    ) -> str:
+    async def execute(self, subtask_description: str, include_context: bool = False) -> str:
         """Execute subtask delegation.
 
         Args:
             subtask_description: Description of the subtask
-            max_iterations: Maximum iterations for sub-agent
             include_context: Whether to include system context
 
         Returns:
@@ -96,6 +88,5 @@ Input parameters:
         """
         return await self.agent.delegate_subtask(
             subtask_description=subtask_description,
-            max_iterations=max_iterations,
             include_context=include_context,
         )

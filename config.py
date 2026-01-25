@@ -53,6 +53,13 @@ class Config:
     LOG_TO_FILE = os.getenv("LOG_TO_FILE", "true").lower() == "true"
     LOG_TO_CONSOLE = os.getenv("LOG_TO_CONSOLE", "false").lower() == "true"
 
+    # TUI Configuration
+    TUI_THEME = os.getenv("TUI_THEME", "dark")  # "dark" or "light"
+    TUI_SHOW_THINKING = os.getenv("TUI_SHOW_THINKING", "true").lower() == "true"
+    TUI_THINKING_MAX_PREVIEW = int(os.getenv("TUI_THINKING_MAX_PREVIEW", "300"))
+    TUI_STATUS_BAR = os.getenv("TUI_STATUS_BAR", "true").lower() == "true"
+    TUI_COMPACT_MODE = os.getenv("TUI_COMPACT_MODE", "false").lower() == "true"
+
     @classmethod
     def get_retry_delay(cls, attempt: int) -> float:
         """Calculate delay for a given retry attempt using exponential backoff.
