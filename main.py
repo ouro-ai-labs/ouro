@@ -20,6 +20,7 @@ from tools.smart_edit import SmartEditTool
 from tools.web_fetch import WebFetchTool
 from tools.web_search import WebSearchTool
 from utils import get_log_file_path, setup_logger, terminal_ui
+from utils.runtime import ensure_runtime_dirs
 
 warnings.filterwarnings("ignore", message="Pydantic serializer warnings.*", category=UserWarning)
 
@@ -73,9 +74,6 @@ def create_agent():
 
 def main():
     """Main CLI entry point."""
-    # Initialize logging
-    setup_logger()
-
     parser = argparse.ArgumentParser(description="Run an AI agent with tool-calling capabilities")
     parser.add_argument(
         "--task",
@@ -83,8 +81,21 @@ def main():
         type=str,
         help="Task for the agent to complete (if not provided, enters interactive mode)",
     )
+    parser.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Enable verbose logging to .aloop/logs/",
+    )
 
     args = parser.parse_args()
+
+    # Initialize runtime directories (create logs dir only in verbose mode)
+    ensure_runtime_dirs(create_logs=args.verbose)
+
+    # Initialize logging only in verbose mode
+    if args.verbose:
+        setup_logger()
 
     # Validate config
     try:

@@ -147,6 +147,7 @@ venv.bak/
 
 # Runtime data (SQLite memory DB, etc.)
 data/
+.aloop/
 
 # Claude Code local rules/state (project-local)
 .claude/

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from config import Config
 from llm.content_utils import content_has_tool_calls
 from llm.message_types import LLMMessage
+from utils.runtime import get_db_path
 
 from .compressor import WorkingMemoryCompressor
 from .short_term import ShortTermMemory
@@ -27,7 +28,7 @@ class MemoryManager:
         llm: "LiteLLMAdapter",
         store: Optional[MemoryStore] = None,
         session_id: Optional[str] = None,
-        db_path: str = "data/memory.db",
+        db_path: Optional[str] = None,
     ):
         """Initialize memory manager.
 
@@ -35,10 +36,10 @@ class MemoryManager:
             llm: LLM instance for compression
             store: Optional MemoryStore for persistence (if None, creates default store)
             session_id: Optional session ID (if resuming session)
-            db_path: Path to database file (default: data/memory.db)
+            db_path: Path to database file (default: .aloop/db/memory.db)
         """
         self.llm = llm
-        self._db_path = db_path
+        self._db_path = db_path if db_path is not None else get_db_path()
 
         # Always create/use store for persistence
         if store is None:
@@ -77,7 +78,7 @@ class MemoryManager:
         session_id: str,
         llm: "LiteLLMAdapter",
         store: Optional[MemoryStore] = None,
-        db_path: str = "data/memory.db",
+        db_path: Optional[str] = None,
     ) -> "MemoryManager":
         """Load a MemoryManager from a saved session.
 
@@ -85,14 +86,14 @@ class MemoryManager:
             session_id: Session ID to load
             llm: LLM instance for compression
             store: Optional MemoryStore instance (if None, creates default store)
-            db_path: Path to database file (default: data/memory.db)
+            db_path: Path to database file (default: .aloop/db/memory.db)
 
         Returns:
             MemoryManager instance with loaded state
         """
         # Create store if not provided
         if store is None:
-            store = MemoryStore(db_path=db_path)
+            store = MemoryStore(db_path=db_path if db_path is not None else get_db_path())
 
         # Load session data
         session_data = await store.load_session(session_id)
