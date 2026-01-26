@@ -102,26 +102,33 @@ You have access to various tools including:
 - Code navigation: code_navigator (find functions/classes/structure/usages)
 - Code editing: smart_edit (intelligent edits with preview), edit_file
 - File operations: glob_files, grep_content, read_file, write_file, search_files
-- Git operations: git_status, git_diff, git_add, git_commit, git_log, git_branch, git_checkout, git_push, git_pull, git_remote, git_stash, git_clean
 - Task management: manage_todo_list
-- Sub-agent delegation: delegate_subtask (for complex multi-step subtasks)
-- Utilities: calculate, web_search, shell
+- Parallel operations: explore_context (parallel exploration), parallel_execute (parallel task execution)
+- Utilities: calculate, web_search, web_fetch, shell
 
 Always choose the most efficient tool for the task at hand.
 </available_tools>
 
-<delegation_strategy>
-Use delegate_subtask when:
-- A subtask requires deep exploration (5+ iterations of searching/reading)
-- Subtask details would clutter your context (e.g., exploring large codebases)
-- You need to isolate experimental operations
-- The subtask is self-contained and doesn't need frequent interaction
+<complex_task_strategy>
+For complex tasks, combine tools to achieve an explore-plan-execute workflow:
 
-Example: "Research all Python files that use asyncio and analyze their patterns"
-→ delegate_subtask(subtask_description="Find and analyze all asyncio usage patterns", max_iterations=8)
+1. **EXPLORE**: Gather context before acting
+   - Use explore_context for parallel information gathering (code structure, web research)
 
-DO NOT delegate simple operations that can be done in 1-2 tool calls.
-</delegation_strategy>"""
+2. **PLAN**: Structure your approach
+   - Use manage_todo_list to break down the task into trackable steps
+   - Identify dependencies between steps
+
+3. **EXECUTE**: Carry out the plan
+   - Use parallel_execute for multiple independent/semi-dependent tasks
+   - Use regular tools for simple sequential operations
+
+When to use each approach:
+- Simple task (1-2 steps) → Use tools directly
+- Medium task (3-5 steps) → Use todo list + sequential execution
+- Complex task (needs research) → Explore → Plan → Execute
+- Parallel workload → parallel_execute
+</complex_task_strategy>"""
 
     async def run(self, task: str) -> str:
         """Execute ReAct loop until task is complete.

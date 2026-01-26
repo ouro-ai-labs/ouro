@@ -4,7 +4,6 @@ import argparse
 import asyncio
 import warnings
 
-from agent.plan_execute_agent import PlanExecuteAgent
 from agent.react_agent import ReActAgent
 from config import Config
 from interactive import run_interactive_mode
@@ -12,8 +11,9 @@ from llm import LiteLLMAdapter
 from tools.advanced_file_ops import EditTool, GlobTool, GrepTool
 from tools.calculator import CalculatorTool
 from tools.code_navigator import CodeNavigatorTool
-from tools.delegation import DelegationTool
+from tools.explore import ExploreTool
 from tools.file_ops import FileReadTool, FileSearchTool, FileWriteTool
+from tools.parallel_execute import ParallelExecutionTool
 from tools.shell import ShellTool
 from tools.shell_background import BackgroundTaskManager, ShellTaskStatusTool
 from tools.smart_edit import SmartEditTool
@@ -24,14 +24,11 @@ from utils import get_log_file_path, setup_logger, terminal_ui
 warnings.filterwarnings("ignore", message="Pydantic serializer warnings.*", category=UserWarning)
 
 
-def create_agent(mode: str = "react"):
+def create_agent():
     """Factory function to create agents with tools.
 
-    Args:
-        mode: Agent mode - 'react' or 'plan'
-
     Returns:
-        Configured agent instance
+        Configured ReActAgent instance with all tools
     """
     # Initialize background task manager (shared between shell tools)
     task_manager = BackgroundTaskManager.get_instance()
@@ -61,23 +58,15 @@ def create_agent(mode: str = "react"):
         timeout=Config.LITELLM_TIMEOUT,
     )
 
-    # Create agent based on mode
-    if mode == "react":
-        agent_class = ReActAgent
-    elif mode == "plan":
-        agent_class = PlanExecuteAgent
-    else:
-        raise ValueError(f"Unknown mode: {mode}")
-
-    agent = agent_class(
+    agent = ReActAgent(
         llm=llm,
         tools=tools,
         max_iterations=Config.MAX_ITERATIONS,
     )
 
-    # Add delegation tool (requires agent instance)
-    delegation_tool = DelegationTool(agent)
-    agent.tool_executor.add_tool(delegation_tool)
+    # Add tools that require agent reference
+    agent.tool_executor.add_tool(ExploreTool(agent))
+    agent.tool_executor.add_tool(ParallelExecutionTool(agent))
 
     return agent
 
@@ -88,13 +77,6 @@ def main():
     setup_logger()
 
     parser = argparse.ArgumentParser(description="Run an AI agent with tool-calling capabilities")
-    parser.add_argument(
-        "--mode",
-        "-m",
-        choices=["react", "plan"],
-        default="react",
-        help="Agent mode: 'react' for ReAct loop, 'plan' for Plan-and-Execute",
-    )
     parser.add_argument(
         "--task",
         "-t",
@@ -112,12 +94,12 @@ def main():
         return
 
     # Create agent
-    agent = create_agent(args.mode)
+    agent = create_agent()
 
     async def _run() -> None:
         # If no task provided, enter interactive mode (default behavior)
         if not args.task:
-            await run_interactive_mode(agent, args.mode)
+            await run_interactive_mode(agent)
             return
 
         # Single-turn mode: execute one task and exit
@@ -135,7 +117,6 @@ def main():
                 else "UNKNOWN"
             ),
             "Model": Config.LITELLM_MODEL,
-            "Mode": args.mode.upper(),
             "Task": task if len(task) < 100 else task[:97] + "...",
         }
         terminal_ui.print_config(config_dict)

@@ -1,7 +1,14 @@
-"""Enhanced Plan-and-Execute agent with exploration, parallel execution, and adaptive replanning."""
+"""Enhanced Plan-and-Execute agent with exploration, parallel execution, and adaptive replanning.
+
+.. deprecated::
+    This module is deprecated and will be removed in a future version.
+    Use the ReActAgent with explore_context and parallel_execute tools instead.
+    These tools provide the same functionality as composable building blocks.
+"""
 
 import asyncio
 import re
+import warnings
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 from llm import LLMMessage
@@ -36,6 +43,10 @@ if TYPE_CHECKING:
 class PlanExecuteAgent(BaseAgent):
     """Four-phase Plan-Execute agent with exploration and parallel execution.
 
+    .. deprecated::
+        This class is deprecated. Use ReActAgent with explore_context and
+        parallel_execute tools instead for equivalent functionality.
+
     Phases:
     1. EXPLORE: Gather context through parallel exploration agents
     2. PLAN: Create dependency-aware plan informed by exploration
@@ -55,6 +66,12 @@ class PlanExecuteAgent(BaseAgent):
         self, llm: "LiteLLMAdapter", tools: List["BaseTool"], max_iterations: int = 10
     ) -> None:
         """Initialize the enhanced plan-execute agent."""
+        warnings.warn(
+            "PlanExecuteAgent is deprecated and will be removed in a future version. "
+            "Use ReActAgent with explore_context and parallel_execute tools instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         super().__init__(llm=llm, tools=tools, max_iterations=max_iterations)
         self._exploration_results: Optional[ExplorationResult] = None
         self._current_plan: Optional[ExecutionPlan] = None

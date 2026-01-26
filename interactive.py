@@ -19,15 +19,13 @@ from utils.tui.theme import Theme, set_theme
 class InteractiveSession:
     """Manages an interactive conversation session with the agent."""
 
-    def __init__(self, agent, mode: str):
+    def __init__(self, agent):
         """Initialize interactive session.
 
         Args:
             agent: The agent instance
-            mode: Agent mode (react or plan)
         """
         self.agent = agent
-        self.mode = mode
         self.conversation_count = 0
         self.show_thinking = Config.TUI_SHOW_THINKING
         self.compact_mode = Config.TUI_COMPACT_MODE
@@ -58,7 +56,7 @@ class InteractiveSession:
 
         # Initialize status bar
         self.status_bar = StatusBar(terminal_ui.console)
-        self.status_bar.update(mode=mode.upper())
+        self.status_bar.update(mode="REACT")
 
     def _on_clear_screen(self) -> None:
         """Handle Ctrl+L - clear screen."""
@@ -356,7 +354,6 @@ class InteractiveSession:
                 else "UNKNOWN"
             ),
             "Model": Config.LITELLM_MODEL,
-            "Mode": self.mode.upper(),
             "Theme": Theme.get_theme_name(),
             "Commands": "/help for all commands",
         }
@@ -455,12 +452,11 @@ class InteractiveSession:
             terminal_ui.print_log_location(log_file)
 
 
-async def run_interactive_mode(agent, mode: str) -> None:
+async def run_interactive_mode(agent) -> None:
     """Run agent in interactive multi-turn conversation mode.
 
     Args:
         agent: The agent instance
-        mode: Agent mode (react or plan)
     """
-    session = InteractiveSession(agent, mode)
+    session = InteractiveSession(agent)
     await session.run()
