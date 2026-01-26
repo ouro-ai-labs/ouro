@@ -19,15 +19,17 @@ from utils.tui.theme import Theme, set_theme
 class InteractiveSession:
     """Manages an interactive conversation session with the agent."""
 
-    def __init__(self, agent, mode: str):
+    def __init__(self, agent, mode: str, use_composition: bool = False):
         """Initialize interactive session.
 
         Args:
             agent: The agent instance
-            mode: Agent mode (react or plan)
+            mode: Agent mode (react, plan, or compose)
+            use_composition: Whether to use composition assessment for each task
         """
         self.agent = agent
         self.mode = mode
+        self.use_composition = use_composition
         self.conversation_count = 0
         self.show_thinking = Config.TUI_SHOW_THINKING
         self.compact_mode = Config.TUI_COMPACT_MODE
@@ -404,7 +406,11 @@ class InteractiveSession:
                     self.status_bar.update(is_processing=True)
 
                 try:
-                    result = await self.agent.run(user_input)
+                    # Use composition assessment if enabled (compose mode)
+                    if self.use_composition and hasattr(self.agent, "run_with_composition"):
+                        result = await self.agent.run_with_composition(user_input)
+                    else:
+                        result = await self.agent.run(user_input)
 
                     # Display agent response
                     terminal_ui.console.print(
@@ -455,12 +461,13 @@ class InteractiveSession:
             terminal_ui.print_log_location(log_file)
 
 
-async def run_interactive_mode(agent, mode: str) -> None:
+async def run_interactive_mode(agent, mode: str, use_composition: bool = False) -> None:
     """Run agent in interactive multi-turn conversation mode.
 
     Args:
         agent: The agent instance
-        mode: Agent mode (react or plan)
+        mode: Agent mode (react, plan, or compose)
+        use_composition: Whether to use composition assessment for each task
     """
-    session = InteractiveSession(agent, mode)
+    session = InteractiveSession(agent, mode, use_composition=use_composition)
     await session.run()

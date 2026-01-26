@@ -1,5 +1,11 @@
 """Prompts for agent operations."""
 
+from .composition_prompts import (
+    COMPOSITION_ASSESSMENT_PROMPT,
+    EXPLORATION_ASPECT_PROMPT,
+    SUBTASK_ASSESSMENT_PROMPT,
+    SYNTHESIS_PROMPT,
+)
 from .plan_prompts import (
     EXECUTOR_PROMPT,
     EXPLORER_PROMPT,
@@ -9,9 +15,15 @@ from .plan_prompts import (
 )
 
 __all__ = [
+    # Plan-execute prompts
     "EXPLORER_PROMPT",
     "PLANNER_PROMPT",
     "EXECUTOR_PROMPT",
     "REPLANNER_PROMPT",
     "SYNTHESIZER_PROMPT",
+    # Composition prompts
+    "COMPOSITION_ASSESSMENT_PROMPT",
+    "EXPLORATION_ASPECT_PROMPT",
+    "SUBTASK_ASSESSMENT_PROMPT",
+    "SYNTHESIS_PROMPT",
 ]

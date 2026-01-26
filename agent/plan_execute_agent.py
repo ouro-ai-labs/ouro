@@ -30,6 +30,7 @@ logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from llm import LiteLLMAdapter
+    from memory.graph import MemoryGraph, MemoryNode
     from tools.base import BaseTool
 
 
@@ -41,6 +42,9 @@ class PlanExecuteAgent(BaseAgent):
     2. PLAN: Create dependency-aware plan informed by exploration
     3. EXECUTE: Execute steps with parallel batching and adaptive replanning
     4. SYNTHESIZE: Combine results into final answer
+
+    Note: This agent uses the legacy ScopedMemoryView internally.
+    For composable execution, use ReActAgent with AgentRuntime instead.
     """
 
     # Configuration
@@ -52,10 +56,21 @@ class PlanExecuteAgent(BaseAgent):
     EXPLORATION_TOOLS = {"glob_files", "grep_content", "read_file", "code_navigator"}
 
     def __init__(
-        self, llm: "LiteLLMAdapter", tools: List["BaseTool"], max_iterations: int = 10
+        self,
+        llm: "LiteLLMAdapter",
+        tools: List["BaseTool"],
+        memory_node: Optional["MemoryNode"] = None,
+        memory_graph: Optional["MemoryGraph"] = None,
     ) -> None:
-        """Initialize the enhanced plan-execute agent."""
-        super().__init__(llm=llm, tools=tools, max_iterations=max_iterations)
+        """Initialize the enhanced plan-execute agent.
+
+        Args:
+            llm: LLM instance
+            tools: List of available tools
+            memory_node: Optional MemoryNode (not used, kept for API compatibility)
+            memory_graph: Optional MemoryGraph (not used, kept for API compatibility)
+        """
+        super().__init__(llm=llm, tools=tools, memory_node=memory_node, memory_graph=memory_graph)
         self._exploration_results: Optional[ExplorationResult] = None
         self._current_plan: Optional[ExecutionPlan] = None
         self._failure_count = 0

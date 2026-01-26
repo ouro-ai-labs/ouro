@@ -1,5 +1,17 @@
-"""Scoped memory view for hierarchical memory management."""
+"""Scoped memory view for hierarchical memory management.
 
+.. deprecated::
+    This module is deprecated in favor of `memory.graph.MemoryGraph` which
+    provides a more flexible graph-based memory structure with support for
+    multiple parent nodes and dynamic linking. See RFC-004 for details.
+
+    Migration guide:
+    - Replace `ScopedMemoryView` with `MemoryNode` from `memory.graph`
+    - Replace `MemoryScope` enum usage with `metadata["scope"]` in MemoryNode
+    - Use `MemoryGraph` for creating and managing memory nodes
+"""
+
+import warnings
 from enum import Enum
 from typing import TYPE_CHECKING, List, Optional
 
@@ -7,6 +19,16 @@ from llm.message_types import LLMMessage
 
 if TYPE_CHECKING:
     from .manager import MemoryManager
+
+
+def _warn_deprecated():
+    """Issue a deprecation warning for this module."""
+    warnings.warn(
+        "memory.scope is deprecated, use memory.graph.MemoryGraph instead. "
+        "See RFC-004 for migration guide.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
 
 
 class MemoryScope(Enum):
@@ -20,6 +42,10 @@ class MemoryScope(Enum):
 
 class ScopedMemoryView:
     """Provides scoped access to memory without duplication.
+
+    .. deprecated::
+        Use `memory.graph.MemoryNode` and `memory.graph.MemoryGraph` instead.
+        This class will be removed in a future version.
 
     This class enables hierarchical memory management where each scope
     (exploration, execution, step) maintains its own local messages while
@@ -39,6 +65,7 @@ class ScopedMemoryView:
             scope: The scope level for this view.
             parent_view: Optional parent scope for context inheritance.
         """
+        _warn_deprecated()
         self.manager = manager
         self.scope = scope
         self.parent_view = parent_view

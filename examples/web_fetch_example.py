@@ -35,7 +35,6 @@ async def main():
     agent = ReActAgent(
         llm=llm,
         tools=[WebFetchTool()],
-        max_iterations=8,
     )
 
     print("\n--- Example 1: Fetch web page (raw tool output) ---")

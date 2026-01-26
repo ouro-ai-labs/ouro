@@ -60,7 +60,7 @@ def test_smart_edit_in_agent():
             SmartEditTool(),
         ]
 
-        agent = ReActAgent(llm=llm, tools=tools, max_iterations=5)
+        agent = ReActAgent(llm=llm, tools=tools)
 
         # Task: use smart_edit to add a comment
         task = f"""Use the smart_edit tool to add a comment '# computed sum' after 'result = x + y' in {temp_path}.

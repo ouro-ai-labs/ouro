@@ -45,7 +45,6 @@ async def main():
             FileWriteTool(),
             WebSearchTool(),
         ],
-        max_iterations=10,
     )
 
     # Example 1: Simple calculation

@@ -18,9 +18,16 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from llm import LiteLLMAdapter
 
+    from .graph import MemoryGraph, MemoryNode
+
 
 class MemoryManager:
-    """Central memory management system with built-in persistence."""
+    """Central memory management system with optional graph backing.
+
+    When memory_node and memory_graph are provided, messages are stored in
+    the graph node and context includes ancestor summaries. This enables
+    cross-agent context sharing in composable agent architectures.
+    """
 
     def __init__(
         self,
@@ -28,6 +35,8 @@ class MemoryManager:
         store: Optional[MemoryStore] = None,
         session_id: Optional[str] = None,
         db_path: str = "data/memory.db",
+        memory_node: Optional["MemoryNode"] = None,
+        memory_graph: Optional["MemoryGraph"] = None,
     ):
         """Initialize memory manager.
 
@@ -36,9 +45,15 @@ class MemoryManager:
             store: Optional MemoryStore for persistence (if None, creates default store)
             session_id: Optional session ID (if resuming session)
             db_path: Path to database file (default: data/memory.db)
+            memory_node: Optional MemoryNode for graph-backed storage
+            memory_graph: Optional MemoryGraph for context building with ancestors
         """
         self.llm = llm
         self._db_path = db_path
+
+        # Graph backing for cross-agent context sharing
+        self.memory_node = memory_node
+        self.memory_graph = memory_graph
 
         # Always create/use store for persistence
         if store is None:
@@ -185,6 +200,10 @@ class MemoryManager:
         # Add to short-term memory
         self.short_term.add_message(message)
 
+        # Also add to memory node if graph-backed
+        if self.memory_node is not None:
+            self.memory_node.add_message(message)
+
         # Recalculate current tokens based on actual stored content
         # This gives accurate count for compression decisions
         self.current_tokens = self._recalculate_current_tokens()
@@ -213,16 +232,47 @@ class MemoryManager:
     def get_context_for_llm(self) -> List[LLMMessage]:
         """Get optimized context for LLM call.
 
+        When graph-backed, includes ancestor summaries for cross-agent context.
+
         Returns:
-            List of messages: system messages + short-term messages (which includes summaries)
+            List of messages: system messages + (ancestor summaries) + short-term messages
         """
         context = []
 
         # 1. Add system messages (always included)
         context.extend(self.system_messages)
 
-        # 2. Add short-term memory (includes summary messages and recent messages)
+        # 2. If graph-backed, add ancestor context (summaries from parent nodes)
+        if self.memory_graph is not None and self.memory_node is not None:
+            ancestor_context = self._get_ancestor_context()
+            context.extend(ancestor_context)
+
+        # 3. Add short-term memory (includes summary messages and recent messages)
         context.extend(self.short_term.get_messages())
+
+        return context
+
+    def _get_ancestor_context(self) -> List[LLMMessage]:
+        """Get context from ancestor nodes in the memory graph.
+
+        Returns:
+            List of messages containing ancestor summaries
+        """
+        if not self.memory_graph or not self.memory_node:
+            return []
+
+        ancestors = self.memory_graph.get_ancestors(self.memory_node.id)
+        context = []
+
+        for ancestor in reversed(ancestors):  # Oldest first
+            if ancestor.summary:
+                scope = ancestor.metadata.get("scope", "previous")
+                context.append(
+                    LLMMessage(
+                        role="user",
+                        content=f"[Context from {scope}]\n{ancestor.summary}",
+                    )
+                )
 
         return context
 
@@ -474,3 +524,25 @@ class MemoryManager:
         self.was_compressed_last_iteration = False
         self.last_compression_savings = 0
         self.compression_count = 0
+
+    async def summarize_for_parent(self, result: str) -> None:
+        """Summarize this agent's work for parent context.
+
+        When graph-backed, this sets the summary on the memory node so
+        parent agents can access it.
+
+        Args:
+            result: The final result/answer from this agent
+        """
+        if self.memory_node is None or self.memory_graph is None:
+            return
+
+        # Use the result as summary, or generate one if result is too long
+        if len(result) > 1000:
+            # Generate a summary using LLM
+            summary = await self.memory_graph.summarize_node(self.memory_node.id, force=True)
+            if not summary:
+                # Fallback to truncated result
+                self.memory_node.set_summary(result[:1000] + "...")
+        else:
+            self.memory_node.set_summary(result)

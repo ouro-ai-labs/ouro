@@ -46,7 +46,6 @@ async def main():
             FileSearchTool(),
             WebSearchTool(),
         ],
-        max_iterations=10,
     )
 
     # Example 1: Multi-step calculation and file writing

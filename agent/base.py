@@ -15,6 +15,7 @@ from .tool_executor import ToolExecutor
 
 if TYPE_CHECKING:
     from llm import LiteLLMAdapter
+    from memory.graph import MemoryGraph, MemoryNode
 
 logger = get_logger(__name__)
 
@@ -26,17 +27,18 @@ class BaseAgent(ABC):
         self,
         llm: "LiteLLMAdapter",
         tools: List[BaseTool],
-        max_iterations: int = 10,
+        memory_node: Optional["MemoryNode"] = None,
+        memory_graph: Optional["MemoryGraph"] = None,
     ):
         """Initialize the agent.
 
         Args:
             llm: LLM instance to use
-            max_iterations: Maximum number of agent loop iterations
             tools: List of tools available to the agent
+            memory_node: Optional MemoryNode for graph-backed context
+            memory_graph: Optional MemoryGraph for cross-agent context sharing
         """
         self.llm = llm
-        self.max_iterations = max_iterations
 
         # Initialize todo list system
         self.todo_list = TodoList()
@@ -49,8 +51,12 @@ class BaseAgent(ABC):
 
         self.tool_executor = ToolExecutor(tools)
 
-        # Initialize memory manager (uses Config directly)
-        self.memory = MemoryManager(llm)
+        # Initialize memory manager with optional graph backing
+        self.memory = MemoryManager(
+            llm,
+            memory_node=memory_node,
+            memory_graph=memory_graph,
+        )
 
     @abstractmethod
     def run(self, task: str) -> str:
@@ -211,91 +217,3 @@ class BaseAgent(ABC):
                     else:
                         messages.append(result_messages)
 
-    async def delegate_subtask(
-        self, subtask_description: str, include_context: bool = False
-    ) -> str:
-        """Delegate a complex subtask to an isolated execution context.
-
-        This creates a temporary, isolated agent context to handle complex subtasks
-        without polluting the main agent's memory. Useful for:
-        - Deep exploration/research tasks
-        - Complex multi-step operations that would clutter main context
-        - Experimental operations where you want isolation
-
-        Args:
-            subtask_description: Clear description of the subtask
-            include_context: Whether to include system context in sub-agent
-
-        Returns:
-            Compressed summary of subtask execution result
-        """
-        logger.info(f"🔀 Delegating subtask: {subtask_description[:100]}...")
-
-        # Build sub-agent system prompt
-        sub_system_prompt = """<role>
-You are a specialized sub-agent executing a focused subtask for a parent agent.
-</role>
-
-<critical_rules>
-- Focus ONLY on completing the assigned subtask
-- Use tools IMMEDIATELY to get results
-- Do NOT spend time planning - just execute
-- Return clear, concrete results
-- Do NOT ask questions - make reasonable assumptions
-</critical_rules>
-
-<execution_strategy>
-IMPORTANT: You have limited iterations. Execute tools directly instead of planning:
-- Use glob_files or grep_content immediately to find files
-- Use read_file immediately to read content
-- Provide results directly without excessive todo management
-
-Only use manage_todo_list if the subtask explicitly requires tracking multiple complex steps.
-For simple search/analysis tasks, execute tools directly.
-</execution_strategy>
-
-<subtask>
-{subtask}
-</subtask>
-
-Execute this subtask NOW and provide concrete results."""
-
-        # Add context if requested
-        if include_context:
-            try:
-                from .context import format_context_prompt
-
-                context = await format_context_prompt()
-                sub_system_prompt = context + "\n\n" + sub_system_prompt
-            except Exception as e:
-                logger.debug(f"Failed to add context: {e}")
-
-        # Format subtask into system prompt
-        sub_system_prompt = sub_system_prompt.format(subtask=subtask_description)
-
-        # Create isolated message context
-        sub_messages = [
-            LLMMessage(role="system", content=sub_system_prompt),
-            LLMMessage(role="user", content=f"Execute the subtask: {subtask_description}"),
-        ]
-
-        # Get tools (same as main agent, but sub-agent has its own todo list via tool)
-        tools = self.tool_executor.get_tool_schemas()
-
-        # Execute in isolated context (no memory persistence)
-        try:
-            result = await self._react_loop(
-                messages=sub_messages,
-                tools=tools,
-                use_memory=False,  # KEY: Don't use main memory
-                save_to_memory=False,  # KEY: Don't save to main memory
-            )
-
-            logger.info(f"✅ Subtask completed. Result length: {len(result)} chars")
-
-            return f"Subtask execution result:\n{result}"
-
-        except Exception as e:
-            error_msg = f"Subtask failed with error: {str(e)}"
-            logger.error(error_msg)
-            return error_msg

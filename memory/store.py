@@ -6,13 +6,16 @@ import logging
 import os
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import aiofiles.os
 import aiosqlite
 
 from llm.message_types import LLMMessage
 from memory.types import CompressedMemory
+
+if TYPE_CHECKING:
+    from memory.graph import MemoryGraph
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +54,9 @@ class MemoryStore:
             self._db_initialized = True
 
     async def _init_db(self) -> None:
-        """Initialize database schema with single table."""
+        """Initialize database schema with tables for sessions and memory graphs."""
         async with aiosqlite.connect(self.db_path) as conn:
+            # Original sessions table
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS sessions (
@@ -64,6 +68,57 @@ class MemoryStore:
                 )
             """
             )
+
+            # Memory graph nodes table (RFC-004)
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS memory_nodes (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    messages TEXT,
+                    summary TEXT,
+                    metadata TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (session_id) REFERENCES sessions(id)
+                )
+            """
+            )
+
+            # Memory graph edges table (RFC-004)
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS memory_edges (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    parent_id TEXT NOT NULL,
+                    child_id TEXT NOT NULL,
+                    FOREIGN KEY (session_id) REFERENCES sessions(id),
+                    FOREIGN KEY (parent_id) REFERENCES memory_nodes(id),
+                    FOREIGN KEY (child_id) REFERENCES memory_nodes(id)
+                )
+            """
+            )
+
+            # Index for faster edge lookups
+            await conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_edges_session
+                ON memory_edges(session_id)
+            """
+            )
+            await conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_edges_parent
+                ON memory_edges(parent_id)
+            """
+            )
+            await conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_edges_child
+                ON memory_edges(child_id)
+            """
+            )
+
             await conn.commit()
             logger.debug("Database schema initialized")
 
@@ -515,3 +570,185 @@ class MemoryStore:
                 "total_compressed_tokens": total_compressed_tokens,
                 "token_savings": total_original_tokens - total_compressed_tokens,
             }
+
+    # =========================================================================
+    # Memory Graph Persistence (RFC-004)
+    # =========================================================================
+
+    async def save_memory_graph(
+        self,
+        session_id: str,
+        graph: "MemoryGraph",
+    ) -> None:
+        """Save a memory graph to the database.
+
+        Args:
+            session_id: Session ID to associate with
+            graph: The MemoryGraph to save
+        """
+        await self._ensure_db()
+        async with self._write_lock, aiosqlite.connect(self.db_path) as conn:
+            # First, delete existing nodes and edges for this session
+            await conn.execute(
+                "DELETE FROM memory_edges WHERE session_id = ?",
+                (session_id,),
+            )
+            await conn.execute(
+                "DELETE FROM memory_nodes WHERE session_id = ?",
+                (session_id,),
+            )
+
+            # Insert all nodes
+            for node_id, node in graph.nodes.items():
+                messages_json = json.dumps([self._serialize_message(msg) for msg in node.messages])
+                metadata_json = json.dumps(node.metadata)
+                created_at = node.created_at.isoformat()
+
+                await conn.execute(
+                    """
+                    INSERT INTO memory_nodes
+                    (id, session_id, messages, summary, metadata, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        node_id,
+                        session_id,
+                        messages_json,
+                        node.summary,
+                        metadata_json,
+                        created_at,
+                    ),
+                )
+
+            # Insert all edges
+            for node_id, node in graph.nodes.items():
+                for parent_id in node.parent_ids:
+                    await conn.execute(
+                        """
+                        INSERT INTO memory_edges
+                        (session_id, parent_id, child_id)
+                        VALUES (?, ?, ?)
+                        """,
+                        (session_id, parent_id, node_id),
+                    )
+
+            await conn.commit()
+            logger.debug(
+                f"Saved memory graph for session {session_id}: " f"{len(graph.nodes)} nodes"
+            )
+
+    async def load_memory_graph(
+        self,
+        session_id: str,
+    ) -> Optional["MemoryGraph"]:
+        """Load a memory graph from the database.
+
+        Args:
+            session_id: Session ID to load
+
+        Returns:
+            MemoryGraph or None if not found
+        """
+        from memory.graph import MemoryGraph, MemoryNode
+
+        await self._ensure_db()
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+
+            # Load all nodes for this session
+            async with conn.execute(
+                "SELECT * FROM memory_nodes WHERE session_id = ?",
+                (session_id,),
+            ) as cursor:
+                node_rows = await cursor.fetchall()
+
+            if not node_rows:
+                return None
+
+            # Load all edges for this session
+            async with conn.execute(
+                "SELECT parent_id, child_id FROM memory_edges WHERE session_id = ?",
+                (session_id,),
+            ) as cursor:
+                edge_rows = await cursor.fetchall()
+
+            # Build parent/child mappings
+            parent_map: Dict[str, List[str]] = {}  # child_id -> [parent_ids]
+            child_map: Dict[str, List[str]] = {}  # parent_id -> [child_ids]
+
+            for edge in edge_rows:
+                parent_id = edge["parent_id"]
+                child_id = edge["child_id"]
+
+                if child_id not in parent_map:
+                    parent_map[child_id] = []
+                parent_map[child_id].append(parent_id)
+
+                if parent_id not in child_map:
+                    child_map[parent_id] = []
+                child_map[parent_id].append(child_id)
+
+            # Create graph and nodes
+            graph = MemoryGraph()
+
+            for row in node_rows:
+                node_id = row["id"]
+                messages_data = json.loads(row["messages"]) if row["messages"] else []
+                messages = [self._deserialize_message(m) for m in messages_data]
+                metadata = json.loads(row["metadata"]) if row["metadata"] else {}
+                created_at = (
+                    datetime.fromisoformat(row["created_at"])
+                    if row["created_at"]
+                    else datetime.now()
+                )
+
+                node = MemoryNode(
+                    id=node_id,
+                    messages=messages,
+                    parent_ids=parent_map.get(node_id, []),
+                    child_ids=child_map.get(node_id, []),
+                    summary=row["summary"],
+                    metadata=metadata,
+                    created_at=created_at,
+                )
+                graph.nodes[node_id] = node
+
+            # Find root node (node with no parents)
+            for node_id, node in graph.nodes.items():
+                if not node.parent_ids:
+                    graph._root_id = node_id
+                    break
+
+            logger.debug(
+                f"Loaded memory graph for session {session_id}: " f"{len(graph.nodes)} nodes"
+            )
+            return graph
+
+    async def delete_memory_graph(self, session_id: str) -> bool:
+        """Delete the memory graph for a session.
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            True if deleted, False if not found
+        """
+        await self._ensure_db()
+        async with self._write_lock, aiosqlite.connect(self.db_path) as conn:
+            # Delete edges first (foreign key constraint)
+            await conn.execute(
+                "DELETE FROM memory_edges WHERE session_id = ?",
+                (session_id,),
+            )
+
+            # Delete nodes
+            cursor = await conn.execute(
+                "DELETE FROM memory_nodes WHERE session_id = ?",
+                (session_id,),
+            )
+            deleted = cursor.rowcount > 0
+            await conn.commit()
+
+            if deleted:
+                logger.debug(f"Deleted memory graph for session {session_id}")
+            return deleted
