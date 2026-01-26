@@ -13,6 +13,7 @@ import aiosqlite
 
 from llm.message_types import LLMMessage
 from memory.types import CompressedMemory
+from utils.runtime import get_db_path
 
 logger = logging.getLogger(__name__)
 
@@ -27,13 +28,13 @@ class MemoryStore:
     - Query historical sessions
     """
 
-    def __init__(self, db_path: str = "data/memory.db"):
+    def __init__(self, db_path: Optional[str] = None):
         """Initialize memory store.
 
         Args:
-            db_path: Path to SQLite database file
+            db_path: Path to SQLite database file (default: .aloop/db/memory.db)
         """
-        self.db_path = db_path
+        self.db_path = db_path if db_path is not None else get_db_path()
         self._db_initialized = False
         self._init_lock = asyncio.Lock()
         self._write_lock = asyncio.Lock()

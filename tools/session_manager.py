@@ -18,6 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from memory.store import MemoryStore
+from utils.runtime import get_db_path
 
 
 def format_timestamp(ts: str) -> str:
@@ -179,8 +180,8 @@ Examples:
     parser.add_argument(
         "--db",
         type=str,
-        default="data/memory.db",
-        help="Path to database file (default: data/memory.db)",
+        default=None,
+        help="Path to database file (default: .aloop/db/memory.db)",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
@@ -210,7 +211,8 @@ Examples:
         return
 
     # Initialize store
-    store = MemoryStore(db_path=args.db)
+    db_path = args.db if args.db is not None else get_db_path()
+    store = MemoryStore(db_path=db_path)
 
     # Execute command
     if args.command == "list":

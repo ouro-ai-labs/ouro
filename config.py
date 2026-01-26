@@ -5,7 +5,44 @@ import random
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# Define path constants directly to avoid circular imports with utils
+# (utils.terminal_ui imports Config, and utils.runtime is in the utils package)
+_RUNTIME_DIR = ".aloop"
+_CONFIG_FILE = os.path.join(_RUNTIME_DIR, "config")
+
+# Default configuration template
+_DEFAULT_CONFIG = """\
+# AgenticLoop Configuration
+
+# LiteLLM Model Configuration
+# Format: provider/model_name (e.g. "anthropic/claude-3-5-sonnet-20241022")
+LITELLM_MODEL=anthropic/claude-3-5-sonnet-20241022
+
+# API Keys (set the key for your chosen provider)
+ANTHROPIC_API_KEY=
+OPENAI_API_KEY=
+GEMINI_API_KEY=
+
+# Optional settings
+LITELLM_API_BASE=
+LITELLM_DROP_PARAMS=true
+LITELLM_TIMEOUT=600
+TOOL_TIMEOUT=600
+MAX_ITERATIONS=1000
+"""
+
+
+def _ensure_config():
+    """Ensure .aloop/config exists, create with defaults if not."""
+    if not os.path.exists(_CONFIG_FILE):
+        os.makedirs(_RUNTIME_DIR, exist_ok=True)
+        with open(_CONFIG_FILE, "w", encoding="utf-8") as f:
+            f.write(_DEFAULT_CONFIG)
+
+
+# Ensure config exists and load it
+_ensure_config()
+load_dotenv(_CONFIG_FILE)
 
 
 class Config:
@@ -48,10 +85,9 @@ class Config:
     MEMORY_PRESERVE_SYSTEM_PROMPTS = True
 
     # Logging Configuration
-    LOG_DIR = os.getenv("LOG_DIR", "logs")
+    # Note: Logging is now controlled via --verbose flag
+    # LOG_DIR is now .aloop/logs/ (see utils.runtime)
     LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG").upper()
-    LOG_TO_FILE = os.getenv("LOG_TO_FILE", "true").lower() == "true"
-    LOG_TO_CONSOLE = os.getenv("LOG_TO_CONSOLE", "false").lower() == "true"
 
     # TUI Configuration
     TUI_THEME = os.getenv("TUI_THEME", "dark")  # "dark" or "light"
@@ -91,15 +127,15 @@ class Config:
         """
         if not cls.LITELLM_MODEL:
             raise ValueError(
-                "LITELLM_MODEL not set. Please set it in your .env file.\n"
+                "LITELLM_MODEL not set. Please set it in .aloop/config.\n"
                 "Example: LITELLM_MODEL=anthropic/claude-3-5-sonnet-20241022"
             )
 
         # Validate common providers (LiteLLM supports many; only enforce the ones we document).
         provider = cls.LITELLM_MODEL.split("/", 1)[0].lower() if "/" in cls.LITELLM_MODEL else ""
         if provider == "anthropic" and not cls.ANTHROPIC_API_KEY:
-            raise ValueError("ANTHROPIC_API_KEY not set. Please set it in your .env file.")
+            raise ValueError("ANTHROPIC_API_KEY not set. Please set it in .aloop/config.")
         if provider == "openai" and not cls.OPENAI_API_KEY:
-            raise ValueError("OPENAI_API_KEY not set. Please set it in your .env file.")
+            raise ValueError("OPENAI_API_KEY not set. Please set it in .aloop/config.")
         if provider == "gemini" and not cls.GEMINI_API_KEY:
-            raise ValueError("GEMINI_API_KEY not set. Please set it in your .env file.")
+            raise ValueError("GEMINI_API_KEY not set. Please set it in .aloop/config.")

@@ -11,6 +11,7 @@ from rich.table import Table
 from config import Config
 from memory.store import MemoryStore
 from utils import get_log_file_path, terminal_ui
+from utils.runtime import get_exports_dir, get_history_file
 from utils.tui.input_handler import InputHandler
 from utils.tui.status_bar import StatusBar
 from utils.tui.theme import Theme, set_theme
@@ -32,7 +33,7 @@ class InteractiveSession:
 
         # Initialize TUI components
         self.input_handler = InputHandler(
-            history_file=".agentic_loop_history",
+            history_file=get_history_file(),
             commands=[
                 "help",
                 "clear",
@@ -141,7 +142,7 @@ class InteractiveSession:
     async def _show_history(self) -> None:
         """Display all saved conversation sessions."""
         try:
-            store = MemoryStore(db_path="data/memory.db")
+            store = MemoryStore()
             sessions = await store.list_sessions(limit=20)
 
             if not sessions:
@@ -188,7 +189,7 @@ class InteractiveSession:
             session_id: Session ID to export
         """
         try:
-            store = MemoryStore(db_path="data/memory.db")
+            store = MemoryStore()
             session_data = await store.load_session(session_id)
 
             if not session_data:
@@ -216,7 +217,7 @@ class InteractiveSession:
                 ],
             }
 
-            output_dir = Path("dumps")
+            output_dir = Path(get_exports_dir())
             await aiofiles.os.makedirs(str(output_dir), exist_ok=True)
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
