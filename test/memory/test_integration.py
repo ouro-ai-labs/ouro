@@ -346,14 +346,14 @@ class TestEdgeCaseIntegration:
 
         # Should preserve everything or nearly everything
         assert result is not None
-        # Protected tools should be preserved
+        # Protected tools should be preserved in result.messages
         found_protected = False
-        for msg in result.preserved_messages:
+        for msg in result.messages:
             if isinstance(msg.content, list):
                 for block in msg.content:
                     if isinstance(block, dict) and block.get("name") == "manage_todo_list":
                         found_protected = True
-        assert found_protected or len(result.preserved_messages) > 0
+        assert found_protected or len(result.messages) > 0
 
     async def test_rapid_compression_cycles(self, set_memory_config, mock_llm):
         """Test many rapid compression cycles."""
@@ -410,7 +410,8 @@ class TestEdgeCaseIntegration:
         summary_count = sum(
             1
             for msg in context
-            if isinstance(msg.content, str) and msg.content.startswith("[Conversation Summary]")
+            if isinstance(msg.content, str)
+            and msg.content.startswith("[Previous conversation summary]")
         )
         assert summary_count >= 1  # At least one summary should exist
 

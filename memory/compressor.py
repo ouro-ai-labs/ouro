@@ -23,6 +23,9 @@ class WorkingMemoryCompressor:
         "manage_todo_list",  # Todo list state is critical for tracking progress
     }
 
+    # Prefix for summary messages to identify them
+    SUMMARY_PREFIX = "[Previous conversation summary]\n"
+
     COMPRESSION_PROMPT = """You are a memory compression system. Summarize the following conversation messages while preserving:
 1. Key decisions and outcomes
 2. Important facts, data, and findings
@@ -61,7 +64,7 @@ Original messages ({count} messages, ~{tokens} tokens):
             CompressedMemory object
         """
         if not messages:
-            return CompressedMemory(summary="", preserved_messages=[])
+            return CompressedMemory(messages=[])
 
         if target_tokens is None:
             # Calculate target based on config compression ratio
@@ -107,21 +110,22 @@ Original messages ({count} messages, ~{tokens} tokens):
 
         # Call LLM to generate summary
         try:
-            from llm import LLMMessage
-
             prompt = LLMMessage(role="user", content=prompt_text)
             response = await self.llm.call_async(messages=[prompt], max_tokens=target_tokens * 2)
-            summary = self.llm.extract_text(response)
+            summary_text = self.llm.extract_text(response)
+
+            # Convert summary to a user message
+            summary_message = LLMMessage(
+                role="user",
+                content=f"{self.SUMMARY_PREFIX}{summary_text}",
+            )
 
             # Calculate compression metrics
-            compressed_tokens = self._estimate_tokens(
-                [LLMMessage(role="assistant", content=summary)]
-            )
+            compressed_tokens = self._estimate_tokens([summary_message])
             compression_ratio = compressed_tokens / original_tokens if original_tokens > 0 else 0
 
             return CompressedMemory(
-                summary=summary,
-                preserved_messages=[],
+                messages=[summary_message],
                 original_message_count=len(messages),
                 compressed_tokens=compressed_tokens,
                 original_tokens=original_tokens,
@@ -131,11 +135,11 @@ Original messages ({count} messages, ~{tokens} tokens):
         except Exception as e:
             logger.error(f"Error during compression: {e}")
             # Fallback: just keep first and last message
+            fallback_messages = [messages[0], messages[-1]] if len(messages) > 1 else messages
             return CompressedMemory(
-                summary="[Compression failed, preserving key messages]",
-                preserved_messages=[messages[0], messages[-1]] if len(messages) > 1 else messages,
+                messages=fallback_messages,
                 original_message_count=len(messages),
-                compressed_tokens=self._estimate_tokens(messages[:1] + messages[-1:]),
+                compressed_tokens=self._estimate_tokens(fallback_messages),
                 original_tokens=original_tokens,
                 compression_ratio=0.5,
                 metadata={"strategy": "sliding_window", "error": str(e)},
@@ -160,10 +164,9 @@ Original messages ({count} messages, ~{tokens} tokens):
         preserved, to_compress = self._separate_messages(messages)
 
         if not to_compress:
-            # Nothing to compress
+            # Nothing to compress, just return preserved messages
             return CompressedMemory(
-                summary="",
-                preserved_messages=preserved,
+                messages=preserved,
                 original_message_count=len(messages),
                 compressed_tokens=self._estimate_tokens(preserved),
                 original_tokens=self._estimate_tokens(messages),
@@ -187,25 +190,27 @@ Original messages ({count} messages, ~{tokens} tokens):
             )
 
             try:
-                from llm import LLMMessage
-
                 prompt = LLMMessage(role="user", content=prompt_text)
                 response = await self.llm.call_async(
                     messages=[prompt], max_tokens=available_for_summary * 2
                 )
-                summary = self.llm.extract_text(response)
+                summary_text = self.llm.extract_text(response)
 
-                summary_tokens = self._estimate_tokens(
-                    [LLMMessage(role="assistant", content=summary)]
+                # Convert summary to user message and prepend to preserved
+                summary_message = LLMMessage(
+                    role="user",
+                    content=f"{self.SUMMARY_PREFIX}{summary_text}",
                 )
+                result_messages = [summary_message] + preserved
+
+                summary_tokens = self._estimate_tokens([summary_message])
                 compressed_tokens = preserved_tokens + summary_tokens
                 compression_ratio = (
                     compressed_tokens / original_tokens if original_tokens > 0 else 0
                 )
 
                 return CompressedMemory(
-                    summary=summary,
-                    preserved_messages=preserved,
+                    messages=result_messages,
                     original_message_count=len(messages),
                     compressed_tokens=compressed_tokens,
                     original_tokens=original_tokens,
@@ -215,10 +220,9 @@ Original messages ({count} messages, ~{tokens} tokens):
             except Exception as e:
                 logger.error(f"Error during selective compression: {e}")
 
-        # Fallback: just preserve the important messages
+        # Fallback: just preserve the important messages (no summary)
         return CompressedMemory(
-            summary="",
-            preserved_messages=preserved,
+            messages=preserved,
             original_message_count=len(messages),
             compressed_tokens=preserved_tokens,
             original_tokens=original_tokens,
@@ -233,13 +237,12 @@ Original messages ({count} messages, ~{tokens} tokens):
             messages: Messages (will be deleted)
 
         Returns:
-            CompressedMemory with empty summary
+            CompressedMemory with empty messages list
         """
         original_tokens = self._estimate_tokens(messages)
 
         return CompressedMemory(
-            summary="",
-            preserved_messages=[],
+            messages=[],
             original_message_count=len(messages),
             compressed_tokens=0,
             original_tokens=original_tokens,

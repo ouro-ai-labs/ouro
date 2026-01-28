@@ -140,7 +140,8 @@ class TestMemoryCompression:
         # Check that summary message exists in short_term (at the front)
         context = manager.get_context_for_llm()
         has_summary = any(
-            isinstance(msg.content, str) and msg.content.startswith("[Conversation Summary]")
+            isinstance(msg.content, str)
+            and msg.content.startswith("[Previous conversation summary]")
             for msg in context
         )
         assert has_summary, "Summary message should be present after compression"

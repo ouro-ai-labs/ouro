@@ -20,8 +20,7 @@ class TestCompressorBasics:
 
         result = await compressor.compress([])
 
-        assert result.summary == ""
-        assert len(result.preserved_messages) == 0
+        assert len(result.messages) == 0
 
     async def test_compress_single_message(self, mock_llm):
         """Test compressing a single message."""
@@ -46,7 +45,8 @@ class TestCompressionStrategies:
         )
 
         assert result is not None
-        assert result.summary != ""
+        assert len(result.messages) > 0  # Should have summary message
+        assert result.messages[0].role == "user"  # Summary is a user message
         assert result.original_message_count == len(simple_messages)
         assert result.metadata["strategy"] == "sliding_window"
         assert result.compressed_tokens < result.original_tokens
@@ -58,8 +58,7 @@ class TestCompressionStrategies:
         result = await compressor.compress(simple_messages, strategy=CompressionStrategy.DELETION)
 
         assert result is not None
-        assert result.summary == ""
-        assert len(result.preserved_messages) == 0
+        assert len(result.messages) == 0  # Deletion removes all messages
         assert result.compressed_tokens == 0
         assert result.metadata["strategy"] == "deletion"
 
@@ -76,9 +75,8 @@ class TestCompressionStrategies:
 
         assert result is not None
         assert result.metadata["strategy"] == "selective"
-        # Regular tool pairs are compressed (not preserved) unless they are protected tools
-        # Only system messages, protected tools, and orphaned tool pairs are preserved
-        assert result.summary != ""  # Should have a summary for compressed content
+        # Should have messages (summary + preserved)
+        assert len(result.messages) > 0
 
     async def test_selective_strategy_preserves_system_messages(self, set_memory_config, mock_llm):
         """Test that selective strategy preserves system messages."""
@@ -95,8 +93,8 @@ class TestCompressionStrategies:
             messages, strategy=CompressionStrategy.SELECTIVE, target_tokens=100
         )
 
-        # System message should be preserved
-        system_preserved = any(msg.role == "system" for msg in result.preserved_messages)
+        # System message should be preserved in result.messages
+        system_preserved = any(msg.role == "system" for msg in result.messages)
         assert system_preserved
 
 
@@ -446,7 +444,7 @@ class TestCompressionErrors:
 
         assert result is not None
         # Should fallback to preserving key messages
-        assert len(result.preserved_messages) > 0
+        assert len(result.messages) > 0
         assert "error" in result.metadata
 
     async def test_unknown_strategy_fallback(self, mock_llm, simple_messages):
