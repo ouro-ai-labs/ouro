@@ -48,7 +48,10 @@ fi
 
 if [[ ! -d ".venv" ]]; then
   echo "📦 Creating virtual environment in .venv ..."
-  uv venv .venv
+  # Use Python 3.12.x to ensure compatibility with all dependencies
+  # (tree-sitter-languages doesn't have wheels for Python 3.13+ yet)
+  # Update the upper bound when dependencies add support for newer Python versions
+  uv venv .venv --python ">=3.12,<3.13"
 fi
 
 VENV_PY=".venv/bin/python"
