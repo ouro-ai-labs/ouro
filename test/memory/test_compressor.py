@@ -194,58 +194,87 @@ class TestToolPairDetection:
 
 
 class TestProtectedTools:
-    """Test protected tool handling."""
+    """Test protected tool handling and todo context injection."""
 
-    async def test_find_protected_tool_pairs(self, mock_llm, protected_tool_messages):
-        """Test finding protected tool pairs (manage_todo_list)."""
+    async def test_protected_tools_set_is_empty_by_default(self, mock_llm):
+        """Test that PROTECTED_TOOLS is empty - todo state is now injected via context."""
         compressor = WorkingMemoryCompressor(mock_llm)
+        # PROTECTED_TOOLS should be empty because todo state is now injected
+        # via todo_context parameter instead of preserving tool messages
+        assert len(compressor.PROTECTED_TOOLS) == 0
 
-        # First find all pairs
-        all_pairs, orphaned = compressor._find_tool_pairs(protected_tool_messages)
-
-        # Then find protected pairs
-        protected_pairs = compressor._find_protected_tool_pairs(protected_tool_messages, all_pairs)
-
-        # Should find the manage_todo_list pair
-        assert len(protected_pairs) > 0
-        assert len(orphaned) == 0
-
-    async def test_protected_tools_always_preserved(
+    async def test_todo_tool_messages_can_be_compressed(
         self, set_memory_config, mock_llm, protected_tool_messages
     ):
-        """Test that protected tools are never compressed."""
+        """Test that todo tool messages can now be compressed (state preserved via injection)."""
         set_memory_config(MEMORY_SHORT_TERM_MIN_SIZE=0)  # Don't preserve anything by default
         compressor = WorkingMemoryCompressor(mock_llm)
 
         preserved, to_compress = compressor._separate_messages(protected_tool_messages)
 
-        # Protected tool should be in preserved messages
-        found_protected = False
-        for msg in preserved:
-            if isinstance(msg.content, list):
-                for block in msg.content:
-                    if (
-                        isinstance(block, dict)
-                        and block.get("type") == "tool_use"
-                        and block.get("name") == "manage_todo_list"
-                    ):
-                        found_protected = True
-                        break
+        # Todo tool messages should now be compressible (not protected)
+        # Only system messages should be preserved when MEMORY_SHORT_TERM_MIN_SIZE=0
+        assert len(to_compress) > 0
 
-        assert found_protected, "Protected tool should always be preserved"
+    async def test_todo_context_injected_in_sliding_window(self, mock_llm, simple_messages):
+        """Test that todo context is injected into sliding window compression."""
+        compressor = WorkingMemoryCompressor(mock_llm)
+        todo_context = "1. [pending] Fix bug\n2. [in_progress] Write tests"
 
-    async def test_non_protected_tools_can_be_compressed(
+        result = await compressor.compress(
+            simple_messages,
+            strategy="sliding_window",
+            target_tokens=500,
+            todo_context=todo_context,
+        )
+
+        # The summary should contain the todo context
+        summary_content = result.messages[-1].content if result.messages else ""
+        assert "[Current Tasks]" in summary_content
+        assert "Fix bug" in summary_content
+
+    async def test_todo_context_injected_in_selective(
         self, set_memory_config, mock_llm, tool_use_messages
     ):
-        """Test that non-protected tools can be compressed."""
-        set_memory_config(MEMORY_SHORT_TERM_MIN_SIZE=0)
+        """Test that todo context is injected into selective compression."""
+        set_memory_config(MEMORY_SHORT_TERM_MIN_SIZE=2)
+        compressor = WorkingMemoryCompressor(mock_llm)
+        todo_context = "1. [completed] Setup project"
+
+        result = await compressor.compress(
+            tool_use_messages,
+            strategy="selective",
+            target_tokens=500,
+            todo_context=todo_context,
+        )
+
+        # Find the summary message and check for todo context
+        summary_found = False
+        for msg in result.messages:
+            content = str(msg.content)
+            if (
+                "[Previous conversation summary]" in content
+                and "[Current Tasks]" in content
+                and "Setup project" in content
+            ):
+                summary_found = True
+                break
+
+        assert summary_found, "Todo context should be in the summary"
+
+    async def test_no_todo_context_when_none(self, mock_llm, simple_messages):
+        """Test that no todo section is added when todo_context is None."""
         compressor = WorkingMemoryCompressor(mock_llm)
 
-        preserved, to_compress = compressor._separate_messages(tool_use_messages)
+        result = await compressor.compress(
+            simple_messages,
+            strategy="sliding_window",
+            target_tokens=500,
+            todo_context=None,
+        )
 
-        # Non-protected tools may be compressed (moved to to_compress)
-        # At minimum, preserved should not have ALL messages
-        assert len(to_compress) >= 0  # Some or all may be compressed
+        summary_content = result.messages[-1].content if result.messages else ""
+        assert "[Current Tasks]" not in summary_content
 
 
 class TestMessageSeparation:

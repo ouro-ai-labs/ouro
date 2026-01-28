@@ -249,42 +249,50 @@ class TestToolCallMatching:
                 f"Detected mismatch - missing results: {missing_results}, missing uses: {missing_uses}"
             )
 
-    async def test_protected_tool_always_preserved(
+    async def test_todo_context_provider_integration(
         self, set_memory_config, mock_llm, protected_tool_messages
     ):
-        """Test that protected tools (like manage_todo_list) are always preserved."""
+        """Test that todo context provider is called during compression.
+
+        Note: manage_todo_list is no longer in PROTECTED_TOOLS. Instead, todo state
+        is preserved via todo_context injection from MemoryManager's provider callback.
+        """
         set_memory_config(
             MEMORY_SHORT_TERM_SIZE=10,  # Large enough to avoid auto-compression
             MEMORY_SHORT_TERM_MIN_SIZE=1,
         )
         manager = MemoryManager(mock_llm)
 
-        # Add protected tool messages
+        # Set up todo context provider
+        todo_context_called = False
+
+        def mock_todo_provider():
+            nonlocal todo_context_called
+            todo_context_called = True
+            return "1. [pending] Test task"
+
+        manager.set_todo_context_provider(mock_todo_provider)
+
+        # Add messages
         for msg in protected_tool_messages:
             await manager.add_message(msg)
 
         # Manually trigger compression
         compressed = await manager.compress(strategy=CompressionStrategy.SELECTIVE)
 
-        # Check that todo list tool was preserved
+        # Verify compression happened and provider was called
         assert compressed is not None
+        assert todo_context_called, "Todo context provider should be called during compression"
 
-        # Verify the protected tool is in context (now stored in short_term)
-        found_protected = False
+        # Verify todo context is in the summary
         context = manager.get_context_for_llm()
-
+        summary_has_todo = False
         for msg in context:
-            if isinstance(msg.content, list):
-                for block in msg.content:
-                    if (
-                        isinstance(block, dict)
-                        and block.get("type") == "tool_use"
-                        and block.get("name") == "manage_todo_list"
-                    ):
-                        found_protected = True
-                        break
+            if isinstance(msg.content, str) and "[Current Tasks]" in msg.content:
+                summary_has_todo = True
+                break
 
-        assert found_protected, "Protected tool 'manage_todo_list' should be preserved in context"
+        assert summary_has_todo, "Todo context should be injected into compression summary"
 
     async def test_multiple_tool_pairs_in_sequence(self, set_memory_config, mock_llm):
         """Test multiple consecutive tool_use/tool_result pairs."""

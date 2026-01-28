@@ -19,9 +19,9 @@ class WorkingMemoryCompressor:
     """Compresses conversation history using LLM summarization."""
 
     # Tools that should NEVER be compressed - their state must be preserved
-    PROTECTED_TOOLS = {
-        "manage_todo_list",  # Todo list state is critical for tracking progress
-    }
+    # Note: manage_todo_list is NOT protected because its state is managed externally
+    # by TodoList object. Instead, we inject current todo state into the summary.
+    PROTECTED_TOOLS: set[str] = set()
 
     # Prefix for summary messages to identify them
     SUMMARY_PREFIX = "[Previous conversation summary]\n"
@@ -52,6 +52,7 @@ Original messages ({count} messages, ~{tokens} tokens):
         messages: List[LLMMessage],
         strategy: str = CompressionStrategy.SLIDING_WINDOW,
         target_tokens: Optional[int] = None,
+        todo_context: Optional[str] = None,
     ) -> CompressedMemory:
         """Compress messages using specified strategy.
 
@@ -59,6 +60,7 @@ Original messages ({count} messages, ~{tokens} tokens):
             messages: List of messages to compress
             strategy: Compression strategy to use
             target_tokens: Target token count for compressed output
+            todo_context: Optional current todo list state to inject into summary
 
         Returns:
             CompressedMemory object
@@ -73,25 +75,30 @@ Original messages ({count} messages, ~{tokens} tokens):
 
         # Select and apply compression strategy
         if strategy == CompressionStrategy.SLIDING_WINDOW:
-            return await self._compress_sliding_window(messages, target_tokens)
+            return await self._compress_sliding_window(messages, target_tokens, todo_context)
         elif strategy == CompressionStrategy.SELECTIVE:
-            return await self._compress_selective(messages, target_tokens)
+            return await self._compress_selective(messages, target_tokens, todo_context)
         elif strategy == CompressionStrategy.DELETION:
             return self._compress_deletion(messages)
         else:
             logger.warning(f"Unknown strategy {strategy}, using sliding window")
-            return await self._compress_sliding_window(messages, target_tokens)
+            return await self._compress_sliding_window(messages, target_tokens, todo_context)
 
     async def _compress_sliding_window(
-        self, messages: List[LLMMessage], target_tokens: int
+        self,
+        messages: List[LLMMessage],
+        target_tokens: int,
+        todo_context: Optional[str] = None,
     ) -> CompressedMemory:
         """Compress using sliding window strategy.
 
-        Summarizes all messages into a single summary.
+        Summarizes all messages into a single summary. If todo_context is provided,
+        it will be appended to the summary to preserve current task state.
 
         Args:
             messages: Messages to compress
             target_tokens: Target token count
+            todo_context: Optional current todo list state to inject
 
         Returns:
             CompressedMemory object
@@ -116,6 +123,10 @@ Original messages ({count} messages, ~{tokens} tokens):
             prompt = LLMMessage(role="user", content=prompt_text)
             response = await self.llm.call_async(messages=[prompt], max_tokens=target_tokens * 2)
             summary_text = self.llm.extract_text(response)
+
+            # Append todo context if available
+            if todo_context:
+                summary_text = f"{summary_text}\n\n[Current Tasks]\n{todo_context}"
 
             # Convert summary to a user message
             summary_message = LLMMessage(
@@ -154,16 +165,21 @@ Original messages ({count} messages, ~{tokens} tokens):
             )
 
     async def _compress_selective(
-        self, messages: List[LLMMessage], target_tokens: int
+        self,
+        messages: List[LLMMessage],
+        target_tokens: int,
+        todo_context: Optional[str] = None,
     ) -> CompressedMemory:
         """Compress using selective preservation strategy.
 
         Preserves important messages (tool calls, system prompts) and
-        summarizes the rest.
+        summarizes the rest. If todo_context is provided, it will be
+        appended to the summary to preserve current task state.
 
         Args:
             messages: Messages to compress
             target_tokens: Target token count
+            todo_context: Optional current todo list state to inject
 
         Returns:
             CompressedMemory object
@@ -207,6 +223,10 @@ Original messages ({count} messages, ~{tokens} tokens):
                     messages=[prompt], max_tokens=available_for_summary * 2
                 )
                 summary_text = self.llm.extract_text(response)
+
+                # Append todo context if available
+                if todo_context:
+                    summary_text = f"{summary_text}\n\n[Current Tasks]\n{todo_context}"
 
                 # Convert summary to user message
                 summary_message = LLMMessage(

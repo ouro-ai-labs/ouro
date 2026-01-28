@@ -52,6 +52,10 @@ class BaseAgent(ABC):
         # Initialize memory manager (uses Config directly)
         self.memory = MemoryManager(llm)
 
+        # Set up todo context provider for memory compression
+        # This injects current todo state into summaries instead of preserving all todo messages
+        self.memory.set_todo_context_provider(self._get_todo_context)
+
     @abstractmethod
     def run(self, task: str) -> str:
         """Execute the agent on a task and return final answer."""
@@ -90,6 +94,17 @@ class BaseAgent(ABC):
             Extracted text
         """
         return self.llm.extract_text(response)
+
+    def _get_todo_context(self) -> Optional[str]:
+        """Get current todo list state for memory compression.
+
+        Returns formatted todo list if items exist, None otherwise.
+        This is used by MemoryManager to inject todo state into summaries.
+        """
+        items = self.todo_list.get_current()
+        if not items:
+            return None
+        return self.todo_list.format_list()
 
     async def _react_loop(
         self,
