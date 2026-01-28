@@ -37,10 +37,12 @@ def test_smart_edit_in_agent():
 
     # Create a temporary test file
     with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".py") as f:
-        f.write("""def calculate(x, y):
+        f.write(
+            """def calculate(x, y):
     result = x + y
     return result
-""")
+"""
+        )
         temp_path = f.name
 
     try:

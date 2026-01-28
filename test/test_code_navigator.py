@@ -15,7 +15,8 @@ def sample_python_files(tmp_path):
     """Create sample Python files for testing."""
     # File 1: base.py with class and functions
     base_file = tmp_path / "base.py"
-    base_file.write_text('''"""Base module."""
+    base_file.write_text(
+        '''"""Base module."""
 import os
 from typing import List, Dict
 
@@ -42,11 +43,13 @@ def transform_task(task: str) -> str:
 def helper_function(x, y):
     """Helper for calculations."""
     return x + y
-''')
+'''
+    )
 
     # File 2: agent.py with subclass
     agent_file = tmp_path / "agent.py"
-    agent_file.write_text('''"""Agent implementation."""
+    agent_file.write_text(
+        '''"""Agent implementation."""
 from base import BaseAgent, transform_task
 
 class ReActAgent(BaseAgent):
@@ -64,11 +67,13 @@ class ReActAgent(BaseAgent):
     def _execute(self, task: str) -> str:
         """Execute with iterations."""
         return task
-''')
+'''
+    )
 
     # File 3: utils.py with utility functions
     utils_file = tmp_path / "utils.py"
-    utils_file.write_text('''"""Utility functions."""
+    utils_file.write_text(
+        '''"""Utility functions."""
 
 def transform_task(text: str) -> str:
     """Transform text."""
@@ -77,7 +82,8 @@ def transform_task(text: str) -> str:
 def calculate(a: int, b: int) -> int:
     """Calculate sum."""
     return a + b
-''')
+'''
+    )
 
     return tmp_path
 
@@ -391,7 +397,8 @@ class TestMultiLanguageSupport:
         """Create sample files in multiple languages."""
         # JavaScript file
         js_file = tmp_path / "app.js"
-        js_file.write_text("""
+        js_file.write_text(
+            """
 function greet(name) {
     return "Hello, " + name;
 }
@@ -407,11 +414,13 @@ class UserService {
 }
 
 const helper = () => console.log("helper");
-""")
+"""
+        )
 
         # TypeScript file
         ts_file = tmp_path / "service.ts"
-        ts_file.write_text("""
+        ts_file.write_text(
+            """
 interface User {
     id: number;
     name: string;
@@ -432,11 +441,13 @@ class ApiService {
 function processData(data: User[]): void {
     console.log(data);
 }
-""")
+"""
+        )
 
         # Go file
         go_file = tmp_path / "main.go"
-        go_file.write_text("""
+        go_file.write_text(
+            """
 package main
 
 import "fmt"
@@ -457,11 +468,13 @@ type Server struct {
 func (s *Server) Start() {
     fmt.Printf("Starting server on %s:%d", s.Host, s.Port)
 }
-""")
+"""
+        )
 
         # Rust file
         rs_file = tmp_path / "lib.rs"
-        rs_file.write_text("""
+        rs_file.write_text(
+            """
 pub fn calculate(a: i32, b: i32) -> i32 {
     a + b
 }
@@ -483,11 +496,13 @@ impl Calculator {
 trait Compute {
     fn compute(&self) -> i32;
 }
-""")
+"""
+        )
 
         # Java file
         java_file = tmp_path / "Main.java"
-        java_file.write_text("""
+        java_file.write_text(
+            """
 public class Main {
     public static void main(String[] args) {
         System.out.println("Hello, World!");
@@ -513,11 +528,13 @@ class Helper {
         return this.name;
     }
 }
-""")
+"""
+        )
 
         # C++ file
         cpp_file = tmp_path / "app.cpp"
-        cpp_file.write_text("""
+        cpp_file.write_text(
+            """
 #include <iostream>
 #include <string>
 
@@ -539,7 +556,8 @@ int calculate(int a, int b) {
 void printMessage(const std::string& msg) {
     std::cout << msg << std::endl;
 }
-""")
+"""
+        )
 
         return tmp_path
 
