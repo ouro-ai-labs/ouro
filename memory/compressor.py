@@ -108,6 +108,9 @@ Original messages ({count} messages, ~{tokens} tokens):
             target_tokens=target_tokens,
         )
 
+        # Extract system messages to preserve them
+        system_msgs = [m for m in messages if m.role == "system"]
+
         # Call LLM to generate summary
         try:
             prompt = LLMMessage(role="user", content=prompt_text)
@@ -120,12 +123,15 @@ Original messages ({count} messages, ~{tokens} tokens):
                 content=f"{self.SUMMARY_PREFIX}{summary_text}",
             )
 
+            # System messages first, then summary
+            result_messages = system_msgs + [summary_message]
+
             # Calculate compression metrics
-            compressed_tokens = self._estimate_tokens([summary_message])
+            compressed_tokens = self._estimate_tokens(result_messages)
             compression_ratio = compressed_tokens / original_tokens if original_tokens > 0 else 0
 
             return CompressedMemory(
-                messages=[summary_message],
+                messages=result_messages,
                 original_message_count=len(messages),
                 compressed_tokens=compressed_tokens,
                 original_tokens=original_tokens,
@@ -134,8 +140,10 @@ Original messages ({count} messages, ~{tokens} tokens):
             )
         except Exception as e:
             logger.error(f"Error during compression: {e}")
-            # Fallback: just keep first and last message
-            fallback_messages = [messages[0], messages[-1]] if len(messages) > 1 else messages
+            # Fallback: keep system messages + first and last non-system message
+            non_system = [m for m in messages if m.role != "system"]
+            fallback_other = [non_system[0], non_system[-1]] if len(non_system) > 1 else non_system
+            fallback_messages = system_msgs + fallback_other
             return CompressedMemory(
                 messages=fallback_messages,
                 original_message_count=len(messages),
@@ -165,10 +173,14 @@ Original messages ({count} messages, ~{tokens} tokens):
 
         if not to_compress:
             # Nothing to compress, just return preserved messages
+            # Ensure system messages are first
+            system_msgs = [m for m in preserved if m.role == "system"]
+            other_msgs = [m for m in preserved if m.role != "system"]
+            result_messages = system_msgs + other_msgs
             return CompressedMemory(
-                messages=preserved,
+                messages=result_messages,
                 original_message_count=len(messages),
-                compressed_tokens=self._estimate_tokens(preserved),
+                compressed_tokens=self._estimate_tokens(result_messages),
                 original_tokens=self._estimate_tokens(messages),
                 compression_ratio=1.0,
                 metadata={"strategy": "selective"},
@@ -196,12 +208,15 @@ Original messages ({count} messages, ~{tokens} tokens):
                 )
                 summary_text = self.llm.extract_text(response)
 
-                # Convert summary to user message and prepend to preserved
+                # Convert summary to user message
                 summary_message = LLMMessage(
                     role="user",
                     content=f"{self.SUMMARY_PREFIX}{summary_text}",
                 )
-                result_messages = [summary_message] + preserved
+                # Ensure system messages come first, then summary, then other preserved
+                system_msgs = [m for m in preserved if m.role == "system"]
+                other_msgs = [m for m in preserved if m.role != "system"]
+                result_messages = system_msgs + [summary_message] + other_msgs
 
                 summary_tokens = self._estimate_tokens([summary_message])
                 compressed_tokens = preserved_tokens + summary_tokens
@@ -221,8 +236,12 @@ Original messages ({count} messages, ~{tokens} tokens):
                 logger.error(f"Error during selective compression: {e}")
 
         # Fallback: just preserve the important messages (no summary)
+        # Ensure system messages are first
+        system_msgs = [m for m in preserved if m.role == "system"]
+        other_msgs = [m for m in preserved if m.role != "system"]
+        result_messages = system_msgs + other_msgs
         return CompressedMemory(
-            messages=preserved,
+            messages=result_messages,
             original_message_count=len(messages),
             compressed_tokens=preserved_tokens,
             original_tokens=original_tokens,
