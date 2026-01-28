@@ -153,11 +153,7 @@ class MemoryStore:
             summaries = json.loads(row[0]) if row[0] else []
             summaries.append(
                 {
-                    "summary": summary.summary,
-                    "preserved_messages": [
-                        {"role": msg.role, "content": self._serialize_content(msg.content)}
-                        for msg in summary.preserved_messages
-                    ],
+                    "messages": [self._serialize_message(msg) for msg in summary.messages],
                     "original_message_count": summary.original_message_count,
                     "original_tokens": summary.original_tokens,
                     "compressed_tokens": summary.compressed_tokens,
@@ -295,10 +291,7 @@ class MemoryStore:
             summaries_json = json.dumps(
                 [
                     {
-                        "summary": summary.summary,
-                        "preserved_messages": [
-                            self._serialize_message(msg) for msg in summary.preserved_messages
-                        ],
+                        "messages": [self._serialize_message(msg) for msg in summary.messages],
                         "original_message_count": summary.original_message_count,
                         "original_tokens": summary.original_tokens,
                         "compressed_tokens": summary.compressed_tokens,
@@ -370,14 +363,29 @@ class MemoryStore:
             )
             summaries = []
             for summary_data in summaries_data:
-                preserved_msgs = [
-                    self._deserialize_message(m) for m in summary_data.get("preserved_messages", [])
-                ]
+                # Support new format (messages) and legacy format (summary + preserved_messages)
+                if "messages" in summary_data:
+                    msgs = [self._deserialize_message(m) for m in summary_data["messages"]]
+                else:
+                    # Legacy format: convert summary to user message + preserved_messages
+                    msgs = []
+                    if summary_data.get("summary"):
+                        msgs.append(
+                            LLMMessage(
+                                role="user",
+                                content=f"[Previous conversation summary]\n{summary_data['summary']}",
+                            )
+                        )
+                    msgs.extend(
+                        [
+                            self._deserialize_message(m)
+                            for m in summary_data.get("preserved_messages", [])
+                        ]
+                    )
 
                 summaries.append(
                     CompressedMemory(
-                        summary=summary_data.get("summary", ""),
-                        preserved_messages=preserved_msgs,
+                        messages=msgs,
                         original_message_count=summary_data.get("original_message_count", 0),
                         original_tokens=summary_data.get("original_tokens", 0),
                         compressed_tokens=summary_data.get("compressed_tokens", 0),

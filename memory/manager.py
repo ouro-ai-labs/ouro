@@ -69,9 +69,6 @@ class MemoryManager:
         self.last_compression_savings = 0
         self.compression_count = 0
 
-        # Summary message prefix for identification
-        self.SUMMARY_PREFIX = "[Conversation Summary]\n"
-
     @classmethod
     async def from_session(
         cls,
@@ -230,8 +227,8 @@ class MemoryManager:
     async def compress(self, strategy: str = None) -> Optional[CompressedMemory]:
         """Compress current short-term memory.
 
-        After compression, summary and preserved messages are put back into short_term
-        as regular messages, so they can participate in future compressions.
+        After compression, the compressed messages (including any summary as user message)
+        are put back into short_term as regular messages.
 
         Args:
             strategy: Compression strategy (None = auto-select)
@@ -267,32 +264,20 @@ class MemoryManager:
 
             # Update token tracker
             self.token_tracker.add_compression_savings(compressed.token_savings)
-
-            # Estimate tokens used for compression (the summary generation)
-            compression_cost = compressed.compressed_tokens
-            self.token_tracker.add_compression_cost(compression_cost)
+            self.token_tracker.add_compression_cost(compressed.compressed_tokens)
 
             # Remove compressed messages from short-term memory
             self.short_term.remove_first(message_count)
 
-            # Rebuild short_term with: summary + preserved messages (in order)
             # Get any remaining messages (added after compression started)
             remaining_messages = self.short_term.get_messages()
             self.short_term.clear()
 
-            # 1. Add summary first (represents older context)
-            if compressed.summary:
-                summary_message = LLMMessage(
-                    role="user",
-                    content=f"{self.SUMMARY_PREFIX}{compressed.summary}",
-                )
-                self.short_term.add_message(summary_message)
-
-            # 2. Add preserved messages in order
-            for msg in compressed.preserved_messages:
+            # Add compressed messages (summary + preserved, already combined by compressor)
+            for msg in compressed.messages:
                 self.short_term.add_message(msg)
 
-            # 3. Add any remaining messages
+            # Add any remaining messages
             for msg in remaining_messages:
                 self.short_term.add_message(msg)
 

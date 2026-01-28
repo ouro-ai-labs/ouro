@@ -9,14 +9,17 @@ from llm.base import LLMMessage
 
 @dataclass
 class CompressedMemory:
-    """Represents a compressed memory segment."""
+    """Represents a compressed memory segment.
 
-    summary: str  # LLM-generated summary of compressed messages
-    preserved_messages: List[LLMMessage] = field(default_factory=list)  # Messages to keep verbatim
-    original_message_count: int = 0  # Number of original messages
-    compressed_tokens: int = 0  # Token count of compressed representation
-    original_tokens: int = 0  # Original token count before compression
-    compression_ratio: float = 0.0  # Actual compression ratio achieved
+    The messages list contains ALL messages to keep after compression,
+    including any summary (converted to a user message at the front).
+    """
+
+    messages: List[LLMMessage] = field(default_factory=list)  # All messages after compression
+    original_message_count: int = 0
+    compressed_tokens: int = 0
+    original_tokens: int = 0
+    compression_ratio: float = 0.0
     created_at: datetime = field(default_factory=datetime.now)
     metadata: Dict[str, Any] = field(default_factory=dict)
 

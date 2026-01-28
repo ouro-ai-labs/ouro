@@ -239,8 +239,12 @@ class TestBatchSave:
 
         summaries = [
             CompressedMemory(
-                summary="Earlier conversation summary",
-                preserved_messages=[],
+                messages=[
+                    LLMMessage(
+                        role="user",
+                        content="[Previous conversation summary]\nEarlier conversation summary",
+                    )
+                ],
                 original_message_count=5,
                 original_tokens=500,
                 compressed_tokens=150,
@@ -260,7 +264,7 @@ class TestBatchSave:
         # Verify content
         assert session_data["system_messages"][0].content == "You are helpful"
         assert session_data["messages"][0].content == "Hello"
-        assert session_data["summaries"][0].summary == "Earlier conversation summary"
+        assert len(session_data["summaries"][0].messages) == 1
 
     async def test_save_memory_replaces_content(self, store):
         """Test that save_memory replaces all content."""
@@ -298,8 +302,12 @@ class TestSummaryStorage:
         session_id = await store.create_session()
 
         summary = CompressedMemory(
-            summary="This is a summary",
-            preserved_messages=[LLMMessage(role="user", content="Important message")],
+            messages=[
+                LLMMessage(
+                    role="user", content="[Previous conversation summary]\nThis is a summary"
+                ),
+                LLMMessage(role="user", content="Important message"),
+            ],
             original_message_count=10,
             original_tokens=1000,
             compressed_tokens=300,
@@ -314,11 +322,10 @@ class TestSummaryStorage:
         assert len(session_data["summaries"]) == 1
 
         loaded_summary = session_data["summaries"][0]
-        assert loaded_summary.summary == "This is a summary"
         assert loaded_summary.original_message_count == 10
         assert loaded_summary.original_tokens == 1000
         assert loaded_summary.compressed_tokens == 300
-        assert len(loaded_summary.preserved_messages) == 1
+        assert len(loaded_summary.messages) == 2
 
     async def test_save_multiple_summaries(self, store):
         """Test saving multiple summaries."""
@@ -326,8 +333,9 @@ class TestSummaryStorage:
 
         for i in range(3):
             summary = CompressedMemory(
-                summary=f"Summary {i}",
-                preserved_messages=[],
+                messages=[
+                    LLMMessage(role="user", content=f"[Previous conversation summary]\nSummary {i}")
+                ],
                 original_message_count=5,
                 original_tokens=500,
                 compressed_tokens=150,
@@ -384,8 +392,7 @@ class TestSessionRetrieval:
         await store.save_message(session_id, LLMMessage(role="assistant", content="Hi"), tokens=3)
 
         summary = CompressedMemory(
-            summary="Summary",
-            preserved_messages=[],
+            messages=[LLMMessage(role="user", content="[Previous conversation summary]\nSummary")],
             original_message_count=5,
             original_tokens=500,
             compressed_tokens=150,
@@ -456,8 +463,12 @@ class TestIntegration:
         # Add summaries
         for i in range(2):
             summary = CompressedMemory(
-                summary=f"Summary of batch {i}",
-                preserved_messages=[],
+                messages=[
+                    LLMMessage(
+                        role="user",
+                        content=f"[Previous conversation summary]\nSummary of batch {i}",
+                    )
+                ],
                 original_message_count=5,
                 original_tokens=75,
                 compressed_tokens=25,
