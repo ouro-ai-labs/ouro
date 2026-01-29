@@ -57,13 +57,13 @@ pre-commit install
 
 ### 1. Configuration
 
-On first run, `.aloop/config` is created automatically with sensible defaults. Edit it to configure your LLM provider:
+Create `.env` file:
 
 ```bash
-$EDITOR .aloop/config
+cp .env.example .env
 ```
 
-Example `.aloop/config`:
+Edit `.env` file and configure your LLM provider:
 
 ```bash
 # LiteLLM Model Configuration (supports 100+ providers)
@@ -97,7 +97,10 @@ RETRY_INITIAL_DELAY=1.0
 RETRY_MAX_DELAY=60.0
 
 # Logging
+LOG_DIR=logs
 LOG_LEVEL=DEBUG
+LOG_TO_FILE=true
+LOG_TO_CONSOLE=false
 ```
 
 **Quick setup for different providers:**
@@ -181,6 +184,7 @@ See [Memory Management Documentation](docs/memory-management.md) for detailed in
 ```
 AgenticLoop/
 ├── README.md                    # This document
+├── .env.example                 # Environment variables template
 ├── config.py                    # Configuration management
 ├── main.py                      # CLI entry point
 ├── docs/                        # 📚 Documentation
@@ -234,7 +238,7 @@ AgenticLoop/
 
 ## Configuration Options
 
-See the [Configuration Guide](docs/configuration.md) for all options. Key settings:
+See the full configuration template in `.env.example`. Key options:
 
 | Setting | Description | Default |
 |---------|-------------|---------|
@@ -300,7 +304,7 @@ See the [Packaging Guide](docs/packaging.md) for instructions on:
 
 Quick commands:
 ```bash
-# Bootstrap local dev environment (creates .venv, installs deps)
+# Bootstrap local dev environment (creates .venv, installs deps, initializes .env)
 ./scripts/bootstrap.sh
 
 # Build distribution packages

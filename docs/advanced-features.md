@@ -72,7 +72,7 @@ The memory management system optimizes token usage for long-running tasks.
 
 ### Quick Start
 
-Enable in `.aloop/config`:
+Enable in `.env`:
 
 ```bash
 MEMORY_ENABLED=true
@@ -210,7 +210,7 @@ LITELLM_API_BASE=http://proxy.company.com
 ### Example: Azure OpenAI
 
 ```bash
-# .aloop/config
+# .env
 LITELLM_MODEL=azure/gpt-4
 AZURE_API_KEY=your_azure_key
 AZURE_API_BASE=https://your-resource.openai.azure.com

@@ -22,7 +22,7 @@ async def main():
         Config.validate()
     except ValueError as exc:
         print(f"Error: {exc}")
-        print("Please set your API key in .aloop/config")
+        print("Please set your API key in the .env file")
         return
 
     llm = LiteLLMAdapter(

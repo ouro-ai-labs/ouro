@@ -91,7 +91,7 @@ What would you like me to help you with?
 ### With OpenAI GPT
 
 ```bash
-# Set in .aloop/config:
+# Set in .env:
 OPENAI_API_KEY=your_key_here
 LITELLM_MODEL=openai/gpt-4o
 
@@ -102,7 +102,7 @@ python main.py --task "Your task here"
 ### With Google Gemini
 
 ```bash
-# Set in .aloop/config:
+# Set in .env:
 GEMINI_API_KEY=your_key_here
 LITELLM_MODEL=gemini/gemini-1.5-flash
 
@@ -113,7 +113,7 @@ python main.py --task "Your task here"
 ### With Anthropic Claude
 
 ```bash
-# Set in .aloop/config:
+# Set in .env:
 ANTHROPIC_API_KEY=your_key_here
 LITELLM_MODEL=anthropic/claude-3-5-sonnet-20241022
 
@@ -196,7 +196,7 @@ python main.py --task "Run ls command"
 For long-running tasks with many iterations:
 
 ```bash
-# Enable memory management in .aloop/config:
+# Enable memory management in .env:
 MEMORY_ENABLED=true
 
 # Run a complex task:
@@ -296,7 +296,7 @@ agent = ReActAgent(
 If a task doesn't complete within max iterations:
 
 ```bash
-# Increase max iterations in .aloop/config:
+# Increase max iterations in .env:
 MAX_ITERATIONS=20
 
 # Or pass it programmatically:
@@ -308,7 +308,7 @@ agent = ReActAgent(llm=llm, max_iterations=20)
 For tasks consuming too many tokens:
 
 ```bash
-# Enable memory compression in .aloop/config:
+# Enable memory compression:
 MEMORY_ENABLED=true
 MEMORY_COMPRESSION_THRESHOLD=40000
 
@@ -322,7 +322,7 @@ For consistent API errors:
 
 ```bash
 # Check your API key configuration
-grep API_KEY .aloop/config
+cat .env | grep API_KEY
 
 # Test with a simple task first
 python main.py --task "Calculate 1+1"
