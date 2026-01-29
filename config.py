@@ -3,8 +3,6 @@
 import os
 import random
 
-from dotenv import load_dotenv
-
 # Define path constants directly to avoid circular imports with utils
 # (utils.terminal_ui imports Config, and utils.runtime is in the utils package)
 _RUNTIME_DIR = ".aloop"
@@ -32,6 +30,26 @@ MAX_ITERATIONS=1000
 """
 
 
+def _load_config(path: str) -> dict[str, str]:
+    """Parse a KEY=VALUE config file, skipping comments and blank lines."""
+    cfg: dict[str, str] = {}
+    if not os.path.isfile(path):
+        return cfg
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            # Strip inline comments (# ...) from the value
+            if "#" in value:
+                value = value[: value.index("#")]
+            cfg[key.strip()] = value.strip()
+    return cfg
+
+
 def _ensure_config():
     """Ensure .aloop/config exists, create with defaults if not."""
     if not os.path.exists(_CONFIG_FILE):
@@ -42,7 +60,7 @@ def _ensure_config():
 
 # Ensure config exists and load it
 _ensure_config()
-load_dotenv(_CONFIG_FILE)
+_cfg = _load_config(_CONFIG_FILE)
 
 
 class Config:
@@ -53,48 +71,48 @@ class Config:
 
     # LiteLLM Model Configuration
     # Format: provider/model_name (e.g. "anthropic/claude-3-5-sonnet-20241022")
-    LITELLM_MODEL = os.getenv("LITELLM_MODEL", "anthropic/claude-3-5-sonnet-20241022")
+    LITELLM_MODEL = _cfg.get("LITELLM_MODEL", "anthropic/claude-3-5-sonnet-20241022")
 
     # Common provider API keys (optional depending on provider)
-    ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    ANTHROPIC_API_KEY = _cfg.get("ANTHROPIC_API_KEY") or None
+    OPENAI_API_KEY = _cfg.get("OPENAI_API_KEY") or None
+    GEMINI_API_KEY = _cfg.get("GEMINI_API_KEY") or _cfg.get("GOOGLE_API_KEY") or None
 
     # Optional LiteLLM Configuration
-    LITELLM_API_BASE = os.getenv("LITELLM_API_BASE")
-    LITELLM_DROP_PARAMS = os.getenv("LITELLM_DROP_PARAMS", "true").lower() == "true"
-    LITELLM_TIMEOUT = int(os.getenv("LITELLM_TIMEOUT", "600"))
-    TOOL_TIMEOUT = float(os.getenv("TOOL_TIMEOUT", "600"))
+    LITELLM_API_BASE = _cfg.get("LITELLM_API_BASE") or None
+    LITELLM_DROP_PARAMS = _cfg.get("LITELLM_DROP_PARAMS", "true").lower() == "true"
+    LITELLM_TIMEOUT = int(_cfg.get("LITELLM_TIMEOUT", "600"))
+    TOOL_TIMEOUT = float(_cfg.get("TOOL_TIMEOUT", "600"))
 
     # Agent Configuration
-    MAX_ITERATIONS = int(os.getenv("MAX_ITERATIONS", "1000"))
+    MAX_ITERATIONS = int(_cfg.get("MAX_ITERATIONS", "1000"))
 
     # Retry Configuration
-    RETRY_MAX_ATTEMPTS = int(os.getenv("RETRY_MAX_ATTEMPTS", "3"))
-    RETRY_INITIAL_DELAY = float(os.getenv("RETRY_INITIAL_DELAY", "1.0"))
-    RETRY_MAX_DELAY = float(os.getenv("RETRY_MAX_DELAY", "60.0"))
+    RETRY_MAX_ATTEMPTS = int(_cfg.get("RETRY_MAX_ATTEMPTS", "3"))
+    RETRY_INITIAL_DELAY = float(_cfg.get("RETRY_INITIAL_DELAY", "1.0"))
+    RETRY_MAX_DELAY = float(_cfg.get("RETRY_MAX_DELAY", "60.0"))
     RETRY_EXPONENTIAL_BASE = 2.0
     RETRY_JITTER = True
 
     # Memory Management Configuration
-    MEMORY_ENABLED = os.getenv("MEMORY_ENABLED", "true").lower() == "true"
-    MEMORY_COMPRESSION_THRESHOLD = int(os.getenv("MEMORY_COMPRESSION_THRESHOLD", "60000"))
-    MEMORY_SHORT_TERM_SIZE = int(os.getenv("MEMORY_SHORT_TERM_SIZE", "100"))
-    MEMORY_SHORT_TERM_MIN_SIZE = int(os.getenv("MEMORY_SHORT_TERM_MIN_SIZE", "6"))
-    MEMORY_COMPRESSION_RATIO = float(os.getenv("MEMORY_COMPRESSION_RATIO", "0.3"))
+    MEMORY_ENABLED = _cfg.get("MEMORY_ENABLED", "true").lower() == "true"
+    MEMORY_COMPRESSION_THRESHOLD = int(_cfg.get("MEMORY_COMPRESSION_THRESHOLD", "60000"))
+    MEMORY_SHORT_TERM_SIZE = int(_cfg.get("MEMORY_SHORT_TERM_SIZE", "100"))
+    MEMORY_SHORT_TERM_MIN_SIZE = int(_cfg.get("MEMORY_SHORT_TERM_MIN_SIZE", "6"))
+    MEMORY_COMPRESSION_RATIO = float(_cfg.get("MEMORY_COMPRESSION_RATIO", "0.3"))
     MEMORY_PRESERVE_SYSTEM_PROMPTS = True
 
     # Logging Configuration
     # Note: Logging is now controlled via --verbose flag
     # LOG_DIR is now .aloop/logs/ (see utils.runtime)
-    LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG").upper()
+    LOG_LEVEL = _cfg.get("LOG_LEVEL", "DEBUG").upper()
 
     # TUI Configuration
-    TUI_THEME = os.getenv("TUI_THEME", "dark")  # "dark" or "light"
-    TUI_SHOW_THINKING = os.getenv("TUI_SHOW_THINKING", "true").lower() == "true"
-    TUI_THINKING_MAX_PREVIEW = int(os.getenv("TUI_THINKING_MAX_PREVIEW", "300"))
-    TUI_STATUS_BAR = os.getenv("TUI_STATUS_BAR", "true").lower() == "true"
-    TUI_COMPACT_MODE = os.getenv("TUI_COMPACT_MODE", "false").lower() == "true"
+    TUI_THEME = _cfg.get("TUI_THEME", "dark")  # "dark" or "light"
+    TUI_SHOW_THINKING = _cfg.get("TUI_SHOW_THINKING", "true").lower() == "true"
+    TUI_THINKING_MAX_PREVIEW = int(_cfg.get("TUI_THINKING_MAX_PREVIEW", "300"))
+    TUI_STATUS_BAR = _cfg.get("TUI_STATUS_BAR", "true").lower() == "true"
+    TUI_COMPACT_MODE = _cfg.get("TUI_COMPACT_MODE", "false").lower() == "true"
 
     @classmethod
     def get_retry_delay(cls, attempt: int) -> float:

@@ -409,7 +409,7 @@ class MyProviderLLM(BaseLLM):
 
 ### 2. Update Configuration
 
-This repo is configured via LiteLLM (`LITELLM_MODEL` in `.env`). For most providers, **no code changes** are required:
+This repo is configured via LiteLLM (`LITELLM_MODEL` in `.aloop/config`). For most providers, **no code changes** are required:
 
 ```bash
 LITELLM_MODEL=my_provider/my-model
@@ -418,7 +418,9 @@ MY_PROVIDER_API_KEY=...
 
 If a provider is not supported by LiteLLM, implement a custom `BaseLLM` adapter under `llm/` and instantiate it directly in your app code (avoid adding more branching to `config.py`).
 
-### 4. Update .env.example
+### 4. Update .aloop/config
+
+Add your provider key to `.aloop/config`:
 
 ```bash
 # MyProvider Configuration

@@ -25,7 +25,6 @@ classifiers = [
 ]
 
 dependencies = [
-    "python-dotenv>=1.0.0",
     "ddgs>=1.0.0",
     "rich>=13.0.0",
     "prompt_toolkit>=3.0.0",
@@ -68,7 +67,7 @@ packages = ["agent", "llm", "memory", "tools", "utils"]
 py-modules = ["main", "interactive", "config", "cli"]
 
 [tool.setuptools.package-data]
-"*" = [".env.example"]
+"*" = ["py.typed"]
 
 [tool.black]
 line-length = 100

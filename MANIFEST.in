@@ -1,6 +1,5 @@
 # Include important files in the package
 include README.md
 include LICENSE
-include .env.example
 recursive-include docs *.md
 recursive-include examples *.py *.md

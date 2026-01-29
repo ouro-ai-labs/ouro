@@ -1,13 +1,14 @@
 # Configuration Guide
 
-This repo uses a **single configuration surface** via `.env` and `config.py`.
+This repo uses a **single configuration surface** via `.aloop/config` and `config.py`.
 
-## Environment Variables
+## Configuration File
 
-Create `.env` from the template (Python 3.12+ required for development):
+On first run, `.aloop/config` is created automatically with sensible defaults. Edit it to configure your LLM provider:
 
 ```bash
-cp .env.example .env
+# Open the config file
+$EDITOR .aloop/config
 ```
 
 ## LLM Configuration (Recommended: LiteLLM)
@@ -107,6 +108,6 @@ RUN_INTEGRATION_TESTS=1 python -m pytest -m integration
 
 ## Security Best Practices
 
-1. Never commit `.env` or API keys.
+1. Never commit `.aloop/config` or API keys.
 2. Treat publishing as a manual step (see `docs/packaging.md`).
 3. Keep `MAX_ITERATIONS` low when experimenting to avoid runaway cost.

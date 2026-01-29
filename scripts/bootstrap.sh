@@ -5,26 +5,20 @@ usage() {
   cat <<'EOF'
 Bootstrap a local dev environment for AgenticLoop.
 
-Creates/uses `.venv`, installs `.[dev]`, and initializes `.env` (if missing).
+Creates/uses `.venv` and installs `.[dev]`.
 
 Usage:
-  ./scripts/bootstrap.sh [--no-env] [--no-dev]
+  ./scripts/bootstrap.sh [--no-dev]
 
 Options:
-  --no-env   Do not create `.env` from `.env.example`
   --no-dev   Install without dev extras (installs `-e .` instead of `-e ".[dev]"`)
 EOF
 }
 
-INIT_ENV="true"
 WITH_DEV="true"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --no-env)
-      INIT_ENV="false"
-      shift
-      ;;
     --no-dev)
       WITH_DEV="false"
       shift
@@ -73,13 +67,6 @@ fi
 
 # Install into the venv explicitly.
 uv pip install --python "$VENV_PY" "${install_args[@]}"
-
-if [[ "$INIT_ENV" == "true" ]]; then
-  if [[ ! -f ".env" ]] && [[ -f ".env.example" ]]; then
-    echo "🧩 Initializing .env from .env.example ..."
-    cp .env.example .env
-  fi
-fi
 
 echo ""
 echo "✅ Bootstrap complete"

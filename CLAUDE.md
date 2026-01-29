@@ -39,10 +39,10 @@ Manual doc/workflow checks:
 
 Change impact reminders:
 - CLI changes → update `README.md`, `docs/examples.md`
-- Config changes → update `.env.example`, `docs/configuration.md`
+- Config changes → update `docs/configuration.md`
 - Workflow scripts → update `AGENTS.md`, `docs/packaging.md`
 
-Run a quick smoke task (requires a configured provider in `.env`):
+Run a quick smoke task (requires a configured provider in `.aloop/config`):
 
 ```bash
 python main.py --task "Calculate 1+1"
@@ -111,7 +111,7 @@ Unified entrypoint: `./scripts/dev.sh format`
 
 ## Docs Pointers
 
-- Configuration & `.env`: `docs/configuration.md`
+- Configuration & `.aloop/config`: `docs/configuration.md`
 - Packaging & release checklist: `docs/packaging.md`
 - Extending tools/agents: `docs/extending.md`
 - Memory system: `docs/memory-management.md`, `docs/memory_persistence.md`
@@ -119,7 +119,7 @@ Unified entrypoint: `./scripts/dev.sh format`
 
 ## Safety & Secrets
 
-- Never commit `.env` or API keys.
+- Never commit `.aloop/config` or API keys.
 - Avoid running destructive shell commands; keep file edits scoped and reversible.
 - Publishing/releasing steps require explicit human intent (see `docs/packaging.md`).
 
@@ -168,7 +168,7 @@ Review existing RFCs before implementation to understand design decisions and co
 ## When Changing Key Areas
 
 - If you change CLI flags / behavior: update `README.md` and `docs/examples.md`.
-- If you change configuration/env vars: update `docs/configuration.md` and `.env.example`.
+- If you change configuration/env vars: update `docs/configuration.md`.
 - If you change packaging/versioning: update `pyproject.toml` and `docs/packaging.md`.
 - If you change memory/compression/persistence: add/adjust tests under `test/memory/` and update `docs/memory-management.md` / `docs/memory_persistence.md`.
 - **Significant changes**: write an RFC in `rfc/` before implementation (see RFC Design Documents section above).

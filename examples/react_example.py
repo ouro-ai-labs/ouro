@@ -26,7 +26,7 @@ async def main():
         Config.validate()
     except ValueError as e:
         print(f"Error: {e}")
-        print("Please configure your .env file (see .env.example)")
+        print("Please configure .aloop/config (see README.md)")
         return
 
     llm = LiteLLMAdapter(

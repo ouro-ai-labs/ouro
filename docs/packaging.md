@@ -117,7 +117,7 @@ pip install pyinstaller
 # Create executable
 pyinstaller --onefile \
   --name AgenticLoop \
-  --add-data ".env.example:." \
+  --add-data "config.py:." \
   --hidden-import anthropic \
   --hidden-import openai \
   --hidden-import google.genai \

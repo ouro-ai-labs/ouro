@@ -30,7 +30,7 @@ The memory system addresses this by:
 
 ### 1. Enable Memory Management
 
-In your `.env` file:
+In your `.aloop/config` file:
 
 ```bash
 # Enable memory management
