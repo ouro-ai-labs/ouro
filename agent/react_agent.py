@@ -51,6 +51,31 @@ Assistant: [Immediately starts without planning, forgets steps halfway through]
 </bad_example>
 </task_management>
 
+<plan_files>
+Use manage_plan_file for complex multi-phase tasks that may span multiple sessions.
+
+WHEN TO USE PLAN FILES (vs todo lists):
+- Multi-phase projects requiring persistent tracking
+- Tasks with extensive research that needs to be preserved
+- Work that may be interrupted and resumed later
+- Projects with clear milestones and phases
+
+PLAN FILE CAPABILITIES:
+- Create plans with multiple phases and items
+- Track progress with timestamps
+- Save research findings to separate files
+- Recover plans from previous sessions
+
+PLAN FILE WORKFLOW:
+1. Create plan with phases: manage_plan_file(operation="create_plan", task="...", phases=[...])
+2. Update progress as you work: manage_plan_file(operation="update_item", ...)
+3. Save findings during research: manage_plan_file(operation="save_finding", topic="...", content="...")
+4. Get summary anytime: manage_plan_file(operation="get_summary")
+
+IMPORTANT: For simple single-session tasks, prefer manage_todo_list.
+Plan files are for persistent, cross-session task tracking.
+</plan_files>
+
 <tool_usage_guidelines>
 For file operations:
 - Use glob_files to find files by pattern (fast, efficient)
@@ -143,6 +168,10 @@ When to use each approach:
 
         # Add user task/message
         await self.memory.add_message(LLMMessage(role="user", content=task))
+
+        # Initialize plan manager after session is created (first message creates session)
+        if self.plan_manager is None and self.memory.session_id:
+            self._initialize_plan_manager(self.memory.session_id)
 
         tools = self.tool_executor.get_tool_schemas()
 

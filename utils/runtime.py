@@ -6,6 +6,7 @@ All runtime data is stored under .aloop/ directory:
 - logs/: Log files (only created with --verbose)
 - history: Interactive mode command history
 - exports/: Memory dump exports
+- plans/: Plan files for persistent task tracking
 """
 
 import os
@@ -67,12 +68,22 @@ def get_exports_dir() -> str:
     return os.path.join(RUNTIME_DIR, "exports")
 
 
+def get_plans_dir() -> str:
+    """Get the plans directory path.
+
+    Returns:
+        Path to .aloop/plans/
+    """
+    return os.path.join(RUNTIME_DIR, "plans")
+
+
 def ensure_runtime_dirs(create_logs: bool = False) -> None:
     """Ensure runtime directories exist.
 
     Creates:
     - .aloop/db/
     - .aloop/exports/
+    - .aloop/plans/
     - .aloop/logs/ (only if create_logs=True)
 
     Note: .aloop/config is created by config.py on first import.
@@ -82,6 +93,7 @@ def ensure_runtime_dirs(create_logs: bool = False) -> None:
     """
     os.makedirs(os.path.join(RUNTIME_DIR, "db"), exist_ok=True)
     os.makedirs(os.path.join(RUNTIME_DIR, "exports"), exist_ok=True)
+    os.makedirs(os.path.join(RUNTIME_DIR, "plans"), exist_ok=True)
 
     if create_logs:
         os.makedirs(os.path.join(RUNTIME_DIR, "logs"), exist_ok=True)

@@ -8,6 +8,7 @@ import aiofiles
 import aiofiles.os
 from rich.table import Table
 
+from agent.plan_files import PlanFileManager
 from config import Config
 from memory.store import MemoryStore
 from utils import get_log_file_path, terminal_ui
@@ -40,6 +41,9 @@ class InteractiveSession:
                 "stats",
                 "history",
                 "dump-memory",
+                "plan",
+                "plans",
+                "recover",
                 "theme",
                 "verbose",
                 "compact",
@@ -93,6 +97,15 @@ class InteractiveSession:
         )
         terminal_ui.console.print(
             f"  [{colors.primary}]/dump-memory <id>[/{colors.primary}] - Export a session's memory to a JSON file"
+        )
+        terminal_ui.console.print(
+            f"  [{colors.primary}]/plan[/{colors.primary}]             - Show current plan status"
+        )
+        terminal_ui.console.print(
+            f"  [{colors.primary}]/plans[/{colors.primary}]            - List all saved plans"
+        )
+        terminal_ui.console.print(
+            f"  [{colors.primary}]/recover <id>[/{colors.primary}]     - Recover a plan from a previous session"
         )
         terminal_ui.console.print(
             f"  [{colors.primary}]/theme[/{colors.primary}]            - Toggle between dark and light theme"
@@ -264,6 +277,135 @@ class InteractiveSession:
         status = "enabled" if self.compact_mode else "disabled"
         terminal_ui.print_info(f"Compact mode {status}")
 
+    def _show_plan(self) -> None:
+        """Display current plan status."""
+        colors = Theme.get_colors()
+
+        if not hasattr(self.agent, "plan_manager") or self.agent.plan_manager is None:
+            terminal_ui.console.print(
+                f"\n[{colors.warning}]No plan manager initialized.[/{colors.warning}]"
+            )
+            terminal_ui.console.print(
+                f"[{colors.text_muted}]Create a plan using the manage_plan_file tool.[/{colors.text_muted}]\n"
+            )
+            return
+
+        plan_manager = self.agent.plan_manager
+        plan = plan_manager.get_current_plan()
+
+        if not plan:
+            terminal_ui.console.print(f"\n[{colors.warning}]No active plan.[/{colors.warning}]")
+            terminal_ui.console.print(
+                f"[{colors.text_muted}]Create a plan using the manage_plan_file tool.[/{colors.text_muted}]\n"
+            )
+            return
+
+        terminal_ui.console.print(f"\n[bold {colors.primary}]Current Plan:[/bold {colors.primary}]")
+        terminal_ui.console.print(f"  Task: {plan.task}")
+        terminal_ui.console.print(f"  Status: {plan.status.value}")
+        terminal_ui.console.print(f"  Progress: {plan.progress_summary}")
+        terminal_ui.console.print(f"\n[bold {colors.secondary}]Phases:[/bold {colors.secondary}]")
+
+        for i, phase in enumerate(plan.phases):
+            status_icon = {
+                "pending": "-",
+                "in_progress": ">",
+                "completed": "x",
+                "failed": "!",
+            }.get(phase.status.value, "?")
+            progress = f"({phase.completed_count}/{phase.total_count})" if phase.items else ""
+            terminal_ui.console.print(f"  [{status_icon}] {i + 1}. {phase.name} {progress}")
+
+            for item in phase.items:
+                checkbox = "[x]" if item.status.value == "completed" else "[ ]"
+                terminal_ui.console.print(f"      {checkbox} {item.content}")
+
+        terminal_ui.console.print()
+
+    async def _show_plans(self) -> None:
+        """Display all saved plans."""
+        try:
+            plans = await PlanFileManager.list_available_plans()
+
+            if not plans:
+                colors = Theme.get_colors()
+                terminal_ui.console.print(
+                    f"\n[{colors.warning}]No saved plans found.[/{colors.warning}]"
+                )
+                terminal_ui.console.print(
+                    f"[{colors.text_muted}]Create a plan using the manage_plan_file tool.[/{colors.text_muted}]\n"
+                )
+                return
+
+            colors = Theme.get_colors()
+            terminal_ui.console.print(
+                f"\n[bold {colors.primary}]Saved Plans:[/bold {colors.primary}]\n"
+            )
+
+            table = Table(show_header=True, header_style=f"bold {colors.primary}", box=None)
+            table.add_column("Session ID", style=colors.text_muted, width=38)
+            table.add_column("Task", width=30)
+            table.add_column("Status", width=12)
+            table.add_column("Progress", width=20)
+
+            for plan in plans:
+                session_id = plan["session_id"]
+                task = plan["task"][:27] + "..." if len(plan["task"]) > 30 else plan["task"]
+                status = plan["status"]
+                progress = plan["progress"]
+                table.add_row(session_id, task, status, progress)
+
+            terminal_ui.console.print(table)
+            terminal_ui.console.print()
+            terminal_ui.console.print(
+                f"[{colors.text_muted}]Tip: Use /recover <session_id> to recover a plan[/{colors.text_muted}]\n"
+            )
+
+        except Exception as e:
+            terminal_ui.print_error(str(e), title="Error loading plans")
+
+    async def _recover_plan(self, session_id: str) -> None:
+        """Recover a plan from a previous session.
+
+        Args:
+            session_id: Session ID to recover
+        """
+        colors = Theme.get_colors()
+
+        if not hasattr(self.agent, "plan_manager"):
+            terminal_ui.print_error("Agent does not support plan files")
+            return
+
+        try:
+            # Try to recover the plan
+            recovered = await PlanFileManager.recover_plan(session_id)
+            if recovered is None:
+                terminal_ui.print_error(f"No plan found for session: {session_id}")
+                return
+
+            # Update the agent's plan manager with the recovered plan
+            if self.agent.plan_manager is None:
+                self.agent._initialize_plan_manager(session_id)
+            else:
+                # Copy the plan to existing manager
+                self.agent.plan_manager._plan = recovered._plan
+                self.agent.plan_manager._progress_entries = recovered._progress_entries
+                self.agent.plan_manager.session_id = session_id
+
+            plan = recovered.get_current_plan()
+            terminal_ui.print_success(f"Plan recovered from session {session_id}")
+            if plan:
+                terminal_ui.console.print(
+                    f"[{colors.secondary}]Task:[/{colors.secondary}] {plan.task}"
+                )
+                terminal_ui.console.print(
+                    f"[{colors.secondary}]Progress:[/{colors.secondary}] {plan.progress_summary}"
+                )
+            terminal_ui.console.print()
+
+        except Exception as e:
+            terminal_ui.print_error(str(e), title="Error recovering plan")
+
     def _update_status_bar(self) -> None:
         """Update status bar with current stats."""
         stats = self.agent.memory.get_stats()
@@ -318,6 +460,22 @@ class InteractiveSession:
                 )
             else:
                 await self._dump_memory(command_parts[1])
+
+        elif command == "/plan":
+            self._show_plan()
+
+        elif command == "/plans":
+            await self._show_plans()
+
+        elif command == "/recover":
+            if len(command_parts) < 2:
+                terminal_ui.print_error("Please provide a session ID")
+                colors = Theme.get_colors()
+                terminal_ui.console.print(
+                    f"[{colors.text_muted}]Usage: /recover <session_id>[/{colors.text_muted}]\n"
+                )
+            else:
+                await self._recover_plan(command_parts[1])
 
         elif command == "/theme":
             self._toggle_theme()

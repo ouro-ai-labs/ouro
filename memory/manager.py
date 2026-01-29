@@ -73,6 +73,10 @@ class MemoryManager:
         # This allows injecting todo state into summaries without coupling to TodoList
         self._todo_context_provider: Optional[Callable[[], Optional[str]]] = None
 
+        # Optional callback to get current plan context for compression
+        # This allows injecting plan state into summaries without coupling to PlanFileManager
+        self._plan_context_provider: Optional[Callable[[], Optional[str]]] = None
+
     @classmethod
     async def from_session(
         cls,
@@ -240,6 +244,18 @@ class MemoryManager:
         """
         self._todo_context_provider = provider
 
+    def set_plan_context_provider(self, provider: Callable[[], Optional[str]]) -> None:
+        """Set a callback to provide current plan context for compression.
+
+        The provider should return a formatted string of current plan state,
+        or None if no plan exists. This context will be injected into
+        compression summaries to preserve plan state.
+
+        Args:
+            provider: Callable that returns current plan context string or None
+        """
+        self._plan_context_provider = provider
+
     async def compress(self, strategy: str = None) -> Optional[CompressedMemory]:
         """Compress current short-term memory.
 
@@ -271,12 +287,18 @@ class MemoryManager:
             if self._todo_context_provider:
                 todo_context = self._todo_context_provider()
 
+            # Get plan context if provider is set
+            plan_context = None
+            if self._plan_context_provider:
+                plan_context = self._plan_context_provider()
+
             # Perform compression
             compressed = await self.compressor.compress(
                 messages,
                 strategy=strategy,
                 target_tokens=self._calculate_target_tokens(),
                 todo_context=todo_context,
+                plan_context=plan_context,
             )
 
             # Track compression results

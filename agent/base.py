@@ -6,10 +6,12 @@ from typing import TYPE_CHECKING, List, Optional
 from llm import LLMMessage, LLMResponse, StopReason, ToolResult
 from memory import MemoryManager
 from tools.base import BaseTool
+from tools.plan_files import PlanFileTool
 from tools.todo import TodoTool
 from utils import get_logger, terminal_ui
 from utils.tui.progress import AsyncSpinner
 
+from .plan_files import PlanFileManager
 from .todo import TodoList
 from .tool_executor import ToolExecutor
 
@@ -41,11 +43,17 @@ class BaseAgent(ABC):
         # Initialize todo list system
         self.todo_list = TodoList()
 
+        # Initialize plan file manager (lazy initialization - session_id set later)
+        self.plan_manager: Optional[PlanFileManager] = None
+
         # Add todo tool to the tools list if enabled
         tools = [] if tools is None else list(tools)  # Make a copy to avoid modifying original
 
         todo_tool = TodoTool(self.todo_list)
         tools.append(todo_tool)
+
+        # Plan file tool will be added after plan_manager is initialized
+        self._tools_list = tools
 
         self.tool_executor = ToolExecutor(tools)
 
@@ -55,6 +63,9 @@ class BaseAgent(ABC):
         # Set up todo context provider for memory compression
         # This injects current todo state into summaries instead of preserving all todo messages
         self.memory.set_todo_context_provider(self._get_todo_context)
+
+        # Plan context provider will be set after plan_manager is initialized
+        self.memory.set_plan_context_provider(self._get_plan_context)
 
     @abstractmethod
     def run(self, task: str) -> str:
@@ -105,6 +116,32 @@ class BaseAgent(ABC):
         if not items:
             return None
         return self.todo_list.format_list()
+
+    def _get_plan_context(self) -> Optional[str]:
+        """Get current plan state for memory compression.
+
+        Returns formatted plan summary if a plan exists, None otherwise.
+        This is used by MemoryManager to inject plan state into summaries.
+        """
+        if not self.plan_manager:
+            return None
+        return self.plan_manager.get_plan_summary()
+
+    def _initialize_plan_manager(self, session_id: str) -> None:
+        """Initialize the plan file manager with a session ID.
+
+        This should be called after the memory manager creates a session.
+
+        Args:
+            session_id: The session ID to use for plan files
+        """
+        if self.plan_manager is None:
+            self.plan_manager = PlanFileManager(session_id)
+            # Add plan file tool to the executor
+            plan_tool = PlanFileTool(self.plan_manager)
+            self._tools_list.append(plan_tool)
+            self.tool_executor = ToolExecutor(self._tools_list)
+            logger.debug(f"Initialized plan manager for session {session_id}")
 
     async def _react_loop(
         self,
