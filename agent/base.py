@@ -59,6 +59,16 @@ class BaseAgent(ABC):
         # This injects current todo state into summaries instead of preserving all todo messages
         self.memory.set_todo_context_provider(self._get_todo_context)
 
+    def _set_llm_adapter(self, llm: "LiteLLMAdapter") -> None:
+        self.llm = llm
+
+        # Keep memory/compressor in sync with the active LLM.
+        # Otherwise stats/compression might continue using the previous model.
+        if hasattr(self, "memory") and self.memory:
+            self.memory.llm = llm
+            if hasattr(self.memory, "compressor") and self.memory.compressor:
+                self.memory.compressor.llm = llm
+
     @abstractmethod
     def run(self, task: str) -> str:
         """Execute the agent on a task and return final answer."""
@@ -262,15 +272,16 @@ class BaseAgent(ABC):
         # Reinitialize LLM adapter with new model
         from llm import LiteLLMAdapter
 
-        self.llm = LiteLLMAdapter(
+        new_llm = LiteLLMAdapter(
             model=new_profile.model_id,
             api_key=new_profile.api_key,
             api_base=new_profile.api_base,
             timeout=new_profile.timeout,
             drop_params=new_profile.drop_params,
         )
+        self._set_llm_adapter(new_llm)
 
-        logger.info(f"Switched to model: {new_profile.display_name} ({new_profile.model_id})")
+        logger.info(f"Switched to model: {new_profile.model_id}")
         return True
 
     def get_current_model_info(self) -> Optional[dict]:
@@ -284,7 +295,7 @@ class BaseAgent(ABC):
             if not profile:
                 return None
             return {
-                "name": profile.display_name,
+                "name": profile.model_id,
                 "model_id": profile.model_id,
                 "provider": profile.provider,
             }

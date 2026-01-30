@@ -19,7 +19,6 @@ DEFAULT_CONFIG_TEMPLATE = """# Model Configuration
 # Fill in `api_key` directly in this file.
 #
 # Supported fields:
-#   - name: Display label (optional; defaults to model_id)
 #   - api_key: API key (required for most hosted providers)
 #   - api_base: Custom base URL (optional)
 #   - timeout: Request timeout in seconds (default: 600)
@@ -69,7 +68,6 @@ class ModelProfile:
     """Configuration for a single model."""
 
     model_id: str  # LiteLLM model ID (e.g. "openai/gpt-4o")
-    name: str = ""
     api_key: str | None = None
     api_base: str | None = None
     timeout: int = 600
@@ -82,12 +80,10 @@ class ModelProfile:
 
     @property
     def display_name(self) -> str:
-        return self.name or self.model_id
+        return self.model_id
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {"timeout": self.timeout, "drop_params": self.drop_params}
-        if self.name:
-            result["name"] = self.name
         if self.api_key:
             result["api_key"] = self.api_key
         if self.api_base is not None:
@@ -158,7 +154,6 @@ class ModelManager:
                 logger.warning(f"Invalid model config for '{model_id}', skipping")
                 continue
 
-            name = data.get("name") or ""
             api_key = data.get("api_key")
             api_base = data.get("api_base")
             timeout = _coerce_int(data.get("timeout"), default=600)
@@ -171,7 +166,6 @@ class ModelManager:
 
             self.models[model_id] = ModelProfile(
                 model_id=model_id,
-                name=str(name),
                 api_key=None if api_key is None else str(api_key),
                 api_base=None if api_base is None else str(api_base),
                 timeout=timeout,
@@ -237,7 +231,6 @@ class ModelManager:
     def add_model(
         self,
         model_id: str,
-        name: str = "",
         api_key: str | None = None,
         api_base: str | None = None,
         timeout: int = 600,
@@ -246,9 +239,9 @@ class ModelManager:
     ) -> bool:
         if not model_id or model_id in self.models:
             return False
+        extra.pop("name", None)
         self.models[model_id] = ModelProfile(
             model_id=model_id,
-            name=name,
             api_key=api_key,
             api_base=api_base,
             timeout=timeout,
@@ -268,8 +261,9 @@ class ModelManager:
 
         for key, value in updates.items():
             if key == "name":
-                profile.name = str(value)
-            elif key == "api_key":
+                # YAML doesn't support `name` anymore; ignore if present.
+                continue
+            if key == "api_key":
                 profile.api_key = None if value is None else str(value)
             elif key == "api_base":
                 profile.api_base = None if value is None else str(value)

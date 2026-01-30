@@ -1,21 +1,12 @@
 """Interactive multi-turn conversation mode for the agent."""
 
-import asyncio
 import json
-import os
 import shlex
-import shutil
-import sys
 from datetime import datetime
 from pathlib import Path
 
 import aiofiles
 import aiofiles.os
-from prompt_toolkit.application import Application
-from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.layout import HSplit, Layout, Window
-from prompt_toolkit.layout.controls import FormattedTextControl
-from prompt_toolkit.styles import Style
 from rich.table import Table
 
 from config import Config
@@ -24,162 +15,9 @@ from memory.store import MemoryStore
 from utils import get_log_file_path, terminal_ui
 from utils.runtime import get_exports_dir, get_history_file
 from utils.tui.input_handler import InputHandler
+from utils.tui.model_ui import open_config_and_wait_for_save, pick_model_id
 from utils.tui.status_bar import StatusBar
 from utils.tui.theme import Theme, set_theme
-
-
-async def _open_in_editor(path: str) -> tuple[bool, bool]:
-    """Open a file in an editor (best-effort).
-
-    Returns:
-        (opened, waited): waited indicates we blocked until editing likely finished.
-    """
-    path = str(Path(path))
-
-    editor = os.environ.get("EDITOR") or os.environ.get("VISUAL")
-    if editor:
-        cmd = shlex.split(editor) + [path]
-        try:
-            proc = await asyncio.create_subprocess_exec(*cmd)
-        except FileNotFoundError:
-            return False, False
-        return (await proc.wait()) == 0, True
-
-    if shutil.which("code"):
-        # Don't use `-w` here; we prefer to return to the TUI after the file is saved
-        # (and auto-reloaded), without requiring the user to close the editor tab.
-        proc = await asyncio.create_subprocess_exec("code", "--reuse-window", path)
-        return (await proc.wait()) == 0, False
-
-    if sys.platform == "darwin" and shutil.which("open"):
-        # `open` returns immediately; we can't reliably wait for editing completion.
-        proc = await asyncio.create_subprocess_exec("open", "-t", path)
-        return (await proc.wait()) == 0, False
-
-    if shutil.which("xdg-open"):
-        # xdg-open returns immediately; we can't reliably wait for editing completion.
-        proc = await asyncio.create_subprocess_exec("xdg-open", path)
-        return (await proc.wait()) == 0, False
-
-    return False, False
-
-
-async def _get_mtime(path: str) -> float | None:
-    try:
-        return (await aiofiles.os.stat(path)).st_mtime
-    except FileNotFoundError:
-        return None
-
-
-async def _wait_for_file_change(path: str, old_mtime: float | None) -> None:
-    while True:
-        new_mtime = await _get_mtime(path)
-        if old_mtime is None:
-            if new_mtime is not None:
-                return
-        elif new_mtime is not None and new_mtime != old_mtime:
-            return
-        await asyncio.sleep(0.25)
-
-
-def _resolve_model_ref(model_manager: ModelManager, ref: str) -> str:
-    v = (ref or "").strip()
-    if v.startswith("#"):
-        v = v[1:].strip()
-    if v.isdigit():
-        idx = int(v)
-        ids = model_manager.get_model_ids()
-        if 1 <= idx <= len(ids):
-            return ids[idx - 1]
-    return ref
-
-
-def _format_model_label(profile) -> str:
-    name = (profile.name or "").strip()
-    if not name or name == profile.model_id:
-        return profile.model_id
-    return f"{name} - {profile.model_id}"
-
-
-async def _pick_model_id(model_manager: ModelManager, title: str) -> str | None:
-    models = model_manager.list_models()
-    if not models:
-        return None
-
-    colors = Theme.get_colors()
-    current = model_manager.get_current_model()
-    current_id = current.model_id if current else None
-
-    selected_index = 0
-    if current_id:
-        for i, m in enumerate(models):
-            if m.model_id == current_id:
-                selected_index = i
-                break
-
-    kb = KeyBindings()
-
-    @kb.add("up")
-    @kb.add("k")
-    def _up(event) -> None:
-        nonlocal selected_index
-        selected_index = (selected_index - 1) % len(models)
-
-    @kb.add("down")
-    @kb.add("j")
-    def _down(event) -> None:
-        nonlocal selected_index
-        selected_index = (selected_index + 1) % len(models)
-
-    @kb.add("enter")
-    def _enter(event) -> None:
-        event.app.exit(result=models[selected_index].model_id)
-
-    @kb.add("escape")
-    @kb.add("c-c")
-    def _cancel(event) -> None:
-        event.app.exit(result=None)
-
-    def _render():
-        lines: list[tuple[str, str]] = []
-
-        lines.append(("class:title", f"{title}\n"))
-        lines.append(("class:hint", "Use ↑/↓ and Enter to select, Esc to cancel.\n\n"))
-
-        for idx, m in enumerate(models, start=1):
-            is_selected = (idx - 1) == selected_index
-            is_current = m.model_id == current_id
-
-            prefix = "› " if is_selected else "  "
-            marker = "(current) " if is_current else ""
-            text = f"{prefix}{idx}. {marker}{_format_model_label(m)}\n"
-            style = "class:selected" if is_selected else "class:item"
-            lines.append((style, text))
-
-        return lines
-
-    control = FormattedTextControl(_render, focusable=True)
-    window = Window(content=control, dont_extend_height=True, always_hide_cursor=True)
-    layout = Layout(HSplit([window]))
-
-    style_dict = Theme.get_prompt_toolkit_style()
-    style_dict.update(
-        {
-            "title": f"{colors.primary} bold",
-            "hint": colors.text_muted,
-            "item": colors.text_primary,
-            "selected": f"bg:{colors.primary} {colors.bg_primary}",
-        }
-    )
-
-    app = Application(
-        layout=layout,
-        key_bindings=kb,
-        style=Style.from_dict(style_dict),
-        full_screen=False,
-        mouse_support=False,
-    )
-    return await app.run_async()
 
 
 class InteractiveSession:
@@ -552,11 +390,11 @@ class InteractiveSession:
             )
 
             terminal_ui.console.print(
-                f"  {marker} [{colors.text_muted}]{i:>2}[/] {_format_model_label(profile)}"
+                f"  {marker} [{colors.text_muted}]{i:>2}[/] {profile.model_id}"
             )
 
         terminal_ui.console.print(
-            f"\n[{colors.text_muted}]Tip: /model opens a picker. You can also switch with /model <number> or /model <model_id>[/]\n"
+            f"\n[{colors.text_muted}]Tip: run /model to pick; /model edit to change config.[/]\n"
         )
 
     def _switch_model(self, model_id: str) -> None:
@@ -587,9 +425,7 @@ class InteractiveSession:
         if self.agent.switch_model(model_id):
             new_profile = self.model_manager.get_current_model()
             if new_profile:
-                terminal_ui.print_success(
-                    f"Switched to model: {new_profile.display_name} ({new_profile.model_id})"
-                )
+                terminal_ui.print_success(f"Switched to model: {new_profile.model_id}")
                 self._update_status_bar()
             else:
                 terminal_ui.print_error("Failed to get current model after switch")
@@ -636,7 +472,7 @@ class InteractiveSession:
                     f"[{colors.text_muted}]Run /model edit to configure `.aloop/models.yaml`.[/{colors.text_muted}]\n"
                 )
                 return
-            picked = await _pick_model_id(self.model_manager, title="Select Model")
+            picked = await pick_model_id(self.model_manager, title="Select Model")
             if picked:
                 self._switch_model(picked)
                 return
@@ -652,35 +488,32 @@ class InteractiveSession:
                 )
                 return
 
-            if len(parts) == 2:
-                before = await _get_mtime(self.model_manager.config_path)
-                ok, waited = await _open_in_editor(self.model_manager.config_path)
-                if not ok:
-                    terminal_ui.print_error(
-                        f"Could not open editor. Please edit `{self.model_manager.config_path}` manually."
-                    )
-                    terminal_ui.console.print(
-                        f"[{colors.text_muted}]Tip: set EDITOR='code -w' (or similar) for /model edit.[/{colors.text_muted}]\n"
-                    )
-                    return
-                if not waited:
-                    terminal_ui.console.print(
-                        f"[{colors.text_muted}]Waiting for file save to reload (Ctrl+C to cancel)...[/]\n"
-                    )
-                    await _wait_for_file_change(self.model_manager.config_path, before)
-                self.model_manager.reload()
-                terminal_ui.print_success("Reloaded `.aloop/models.yaml`")
-                current_after = self.model_manager.get_current_model()
-                if not current_after:
-                    terminal_ui.print_error(
-                        "No models configured after reload. Edit `.aloop/models.yaml` and set `default`."
-                    )
-                    return
-
-                # Reinitialize LLM adapter to pick up updated api_key/api_base/timeout/drop_params.
-                self.agent.switch_model(current_after.model_id)
-                terminal_ui.print_info(f"Reload applied (current: {current_after.model_id}).")
+            terminal_ui.console.print(
+                f"[{colors.text_muted}]Save the file to auto-reload (Ctrl+C to cancel)...[/]\n"
+            )
+            ok = await open_config_and_wait_for_save(self.model_manager.config_path)
+            if not ok:
+                terminal_ui.print_error(
+                    f"Could not open editor. Please edit `{self.model_manager.config_path}` manually."
+                )
+                terminal_ui.console.print(
+                    f"[{colors.text_muted}]Tip: set EDITOR='code' (or similar) for /model edit.[/{colors.text_muted}]\n"
+                )
                 return
+
+            self.model_manager.reload()
+            terminal_ui.print_success("Reloaded `.aloop/models.yaml`")
+            current_after = self.model_manager.get_current_model()
+            if not current_after:
+                terminal_ui.print_error(
+                    "No models configured after reload. Edit `.aloop/models.yaml` and set `default`."
+                )
+                return
+
+            # Reinitialize LLM adapter to pick up updated api_key/api_base/timeout/drop_params.
+            self.agent.switch_model(current_after.model_id)
+            terminal_ui.print_info(f"Reload applied (current: {current_after.model_id}).")
+            return
         terminal_ui.print_error("Unknown /model command.")
         terminal_ui.console.print(
             f"[{colors.text_muted}]Use /model to pick, or /model edit to configure.[/{colors.text_muted}]\n"
@@ -833,7 +666,7 @@ class ModelSetupSession:
         if not models:
             terminal_ui.print_error("No models configured yet.")
             terminal_ui.console.print(
-                f"[{colors.text_muted}]Use /model edit (recommended) or /model add ...[/{colors.text_muted}]\n"
+                f"[{colors.text_muted}]Use /model edit to configure `.aloop/models.yaml`.[/{colors.text_muted}]\n"
             )
             return
 
@@ -848,13 +681,11 @@ class ModelSetupSession:
                 if markers
                 else f"[{colors.text_muted}]      [/{colors.text_muted}]"
             )
-            terminal_ui.console.print(
-                f"  {marker} [{colors.text_muted}]{i:>2}[/] {_format_model_label(model)}"
-            )
+            terminal_ui.console.print(f"  {marker} [{colors.text_muted}]{i:>2}[/] {model.model_id}")
 
         terminal_ui.console.print()
         terminal_ui.console.print(
-            f"[{colors.text_muted}]Tip: /model opens a picker; use /model edit to configure models.[/]\n"
+            f"[{colors.text_muted}]Tip: run /model to pick; /model edit to change config.[/]\n"
         )
 
     def _parse_kv_args(self, tokens: list[str]) -> tuple[dict[str, str], list[str]]:
@@ -892,7 +723,7 @@ class ModelSetupSession:
                     f"[{colors.text_muted}]Run /model edit to configure `.aloop/models.yaml`.[/{colors.text_muted}]\n"
                 )
                 return
-            picked = await _pick_model_id(self.model_manager, title="Select Model")
+            picked = await pick_model_id(self.model_manager, title="Select Model")
             if picked:
                 self.model_manager.switch_model(picked)
                 terminal_ui.print_success(f"Selected model: {picked}")
@@ -909,26 +740,22 @@ class ModelSetupSession:
                 )
                 return
 
-            if len(parts) == 2:
-                before = await _get_mtime(self.model_manager.config_path)
-                ok, waited = await _open_in_editor(self.model_manager.config_path)
-                if not ok:
-                    terminal_ui.print_error(
-                        f"Could not open editor. Please edit `{self.model_manager.config_path}` manually."
-                    )
-                    terminal_ui.console.print(
-                        f"[{colors.text_muted}]Tip: set EDITOR='code -w' (or similar) for /model edit.[/{colors.text_muted}]\n"
-                    )
-                    return
-                if not waited:
-                    terminal_ui.console.print(
-                        f"[{colors.text_muted}]Waiting for file save to reload (Ctrl+C to cancel)...[/]\n"
-                    )
-                    await _wait_for_file_change(self.model_manager.config_path, before)
-                self.model_manager.reload()
-                terminal_ui.print_success("Reloaded `.aloop/models.yaml`")
-                self._show_models()
+            terminal_ui.console.print(
+                f"[{colors.text_muted}]Save the file to auto-reload (Ctrl+C to cancel)...[/]\n"
+            )
+            ok = await open_config_and_wait_for_save(self.model_manager.config_path)
+            if not ok:
+                terminal_ui.print_error(
+                    f"Could not open editor. Please edit `{self.model_manager.config_path}` manually."
+                )
+                terminal_ui.console.print(
+                    f"[{colors.text_muted}]Tip: set EDITOR='code' (or similar) for /model edit.[/{colors.text_muted}]\n"
+                )
                 return
+            self.model_manager.reload()
+            terminal_ui.print_success("Reloaded `.aloop/models.yaml`")
+            self._show_models()
+            return
         terminal_ui.print_error("Unknown /model command.")
         terminal_ui.console.print(
             f"[{colors.text_muted}]Use /model to pick, or /model edit to configure.[/{colors.text_muted}]\n"
@@ -971,7 +798,7 @@ class ModelSetupSession:
                 current = self.model_manager.get_current_model()
                 if not current:
                     terminal_ui.print_error(
-                        "No models configured. Use /model edit (recommended) or /model add ..."
+                        "No models configured. Use /model edit to configure `.aloop/models.yaml`."
                     )
                     continue
 

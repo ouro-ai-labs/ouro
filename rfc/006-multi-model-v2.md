@@ -2,302 +2,115 @@
 
 ## Problem Statement
 
-Currently, the AgenticLoop system effectively supports only a single active model configuration. Users cannot:
-- Configure multiple models
-- Switch between models at runtime
-- Easily test different models without editing config files
-- Add/remove models dynamically
-
-This limitation makes it difficult to:
-- Compare model performance
-- Use different models for different tasks
-- Quickly switch between models during development
-- Manage model configurations in a structured way
+AgenticLoop historically behaves like a single-model app. Users need to:
+- Configure multiple models (different providers / endpoints / keys)
+- Switch the active model in interactive mode
+- Keep secrets out of git by default
 
 ## Design Goals
 
-1. **Multiple Models**: Support configuring multiple models
-2. **Runtime Switching**: Allow switching between models via `/model` command in interactive mode
-3. **Runtime Editing**: Support adding, editing, and removing models at runtime with persistence
-4. **Structured Config**: Use YAML for clean, structured configuration
-5. **Config Protection**: YAML config should not be committed to git (contains API keys)
-6. **No Backward Compatibility**: Clean slate design without legacy support
+1. **Multiple Models**: Configure multiple LiteLLM model IDs.
+2. **Runtime Switching**: Switch models in interactive mode with a simple UX.
+3. **YAML-First**: Depend on `.aloop/models.yaml` only (no env/legacy config).
+4. **Minimal Commands**: Avoid a large `/model` subcommand surface.
+5. **Secret Safety**: Config is gitignored and file-permission hardened where possible.
+6. **No Backward Compatibility**: Clean slate; users migrate manually.
 
 ## Proposed Solution
 
 ### 1. Configuration Format (YAML)
 
-New file: `.aloop/models.yaml`
+File: `.aloop/models.yaml` (gitignored)
 
 ```yaml
 # Model Configuration
 # This file is gitignored - do not commit to version control
 #
 # The key under `models` is the LiteLLM model ID: provider/model-name
-# The `name` field is optional (purely for display).
 
 models:
   anthropic/claude-3-5-sonnet-20241022:
-    name: Claude 3.5 Sonnet
     api_key: sk-ant-...
     timeout: 600
     drop_params: true
 
   openai/gpt-4o:
-    name: GPT-4o
     api_key: sk-...
     timeout: 300
 
-  gemini/gemini-1.5-pro:
-    name: Gemini Pro
-    api_key: ...
-
-  # Local model example
+  # Local model example (no API key needed)
   ollama/llama2:
-    name: Local Llama
     api_base: http://localhost:11434
 
 default: anthropic/claude-3-5-sonnet-20241022
 ```
 
-### 2. Model Manager Class
+Fields per model:
+- `api_key` (required for most hosted providers)
+- `api_base` (optional; custom endpoint/proxy)
+- `timeout` (optional; seconds; default 600)
+- `drop_params` (optional; default true)
 
-Create a new `llm/model_manager.py`:
+### 2. Model Manager
 
-```python
-from dataclasses import dataclass
-from typing import Dict, List, Optional
-import yaml
-import os
+`ModelManager` loads/saves `.aloop/models.yaml` and tracks:
+- `models: dict[model_id, profile]`
+- `default_model_id`
+- `current_model_id`
 
-@dataclass
-class ModelProfile:
-    """Configuration for a single model."""
-    model_id: str              # LiteLLM model ID (provider/model)
-    name: str                  # Optional display name
-    api_key: Optional[str]
-    api_base: Optional[str]
-    timeout: int = 600
-    drop_params: bool = True
+Behavior:
+- Create a template file on first run.
+- Atomic writes to prevent corruption.
+- Attempt to set file mode to `0600` (best-effort).
+- Ignore deprecated fields like `name` if present (and do not write them back).
 
-class ModelManager:
-    """Manages multiple models with YAML persistence."""
+### 3. Interactive Mode UX
 
-    CONFIG_PATH = ".aloop/models.yaml"
-
-    def __init__(self):
-        self.models: Dict[str, ModelProfile] = {}  # key = model_id
-        self.default_model_id: Optional[str] = None
-        self.current_model_id: Optional[str] = None
-        self._load()
-
-    def _load(self) -> None:
-        """Load models from YAML config."""
-        if not os.path.exists(self.CONFIG_PATH):
-            self._create_default_config()
-
-        with open(self.CONFIG_PATH, 'r') as f:
-            config = yaml.safe_load(f)
-
-        for model_id, data in config.get('models', {}).items():
-            self.models[model_id] = ModelProfile(
-                model_id=model_id,
-                name=data.get('name', ''),
-                api_key=data.get('api_key'),
-                api_base=data.get('api_base'),
-                timeout=data.get('timeout', 600),
-                drop_params=data.get('drop_params', True),
-            )
-
-        self.default_model_id = config.get('default')
-        if self.default_model_id in self.models:
-            self.current_model_id = self.default_model_id
-        elif self.models:
-            self.default_model_id = next(iter(self.models.keys()))
-            self.current_model_id = self.default_model_id
-
-    def _save(self) -> None:
-        """Save models to YAML config."""
-        config = {
-            'models': {},
-            'default': self.default_model_id
-        }
-
-        for model_id, profile in self.models.items():
-            config['models'][model_id] = {
-                'name': profile.name,
-                'api_key': profile.api_key,
-                'api_base': profile.api_base,
-                'timeout': profile.timeout,
-                'drop_params': profile.drop_params,
-            }
-
-        with open(self.CONFIG_PATH, 'w') as f:
-            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-```
-
-### 3. Interactive Mode Commands
-
-Enhanced `/model` command in `interactive.py`:
+Keep only two commands:
 
 ```
-/model                          - List all available models
-/model <model_id>               - Switch to the specified model
-/model add <model_id> <field=value>...     - Add a new model (e.g. name=... api_key=...)
-/model edit <model_id> <field=value>...    - Edit model (e.g. /model edit openai/gpt-4o timeout=300)
-/model remove <model_id>        - Remove a model (not current)
-/model default <model_id>       - Set default model
-/model show <model_id>          - Show model details
-/model reload                   - Reload models.yaml from disk
+/model       - Open a TUI picker (↑/↓ + Enter; Esc cancels)
+/model edit  - Open `.aloop/models.yaml` and auto-reload after save
 ```
 
-Example output for `/model`:
-```
-Available Models:
-  [CURRENT] [DEFAULT] Claude 3.5 Sonnet - anthropic/claude-3-5-sonnet-20241022
-            GPT-4o - openai/gpt-4o
-            Local Llama - ollama/llama2
+When no models are configured, `/model` should show an actionable reminder:
+“No models configured yet. Run `/model edit` to configure `.aloop/models.yaml`.”
 
-Use /model <model_id> to switch, /model add to add new
-```
+### 4. CLI Flag
 
-### 4. Git Protection
-
-Update `.gitignore`:
-```gitignore
-# Model configuration (contains API keys)
-.aloop/models.yaml
-```
-
-### 5. Default Config Creation
-
-When `models.yaml` doesn't exist, create a template:
-
-```python
-def _create_default_config(self) -> None:
-    """Create default models.yaml template."""
-    template = """# Model Configuration
-# This file is gitignored - do not commit to version control
-#
-# Supported fields:
-#   - name: Display name
-#   - api_key: API key
-#   - api_base: Custom base URL (optional)
-#   - timeout: Request timeout in seconds (default: 600)
-#   - drop_params: Drop unsupported params (default: true)
-
-models:
-  anthropic/claude-3-5-sonnet-20241022:
-    name: Claude 3.5 Sonnet
-    api_key: sk-ant-...
-    timeout: 600
-    drop_params: true
-
-default: anthropic/claude-3-5-sonnet-20241022
-"""
-    os.makedirs(os.path.dirname(self.CONFIG_PATH), exist_ok=True)
-    with open(self.CONFIG_PATH, 'w') as f:
-        f.write(template)
-```
-
-### 6. Agent Integration
-
-Modify `agent/base.py`:
-
-```python
-class BaseAgent:
-    def __init__(self, llm, tools, model_manager: ModelManager, ...):
-        self.llm = llm
-        self.model_manager = model_manager
-
-    def switch_model(self, model_id: str) -> bool:
-        """Switch to a different model."""
-        profile = self.model_manager.switch_model(model_id)
-        if profile:
-            # Reinitialize LLM adapter
-            self.llm = LiteLLMAdapter(
-                model=profile.model_id,
-                api_key=profile.api_key,
-                api_base=profile.api_base,
-                timeout=profile.timeout,
-                drop_params=profile.drop_params,
-            )
-            return True
-        return False
-```
-
-### 7. CLI Flag
-
-Support `--model` flag in `main.py`:
+Support selecting a configured model at startup:
 
 ```bash
 python main.py --task "Hello" --model openai/gpt-4o
+python main.py --model openai/gpt-4o
 ```
 
-## Implementation Plan
+### 5. Git Protection
 
-### Phase 1: Core Infrastructure
-1. Create `llm/model_manager.py` with YAML support
-2. Update `.gitignore` to protect `models.yaml`
-3. Add tests for ModelManager
-
-### Phase 2: Interactive Mode
-1. Add `/model` command with all subcommands
-2. Update status bar to show current model
-3. Add model switching logic
-
-### Phase 3: Agent Integration
-1. Update `agent/base.py` to use ModelManager
-2. Update `main.py` to load models from YAML
-3. Add `--model` CLI flag
-
-### Phase 4: Documentation
-1. Update `docs/configuration.md` with YAML format
-2. Update `README.md` with new commands
-3. Add examples
+`.aloop/models.yaml` must be in `.gitignore` by default.
 
 ## Key Design Decisions
 
-### 1. YAML vs Other Formats
-- **YAML**: Human-readable, supports comments, standard for config
-- **JSON**: No comments, less readable
-- **TOML**: Good alternative, but YAML more common in Python ecosystem
+### 1. No `name` Field
 
-### 2. No Environment Variable Substitution
-- Store API keys directly in `.aloop/models.yaml`
-- Rely on gitignore + file permissions to protect secrets
-- On missing/empty config, create a template and guide the user to edit it
+The YAML schema does not include `name`. The canonical identifier is the LiteLLM `model_id`.
 
-### 3. No Backward Compatibility
-- Clean break from legacy model configuration via `.aloop/config`
-- Simpler code without compatibility layers
-- Users migrate manually (one-time cost)
+If an old YAML contains `name`, it is ignored (so existing local configs don’t crash) and removed on the next save.
 
-### 4. Persistence Strategy
-- All changes immediately saved to YAML
-- No separate "save" command needed
-- Atomic writes to prevent corruption
+### 2. “Edit the YAML” Instead of “Command API”
 
-### 5. Identifier Choice
-- Use the LiteLLM model ID (`provider/model`) as the identifier in config and commands
-- `name` is optional and display-only
+Most model operations (add/remove/default) are config edits. Keeping them in one place:
+- reduces duplication and parsing logic
+- keeps the CLI surface small
+- makes the workflow transparent
 
-## Open Questions
+### 3. No ENV/Legacy Compatibility
 
-1. **Validation**: Should we validate API keys on add/edit?
-   - **Decision**: Validate format, but not by making API calls (too slow)
-
-2. **Encryption**: Should API keys be encrypted at rest?
-   - **Decision**: No, rely on gitignore and file permissions for now
-
-3. **Import/Export**: Should we support importing/exporting configs?
-   - **Decision**: Future enhancement, not in v1
+The system does not attempt to read `LITELLM_*` or previous model config formats.
 
 ## Success Criteria
 
 - Users can configure multiple models in `.aloop/models.yaml`
-- `/model` command lists, switches, adds, edits, removes models
-- Changes are persisted to YAML immediately
-- Status bar shows current model
-- YAML config is gitignored
-- Clean, intuitive YAML structure
+- Interactive mode can switch models via a picker
+- Editing YAML reloads without restarting the app
+- Secrets are gitignored by default and file permissions are tightened where possible
