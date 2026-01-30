@@ -214,8 +214,8 @@ async def test_ralph_loop_injects_feedback_into_messages(mock_agent):
 
 
 @pytest.mark.asyncio
-async def test_config_toggle_dispatches_correctly():
-    """Config.RALPH_LOOP_ENABLED controls which loop is used in ReActAgent.run()."""
+async def test_run_dispatches_to_ralph_loop():
+    """ReActAgent.run() always uses _ralph_loop."""
     from agent.agent import ReActAgent
 
     agent = object.__new__(ReActAgent)
@@ -228,27 +228,13 @@ async def test_config_toggle_dispatches_correctly():
     agent.tool_executor = MagicMock()
     agent.tool_executor.get_tool_schemas = MagicMock(return_value=[])
 
-    agent._react_loop = AsyncMock(return_value="react result")
     agent._ralph_loop = AsyncMock(return_value="ralph result")
     agent._print_memory_stats = MagicMock()
 
-    # Disabled → uses _react_loop
     with patch("agent.agent.Config") as mock_config:
-        mock_config.RALPH_LOOP_ENABLED = False
-        result = await agent.run("test task")
-    assert result == "react result"
-    agent._react_loop.assert_awaited_once()
-    agent._ralph_loop.assert_not_awaited()
-
-    # Reset
-    agent._react_loop.reset_mock()
-    agent._ralph_loop.reset_mock()
-
-    # Enabled → uses _ralph_loop
-    with patch("agent.agent.Config") as mock_config:
-        mock_config.RALPH_LOOP_ENABLED = True
         mock_config.RALPH_LOOP_MAX_ITERATIONS = 3
         result = await agent.run("test task")
+
     assert result == "ralph result"
     agent._ralph_loop.assert_awaited_once()
 

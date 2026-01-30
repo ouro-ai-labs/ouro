@@ -147,24 +147,15 @@ When to use each approach:
 
         tools = self.tool_executor.get_tool_schemas()
 
-        # Use ralph loop (outer verification) if enabled, otherwise plain ReAct
-        if Config.RALPH_LOOP_ENABLED:
-            result = await self._ralph_loop(
-                messages=[],  # Not used when use_memory=True
-                tools=tools,
-                use_memory=True,
-                save_to_memory=True,
-                task=task,
-                max_iterations=Config.RALPH_LOOP_MAX_ITERATIONS,
-            )
-        else:
-            result = await self._react_loop(
-                messages=[],  # Not used when use_memory=True
-                tools=tools,
-                use_memory=True,
-                save_to_memory=True,
-                task=task,
-            )
+        # Use ralph loop (outer verification wrapping the inner ReAct loop)
+        result = await self._ralph_loop(
+            messages=[],  # Not used when use_memory=True
+            tools=tools,
+            use_memory=True,
+            save_to_memory=True,
+            task=task,
+            max_iterations=Config.RALPH_LOOP_MAX_ITERATIONS,
+        )
 
         self._print_memory_stats()
 

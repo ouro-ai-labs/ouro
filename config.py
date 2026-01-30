@@ -19,7 +19,6 @@ TOOL_TIMEOUT=600
 MAX_ITERATIONS=1000
 
 # Ralph Loop (outer verification loop — re-checks task completion)
-# RALPH_LOOP_ENABLED=false
 # RALPH_LOOP_MAX_ITERATIONS=3
 """
 
@@ -80,7 +79,6 @@ class Config:
     MAX_ITERATIONS = int(_cfg.get("MAX_ITERATIONS", "1000"))
 
     # Ralph Loop (outer verification loop)
-    RALPH_LOOP_ENABLED = _cfg.get("RALPH_LOOP_ENABLED", "false").lower() == "true"
     RALPH_LOOP_MAX_ITERATIONS = int(_cfg.get("RALPH_LOOP_MAX_ITERATIONS", "3"))
 
     # Retry Configuration
