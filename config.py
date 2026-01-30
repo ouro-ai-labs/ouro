@@ -114,6 +114,10 @@ class Config:
     TUI_STATUS_BAR = _cfg.get("TUI_STATUS_BAR", "true").lower() == "true"
     TUI_COMPACT_MODE = _cfg.get("TUI_COMPACT_MODE", "false").lower() == "true"
 
+    # Email Notification Configuration (Resend)
+    RESEND_API_KEY = _cfg.get("RESEND_API_KEY") or ""
+    NOTIFY_EMAIL_FROM = _cfg.get("NOTIFY_EMAIL_FROM") or ""
+
     @classmethod
     def get_retry_delay(cls, attempt: int) -> float:
         """Calculate delay for a given retry attempt using exponential backoff.

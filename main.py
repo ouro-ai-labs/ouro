@@ -13,10 +13,12 @@ from tools.calculator import CalculatorTool
 from tools.code_navigator import CodeNavigatorTool
 from tools.explore import ExploreTool
 from tools.file_ops import FileReadTool, FileSearchTool, FileWriteTool
+from tools.notify import NotifyTool
 from tools.parallel_execute import ParallelExecutionTool
 from tools.shell import ShellTool
 from tools.shell_background import BackgroundTaskManager, ShellTaskStatusTool
 from tools.smart_edit import SmartEditTool
+from tools.timer import TimerTool
 from tools.web_fetch import WebFetchTool
 from tools.web_search import WebSearchTool
 from utils import get_log_file_path, setup_logger, terminal_ui
@@ -49,6 +51,8 @@ def create_agent():
         CodeNavigatorTool(),
         ShellTool(task_manager=task_manager),
         ShellTaskStatusTool(task_manager=task_manager),
+        TimerTool(),
+        NotifyTool(),
     ]
 
     # Create LLM instance with LiteLLM (retry config is read from Config directly)

@@ -82,6 +82,15 @@ MEMORY_SHORT_TERM_SIZE=100
 MEMORY_COMPRESSION_RATIO=0.3
 ```
 
+## Email Notification Configuration (Resend)
+
+Used by the `notify` tool to send emails via [Resend](https://resend.com):
+
+```bash
+RESEND_API_KEY=re_xxxxxxxx
+NOTIFY_EMAIL_FROM=AgenticLoop <onboarding@resend.dev>
+```
+
 ## Retry Configuration
 
 ```bash
