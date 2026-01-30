@@ -19,7 +19,7 @@ DEFAULT_CONFIG_TEMPLATE = """# Model Configuration
 # Fill in `api_key` directly in this file.
 #
 # Supported fields:
-#   - name: Display name (optional)
+#   - name: Display label (optional; defaults to model_id)
 #   - api_key: API key (required for most hosted providers)
 #   - api_base: Custom base URL (optional)
 #   - timeout: Request timeout in seconds (default: 600)
@@ -27,14 +27,11 @@ DEFAULT_CONFIG_TEMPLATE = """# Model Configuration
 
 models:
   # openai/gpt-4o:
-  #   name: GPT-4o
   #   api_key: sk-...
   #   timeout: 300
   # anthropic/claude-3-5-sonnet-20241022:
-  #   name: Claude 3.5 Sonnet
   #   api_key: sk-ant-...
   # ollama/llama2:
-  #   name: Local Llama
   #   api_base: http://localhost:11434
 default: null
 """

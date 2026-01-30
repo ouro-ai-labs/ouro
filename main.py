@@ -63,8 +63,8 @@ def create_agent(model_id: str | None = None):
 
     if not model_manager.is_configured():
         raise ValueError(
-            "No models configured. Edit `.aloop/models.yaml` to add at least one model "
-            "and set `default`."
+            "No models configured. Run `aloop` without --task and use /model edit, "
+            "or edit `.aloop/models.yaml` to add at least one model and set `default`."
         )
 
     # Get the model to use
@@ -155,7 +155,8 @@ def main():
         if args.task:
             terminal_ui.print_error(str(e), title="Model Configuration Error")
             terminal_ui.console.print(
-                "Edit `.aloop/models.yaml` to add models and set `default` (this file is gitignored)."
+                "Edit `.aloop/models.yaml` to add models and set `default` (this file is gitignored). "
+                "Tip: run `aloop` (interactive) and use /model edit."
             )
             return
 
