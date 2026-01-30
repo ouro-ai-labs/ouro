@@ -12,6 +12,7 @@ from utils.tui.progress import AsyncSpinner
 
 from .todo import TodoList
 from .tool_executor import ToolExecutor
+from .verification import LLMVerifier, VerificationResult, Verifier
 
 if TYPE_CHECKING:
     from llm import LiteLLMAdapter, ModelManager
@@ -300,3 +301,96 @@ class BaseAgent(ABC):
                 "provider": profile.provider,
             }
         return None
+
+    async def _ralph_loop(
+        self,
+        messages: List[LLMMessage],
+        tools: List,
+        use_memory: bool = True,
+        save_to_memory: bool = True,
+        task: str = "",
+        max_iterations: int = 3,
+        verifier: Optional[Verifier] = None,
+    ) -> str:
+        """Outer verification loop that wraps _react_loop.
+
+        After _react_loop returns a final answer, a verifier judges whether the
+        original task is satisfied. If not, feedback is injected and the inner
+        loop re-enters.
+
+        Args:
+            messages: Initial message list (passed through to _react_loop).
+            tools: List of available tool schemas.
+            use_memory: If True, use self.memory for context.
+            save_to_memory: If True, save messages to self.memory.
+            task: The original task description.
+            max_iterations: Maximum number of outer verification iterations.
+            verifier: Optional custom Verifier instance. Defaults to LLMVerifier.
+
+        Returns:
+            Final answer as a string.
+        """
+        if verifier is None:
+            verifier = LLMVerifier(self.llm, terminal_ui)
+
+        previous_results: List[VerificationResult] = []
+
+        for iteration in range(1, max_iterations + 1):
+            logger.debug(f"Ralph loop iteration {iteration}/{max_iterations}")
+
+            result = await self._react_loop(
+                messages=messages,
+                tools=tools,
+                use_memory=use_memory,
+                save_to_memory=save_to_memory,
+                task=task,
+            )
+
+            # Skip verification on last iteration — just return whatever we got
+            if iteration == max_iterations:
+                logger.debug("Ralph loop: max iterations reached, returning result")
+                terminal_ui.console.print(
+                    f"\n[bold dark_orange]⚠ Verification skipped "
+                    f"(max iterations {max_iterations} reached), returning last result[/bold dark_orange]"
+                )
+                return result
+
+            verification = await verifier.verify(
+                task=task,
+                result=result,
+                iteration=iteration,
+                previous_results=previous_results,
+            )
+            previous_results.append(verification)
+
+            if verification.complete:
+                logger.debug(f"Ralph loop: verified complete — {verification.reason}")
+                terminal_ui.console.print(
+                    f"\n[bold green]✓ Verification passed "
+                    f"(attempt {iteration}/{max_iterations}): {verification.reason}[/bold green]"
+                )
+                return result
+
+            # Print the incomplete result so the user can see what the agent produced
+            terminal_ui.print_unfinished_answer(result)
+
+            # Inject feedback as a user message so the next _react_loop iteration
+            # picks it up from memory.
+            feedback = (
+                f"Your previous answer was reviewed and found incomplete. "
+                f"Feedback: {verification.reason}\n\n"
+                f"Please address the feedback and provide a complete answer."
+            )
+            logger.debug(f"Ralph loop: injecting feedback — {verification.reason}")
+            terminal_ui.console.print(
+                f"\n[bold yellow]⟳ Verification feedback (attempt {iteration}/{max_iterations}): "
+                f"{verification.reason}[/bold yellow]"
+            )
+
+            if use_memory and save_to_memory:
+                await self.memory.add_message(LLMMessage(role="user", content=feedback))
+            else:
+                messages.append(LLMMessage(role="user", content=feedback))
+
+        # Should not reach here, but return last result as safety fallback
+        return result  # type: ignore[possibly-undefined]

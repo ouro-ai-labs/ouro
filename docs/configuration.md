@@ -91,6 +91,16 @@ Open `.aloop/models.yaml` in your editor, then it will auto-reload after you sav
 
 Add/remove/default are done by editing `.aloop/models.yaml` directly.
 
+## Ralph Loop (Outer Verification)
+
+An outer loop verifies that the agent's final answer actually satisfies
+the original task. If incomplete, feedback is injected and the inner
+ReAct loop re-enters. Enabled by default.
+
+```bash
+RALPH_LOOP_MAX_ITERATIONS=3    # Max verification attempts before returning
+```
+
 ## Email Notification Configuration (Resend)
 
 Used by the `notify` tool to send emails via [Resend](https://resend.com):
