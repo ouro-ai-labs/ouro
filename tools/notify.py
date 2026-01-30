@@ -19,10 +19,7 @@ class NotifyTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return (
-            "Send an email notification via Resend. "
-            "Requires RESEND_API_KEY and NOTIFY_EMAIL_FROM in .aloop/config."
-        )
+        return "Send an email notification via Resend."
 
     @property
     def parameters(self) -> Dict[str, Any]:
