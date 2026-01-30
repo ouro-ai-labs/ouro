@@ -229,7 +229,7 @@ See [Memory Management](memory-management.md) for more details.
 ```python
 import asyncio
 
-from agent.react_agent import ReActAgent
+from agent.agent import ReActAgent
 from llm import LiteLLMAdapter, ModelManager
 from tools import CalculatorTool, FileReadTool
 from config import Config

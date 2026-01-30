@@ -4,7 +4,7 @@ import argparse
 import asyncio
 import warnings
 
-from agent.react_agent import ReActAgent
+from agent.agent import ReActAgent
 from config import Config
 from interactive import run_interactive_mode, run_model_setup_mode
 from llm import LiteLLMAdapter, ModelManager

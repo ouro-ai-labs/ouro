@@ -216,7 +216,7 @@ async def test_ralph_loop_injects_feedback_into_messages(mock_agent):
 @pytest.mark.asyncio
 async def test_config_toggle_dispatches_correctly():
     """Config.RALPH_LOOP_ENABLED controls which loop is used in ReActAgent.run()."""
-    from agent.react_agent import ReActAgent
+    from agent.agent import ReActAgent
 
     agent = object.__new__(ReActAgent)
     agent.llm = MagicMock()
@@ -233,7 +233,7 @@ async def test_config_toggle_dispatches_correctly():
     agent._print_memory_stats = MagicMock()
 
     # Disabled → uses _react_loop
-    with patch("agent.react_agent.Config") as mock_config:
+    with patch("agent.agent.Config") as mock_config:
         mock_config.RALPH_LOOP_ENABLED = False
         result = await agent.run("test task")
     assert result == "react result"
@@ -245,7 +245,7 @@ async def test_config_toggle_dispatches_correctly():
     agent._ralph_loop.reset_mock()
 
     # Enabled → uses _ralph_loop
-    with patch("agent.react_agent.Config") as mock_config:
+    with patch("agent.agent.Config") as mock_config:
         mock_config.RALPH_LOOP_ENABLED = True
         mock_config.RALPH_LOOP_MAX_ITERATIONS = 3
         result = await agent.run("test task")

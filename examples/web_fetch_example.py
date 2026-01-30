@@ -6,7 +6,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agent.react_agent import ReActAgent
+from agent.agent import ReActAgent
 from llm import LiteLLMAdapter, ModelManager
 from tools.web_fetch import WebFetchTool
 

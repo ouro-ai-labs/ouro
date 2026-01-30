@@ -54,7 +54,7 @@ Current execution paths contain multiple blocking operations (HTTP, subprocess, 
 This RFC targets the runtime path that executes agent loops and tools:
 
 - **Entrypoints**: `main.py`, `cli.py`, `interactive.py`
-- **Agent runtime**: `agent/base.py`, `agent/react_agent.py`, `agent/plan_execute_agent.py`, `agent/tool_executor.py`
+- **Agent runtime**: `agent/base.py`, `agent/agent.py`, `agent/plan_execute_agent.py`, `agent/tool_executor.py`
 - **LLM layer**: `llm/litellm_adapter.py`, `llm/retry.py`
 - **Memory/persistence**: `memory/manager.py`, `memory/store.py`
 - **Tools**: `tools/*` (prioritized conversions, not all at once)

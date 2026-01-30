@@ -274,7 +274,7 @@ Here's an agent that breaks tasks into subtasks and delegates:
 ```python
 # agent/collaborative_agent.py
 from .base import BaseAgent
-from .react_agent import ReActAgent
+from .agent import ReActAgent
 
 class CollaborativeAgent(BaseAgent):
     """Agent that breaks tasks into subtasks and delegates to specialists."""

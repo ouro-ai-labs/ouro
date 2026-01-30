@@ -195,7 +195,7 @@ AgenticLoop/
 ├── agent/                       # Agent implementations
 │   ├── base.py                  # BaseAgent abstract class
 │   ├── context.py               # Context injection
-│   ├── react_agent.py           # ReAct mode
+│   ├── agent.py                 # ReAct agent + Ralph verification loop
 │   ├── plan_execute_agent.py   # Plan-and-Execute mode
 │   ├── tool_executor.py         # Tool execution engine
 │   └── todo.py                  # Todo list management

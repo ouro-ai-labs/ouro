@@ -356,7 +356,7 @@ This provides exact token counts instead of estimates.
 
 ```python
 from memory import MemoryManager, MemoryConfig
-from agent.react_agent import ReActAgent
+from agent.agent import ReActAgent
 
 # Create memory config
 config = MemoryConfig(

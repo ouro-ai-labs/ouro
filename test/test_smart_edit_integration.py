@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from agent.react_agent import ReActAgent
+from agent.agent import ReActAgent
 from llm import LiteLLMAdapter, ModelManager
 from tools.file_ops import FileReadTool, FileWriteTool
 from tools.smart_edit import SmartEditTool

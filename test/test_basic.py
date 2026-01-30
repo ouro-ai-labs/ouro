@@ -7,7 +7,7 @@ import os
 
 
 async def test_imports():
-    from agent.react_agent import ReActAgent  # noqa: F401
+    from agent.agent import ReActAgent  # noqa: F401
     from config import Config  # noqa: F401
     from tools.calculator import CalculatorTool  # noqa: F401
     from tools.file_ops import FileReadTool, FileWriteTool  # noqa: F401

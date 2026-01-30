@@ -7,7 +7,7 @@ import sys
 # Add parent directory to path to import modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agent.react_agent import ReActAgent
+from agent.agent import ReActAgent
 from llm import LiteLLMAdapter, ModelManager
 from tools.calculator import CalculatorTool
 from tools.file_ops import FileReadTool, FileWriteTool
