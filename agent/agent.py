@@ -119,11 +119,13 @@ When to use each approach:
 - Parallel workload → parallel_execute
 </complex_task_strategy>"""
 
-    async def run(self, task: str) -> str:
+    async def run(self, task: str, verify: bool = True) -> str:
         """Execute ReAct loop until task is complete.
 
         Args:
             task: The task to complete
+            verify: If True, use ralph loop (outer verification). If False, use
+                    plain react loop (suitable for interactive multi-turn sessions).
 
         Returns:
             Final answer as a string
@@ -147,15 +149,25 @@ When to use each approach:
 
         tools = self.tool_executor.get_tool_schemas()
 
-        # Use ralph loop (outer verification wrapping the inner ReAct loop)
-        result = await self._ralph_loop(
-            messages=[],  # Not used when use_memory=True
-            tools=tools,
-            use_memory=True,
-            save_to_memory=True,
-            task=task,
-            max_iterations=Config.RALPH_LOOP_MAX_ITERATIONS,
-        )
+        if verify:
+            # Use ralph loop (outer verification wrapping the inner ReAct loop)
+            result = await self._ralph_loop(
+                messages=[],  # Not used when use_memory=True
+                tools=tools,
+                use_memory=True,
+                save_to_memory=True,
+                task=task,
+                max_iterations=Config.RALPH_LOOP_MAX_ITERATIONS,
+            )
+        else:
+            # Plain react loop without verification
+            result = await self._react_loop(
+                messages=[],
+                tools=tools,
+                use_memory=True,
+                save_to_memory=True,
+                task=task,
+            )
 
         self._print_memory_stats()
 

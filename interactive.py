@@ -198,10 +198,56 @@ class InteractiveSession:
             )
             terminal_ui.console.print()
 
+            self._print_session_history()
             self._update_status_bar()
 
         except Exception as e:
             terminal_ui.print_error(str(e), title="Error resuming session")
+
+    def _print_session_history(self) -> None:
+        """Print conversation history from a resumed session."""
+        messages = self.agent.memory.short_term.get_messages()
+        if not messages:
+            return
+
+        colors = Theme.get_colors()
+        terminal_ui.console.print(
+            f"[bold {colors.primary}]Session History:[/bold {colors.primary}]"
+        )
+        terminal_ui.console.print(
+            f"[{colors.text_muted}]{'─' * 60}[/{colors.text_muted}]"
+        )
+
+        for msg in messages:
+            if msg.role == "user":
+                content = str(msg.content or "")
+                if len(content) > 200:
+                    content = content[:200] + "..."
+                terminal_ui.console.print(
+                    f"\n[bold {colors.primary}]You:[/bold {colors.primary}] {content}"
+                )
+            elif msg.role == "assistant" and msg.content:
+                content = str(msg.content)
+                if len(content) > 300:
+                    content = content[:300] + "..."
+                terminal_ui.console.print(
+                    f"[bold {colors.secondary}]Assistant:[/bold {colors.secondary}] {content}"
+                )
+            elif msg.role == "assistant" and msg.tool_calls:
+                tool_names = ", ".join(
+                    tc.get("function", {}).get("name", "?")
+                    if isinstance(tc, dict)
+                    else getattr(getattr(tc, "function", None), "name", "?")
+                    for tc in msg.tool_calls
+                )
+                terminal_ui.console.print(
+                    f"[{colors.text_muted}]  (used tools: {tool_names})[/{colors.text_muted}]"
+                )
+            # Skip tool result messages — they are verbose
+
+        terminal_ui.console.print(
+            f"\n[{colors.text_muted}]{'─' * 60}[/{colors.text_muted}]\n"
+        )
 
     def _toggle_theme(self) -> None:
         """Toggle between dark and light theme."""
@@ -459,8 +505,18 @@ class InteractiveSession:
         terminal_ui.print_config(config_dict)
 
         colors = Theme.get_colors()
+
+        # If session was loaded via --resume, print history
+        if self.agent.memory.short_term.count() > 0:
+            terminal_ui.print_info(
+                f"Resumed session: {self.agent.memory.session_id} "
+                f"({self.agent.memory.short_term.count()} messages)"
+            )
+            terminal_ui.console.print()
+            self._print_session_history()
+
         terminal_ui.console.print(
-            f"\n[bold {colors.success}]Interactive mode started. Type your message or use commands.[/bold {colors.success}]"
+            f"[bold {colors.success}]Interactive mode started. Type your message or use commands.[/bold {colors.success}]"
         )
         terminal_ui.console.print(
             f"[{colors.text_muted}]Tip: Type '/' for command suggestions, Ctrl+T to toggle thinking display[/{colors.text_muted}]\n"
@@ -500,7 +556,7 @@ class InteractiveSession:
                     self.status_bar.update(is_processing=True)
 
                 try:
-                    result = await self.agent.run(user_input)
+                    result = await self.agent.run(user_input, verify=False)
 
                     # Display agent response
                     terminal_ui.console.print(
