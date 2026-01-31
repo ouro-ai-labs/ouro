@@ -29,6 +29,23 @@ pre-commit install
 
 Never commit directly to `main`. All changes go through PR review.
 
+### Worktree Env (Recommended)
+
+Worktrees don't automatically share `.venv`. To avoid re-running bootstrap for every worktree, create the env once in the main checkout, then symlink it in each worktree:
+
+```bash
+# main checkout
+cd /path/to/AgenticLoop
+./scripts/bootstrap.sh
+
+# each worktree (example: ../AgenticLoop-my-branch)
+cd /path/to/AgenticLoop-my-branch
+ln -s ../AgenticLoop/.venv .venv
+# Point the editable install at *this* worktree (fast; doesn't reinstall deps).
+./scripts/dev.sh install
+./scripts/dev.sh check
+```
+
 ## Checkpoint Commits
 
 Prefer small, reviewable commits:
