@@ -67,7 +67,7 @@ aloop = "cli:main"
 
 [tool.setuptools]
 # Use current flat structure
-packages = ["agent", "llm", "memory", "tools", "utils"]
+packages = ["agent", "llm", "memory", "tools", "utils", "utils.tui"]
 py-modules = ["main", "interactive", "config", "cli"]
 
 [tool.setuptools.package-data]

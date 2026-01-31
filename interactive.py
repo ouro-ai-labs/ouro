@@ -14,6 +14,7 @@ from llm import ModelManager
 from memory.store import MemoryStore
 from utils import get_log_file_path, terminal_ui
 from utils.runtime import get_exports_dir, get_history_file
+from utils.tui.command_registry import CommandRegistry, CommandSpec
 from utils.tui.input_handler import InputHandler
 from utils.tui.model_ui import (
     mask_secret,
@@ -43,37 +44,36 @@ class InteractiveSession:
         self.model_manager = getattr(agent, "model_manager", None) or ModelManager()
 
         # Initialize TUI components
+        self.command_registry = CommandRegistry(
+            commands=[
+                CommandSpec("help", "Show this help message"),
+                CommandSpec("clear", "Clear conversation memory and start fresh"),
+                CommandSpec("stats", "Show memory and token usage statistics"),
+                CommandSpec("history", "List saved conversation sessions"),
+                CommandSpec(
+                    "dump-memory",
+                    "Export a session's memory to a JSON file",
+                    args_hint="<id>",
+                ),
+                CommandSpec("theme", "Toggle between dark and light theme"),
+                CommandSpec("verbose", "Toggle verbose thinking display"),
+                CommandSpec("compact", "Toggle compact output mode"),
+                CommandSpec(
+                    "model",
+                    "Manage models",
+                    subcommands={
+                        "edit": CommandSpec(
+                            "edit",
+                            "Edit `.aloop/models.yaml` (auto-reload on save)",
+                        )
+                    },
+                ),
+                CommandSpec("exit", "Exit interactive mode"),
+            ]
+        )
         self.input_handler = InputHandler(
             history_file=get_history_file(),
-            commands=[
-                "help",
-                "clear",
-                "stats",
-                "history",
-                "dump-memory",
-                "theme",
-                "verbose",
-                "compact",
-                "model",
-                "exit",
-                "quit",
-            ],
-            command_subcommands={
-                "model": {"edit": "Edit `.aloop/models.yaml` (auto-reload on save)"}
-            },
-            command_help={
-                "help": "Show available commands",
-                "clear": "Clear conversation memory",
-                "stats": "Show token/memory stats",
-                "history": "List saved sessions",
-                "dump-memory": "Export session to JSON",
-                "theme": "Switch color theme",
-                "verbose": "Toggle verbose output",
-                "compact": "Toggle compact mode",
-                "model": "Manage models",
-                "exit": "Exit interactive mode",
-                "quit": "Same as /exit",
-            },
+            command_registry=self.command_registry,
         )
 
         # Set up keyboard shortcut callbacks
@@ -107,43 +107,16 @@ class InteractiveSession:
         terminal_ui.console.print(
             f"\n[bold {colors.primary}]Available Commands:[/bold {colors.primary}]"
         )
-        terminal_ui.console.print(
-            f"  [{colors.primary}]/help[/{colors.primary}]             - Show this help message"
-        )
-        terminal_ui.console.print(
-            f"  [{colors.primary}]/clear[/{colors.primary}]            - Clear conversation memory and start fresh"
-        )
-        terminal_ui.console.print(
-            f"  [{colors.primary}]/stats[/{colors.primary}]            - Show memory and token usage statistics"
-        )
-        terminal_ui.console.print(
-            f"  [{colors.primary}]/history[/{colors.primary}]          - List all saved conversation sessions"
-        )
-        terminal_ui.console.print(
-            f"  [{colors.primary}]/dump-memory <id>[/{colors.primary}] - Export a session's memory to a JSON file"
-        )
-        terminal_ui.console.print(
-            f"  [{colors.primary}]/theme[/{colors.primary}]            - Toggle between dark and light theme"
-        )
-        terminal_ui.console.print(
-            f"  [{colors.primary}]/verbose[/{colors.primary}]          - Toggle verbose thinking display"
-        )
-        terminal_ui.console.print(
-            f"  [{colors.primary}]/compact[/{colors.primary}]          - Toggle compact output mode"
-        )
-        terminal_ui.console.print(
-            f"  [{colors.primary}]/model[/{colors.primary}]            - Manage models"
-        )
-        terminal_ui.console.print(
-            f"    [{colors.text_muted}]/model              - Pick model (cursor)\n"
-            f"    /model edit         - Edit `.aloop/models.yaml` (auto-reload on save)[/{colors.text_muted}]"
-        )
-        terminal_ui.console.print(
-            f"  [{colors.primary}]/exit[/{colors.primary}]             - Exit interactive mode"
-        )
-        terminal_ui.console.print(
-            f"  [{colors.primary}]/quit[/{colors.primary}]             - Same as /exit"
-        )
+        for cmd in self.command_registry.commands:
+            terminal_ui.console.print(
+                f"  [{colors.primary}]{cmd.display}[/{colors.primary}] - {cmd.description}"
+            )
+            if cmd.subcommands:
+                for sub_name, sub in cmd.subcommands.items():
+                    extra = f" {sub.args_hint}" if sub.args_hint else ""
+                    terminal_ui.console.print(
+                        f"    [{colors.text_muted}]/{cmd.name} {sub_name}{extra} - {sub.description}[/{colors.text_muted}]"
+                    )
 
         terminal_ui.console.print(
             f"\n[bold {colors.primary}]Keyboard Shortcuts:[/bold {colors.primary}]"
@@ -642,16 +615,22 @@ class ModelSetupSession:
 
     def __init__(self, model_manager: ModelManager | None = None):
         self.model_manager = model_manager or ModelManager()
+        self.command_registry = CommandRegistry(
+            commands=[
+                CommandSpec("help", "Show this help message"),
+                CommandSpec(
+                    "model",
+                    "Pick a model",
+                    subcommands={
+                        "edit": CommandSpec("edit", "Open `.aloop/models.yaml` in editor")
+                    },
+                ),
+                CommandSpec("exit", "Quit"),
+            ]
+        )
         self.input_handler = InputHandler(
             history_file=get_history_file(),
-            commands=["help", "model", "exit", "quit"],
-            command_subcommands={"model": {"edit": "Open `.aloop/models.yaml` in editor"}},
-            command_help={
-                "help": "Show available commands",
-                "model": "Pick a model",
-                "exit": "Quit",
-                "quit": "Same as /exit",
-            },
+            command_registry=self.command_registry,
         )
 
     def _show_help(self) -> None:
@@ -660,12 +639,17 @@ class ModelSetupSession:
             f"\n[bold {colors.primary}]Model Setup[/bold {colors.primary}] "
             f"[{colors.text_muted}](edit `.aloop/models.yaml`)[/{colors.text_muted}]\n"
         )
-        terminal_ui.console.print(
-            f"[{colors.text_muted}]Commands:[/{colors.text_muted}]\n"
-            f"  /model                              - Pick a model\n"
-            f"  /model edit                         - Open `.aloop/models.yaml` in editor\n"
-            f"  /exit                               - Quit\n"
-        )
+        terminal_ui.console.print(f"[{colors.text_muted}]Commands:[/{colors.text_muted}]\n")
+        for cmd in self.command_registry.commands:
+            terminal_ui.console.print(
+                f"  [{colors.primary}]{cmd.display}[/{colors.primary}] - {cmd.description}"
+            )
+            if cmd.subcommands:
+                for sub_name, sub in cmd.subcommands.items():
+                    extra = f" {sub.args_hint}" if sub.args_hint else ""
+                    terminal_ui.console.print(
+                        f"    [{colors.text_muted}]/{cmd.name} {sub_name}{extra} - {sub.description}[/{colors.text_muted}]"
+                    )
 
     def _show_models(self) -> None:
         colors = Theme.get_colors()

@@ -9,6 +9,7 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
 from prompt_toolkit.styles import Style
 
+from utils.tui.command_registry import CommandRegistry
 from utils.tui.theme import Theme
 
 
@@ -51,6 +52,7 @@ class CommandCompleter(Completer):
         commands: Optional[List[str]] = None,
         help_texts: Optional[dict[str, str]] = None,
         command_subcommands: Optional[dict[str, dict[str, str]]] = None,
+        display_texts: Optional[dict[str, str]] = None,
     ):
         """Initialize completer.
 
@@ -58,6 +60,7 @@ class CommandCompleter(Completer):
             commands: List of available commands (without leading /)
             help_texts: Optional help text per command (same keys as commands)
             command_subcommands: Optional mapping like {"model": {"edit": "..."}}.
+            display_texts: Optional display text (with leading / and args hints).
         """
         default_commands = [
             "help",
@@ -77,6 +80,7 @@ class CommandCompleter(Completer):
             command_subcommands,
         )
         self.help_texts = help_texts or {}
+        self.display_texts = display_texts or {}
 
     def get_completions(self, document, complete_event):
         """Get completions for the current input.
@@ -100,12 +104,13 @@ class CommandCompleter(Completer):
                         sub for sub in self.command_subcommands[base] if sub.startswith(rest)
                     ]
                     for sub in matching:
-                        display = f"/{base} {sub}"
+                        key = f"{base} {sub}".strip()
+                        display = self.display_texts.get(key, f"/{base} {sub}")
                         yield Completion(
                             sub,
                             start_position=-len(rest),
                             display=display,
-                            display_meta=self._get_command_help(f"{base} {sub}"),
+                            display_meta=self._get_command_help(key),
                         )
                 return
 
@@ -114,7 +119,7 @@ class CommandCompleter(Completer):
                 yield Completion(
                     cmd,
                     start_position=-len(cmd_text),
-                    display=f"/{cmd}",
+                    display=self.display_texts.get(cmd, f"/{cmd}"),
                     display_meta=self._get_command_help(cmd),
                 )
 
@@ -160,6 +165,7 @@ class InputHandler:
         commands: Optional[List[str]] = None,
         command_help: Optional[dict[str, str]] = None,
         command_subcommands: Optional[dict[str, dict[str, str]]] = None,
+        command_registry: CommandRegistry | None = None,
     ):
         """Initialize input handler.
 
@@ -170,11 +176,19 @@ class InputHandler:
         # Set up history
         history = FileHistory(history_file) if history_file else InMemoryHistory()
 
+        display_texts: dict[str, str] | None = None
+        if command_registry is not None:
+            commands = [c.name for c in command_registry.commands]
+            command_help = command_registry.to_help_map()
+            command_subcommands = command_registry.to_subcommand_map()
+            display_texts = command_registry.to_display_map()
+
         # Set up completer
         self.completer = CommandCompleter(
             commands,
             help_texts=command_help,
             command_subcommands=command_subcommands,
+            display_texts=display_texts,
         )
 
         # Set up key bindings
@@ -193,10 +207,10 @@ class InputHandler:
 
             fragments: list[tuple[str, str]] = []
             fragments.append(("class:toolbar.hint", "Commands: "))
-            for i, (cmd, help_text) in enumerate(suggestions[:6]):
+            for i, (display, help_text) in enumerate(suggestions[:6]):
                 if i:
                     fragments.append(("class:toolbar.hint", "  "))
-                fragments.append(("class:toolbar.cmd", f"/{cmd}"))
+                fragments.append(("class:toolbar.cmd", display))
                 if help_text:
                     fragments.append(("class:toolbar.hint", f" — {help_text}"))
             return fragments
@@ -250,11 +264,23 @@ class InputHandler:
                     for sub in self.completer.command_subcommands[base]
                     if sub.startswith(rest)
                 ]
-                return [(cmd, self.completer._get_command_help(cmd)) for cmd in matches]
+                return [
+                    (
+                        self.completer.display_texts.get(cmd, f"/{cmd}"),
+                        self.completer._get_command_help(cmd),
+                    )
+                    for cmd in matches
+                ]
             return []
 
         matches = [cmd for cmd in self.completer.commands if cmd.startswith(cmd_text)]
-        return [(cmd, self.completer._get_command_help(cmd)) for cmd in matches]
+        return [
+            (
+                self.completer.display_texts.get(cmd, f"/{cmd}"),
+                self.completer._get_command_help(cmd),
+            )
+            for cmd in matches
+        ]
 
     def _create_key_bindings(self) -> KeyBindings:
         """Create custom key bindings.

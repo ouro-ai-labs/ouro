@@ -51,10 +51,10 @@ def test_input_handler_command_suggestions() -> None:
     handler = InputHandler(history_file=None, commands=["help", "clear"])
     assert handler._get_command_suggestions("hello") == []
     assert handler._get_command_suggestions("/") == [
-        ("help", "Show available commands"),
-        ("clear", "Clear conversation memory"),
+        ("/help", "Show available commands"),
+        ("/clear", "Clear conversation memory"),
     ]
-    assert handler._get_command_suggestions("/he") == [("help", "Show available commands")]
+    assert handler._get_command_suggestions("/he") == [("/help", "Show available commands")]
 
 
 def test_subcommand_completion_and_suggestions() -> None:
@@ -63,7 +63,7 @@ def test_subcommand_completion_and_suggestions() -> None:
         commands=["model", "help"],
         command_subcommands={"model": {"edit": "Open config"}},
     )
-    assert handler._get_command_suggestions("/model ") == [("model edit", "Open config")]
+    assert handler._get_command_suggestions("/model ") == [("/model edit", "Open config")]
 
     completer = handler.completer
     doc = Document(text="/model e", cursor_position=len("/model e"))
