@@ -214,9 +214,7 @@ class InteractiveSession:
         terminal_ui.console.print(
             f"[bold {colors.primary}]Session History:[/bold {colors.primary}]"
         )
-        terminal_ui.console.print(
-            f"[{colors.text_muted}]{'─' * 60}[/{colors.text_muted}]"
-        )
+        terminal_ui.console.print(f"[{colors.text_muted}]{'─' * 60}[/{colors.text_muted}]")
 
         for msg in messages:
             if msg.role == "user":
@@ -235,9 +233,11 @@ class InteractiveSession:
                 )
             elif msg.role == "assistant" and msg.tool_calls:
                 tool_names = ", ".join(
-                    tc.get("function", {}).get("name", "?")
-                    if isinstance(tc, dict)
-                    else getattr(getattr(tc, "function", None), "name", "?")
+                    (
+                        tc.get("function", {}).get("name", "?")
+                        if isinstance(tc, dict)
+                        else getattr(getattr(tc, "function", None), "name", "?")
+                    )
                     for tc in msg.tool_calls
                 )
                 terminal_ui.console.print(
@@ -245,9 +245,7 @@ class InteractiveSession:
                 )
             # Skip tool result messages — they are verbose
 
-        terminal_ui.console.print(
-            f"\n[{colors.text_muted}]{'─' * 60}[/{colors.text_muted}]\n"
-        )
+        terminal_ui.console.print(f"\n[{colors.text_muted}]{'─' * 60}[/{colors.text_muted}]\n")
 
     def _toggle_theme(self) -> None:
         """Toggle between dark and light theme."""

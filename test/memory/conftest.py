@@ -75,7 +75,9 @@ def mock_llm(tmp_path, monkeypatch):
     so tests don't write to the real .aloop/sessions/.
     """
     sessions_dir = str(tmp_path / "sessions")
-    monkeypatch.setattr("memory.store.yaml_file_memory_store.get_sessions_dir", lambda: sessions_dir)
+    monkeypatch.setattr(
+        "memory.store.yaml_file_memory_store.get_sessions_dir", lambda: sessions_dir
+    )
     return MockLLM()
 
 

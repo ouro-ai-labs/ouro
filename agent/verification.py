@@ -15,9 +15,8 @@ from utils import get_logger
 from utils.tui.progress import AsyncSpinner
 
 if TYPE_CHECKING:
-    from utils.tui.terminal_ui import TerminalUI
-
     from llm import LiteLLMAdapter
+    from utils.tui.terminal_ui import TerminalUI
 
 logger = get_logger(__name__)
 
