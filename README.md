@@ -6,16 +6,8 @@ General-purpose AI agent with ReAct reasoning, tool use, and memory management. 
 
 Prerequisites: Python 3.12+ and [uv](https://github.com/astral-sh/uv).
 
-### From PyPI
-
 ```bash
-pip install AgenticLoop
-```
-
-### From Source
-
-```bash
-git clone https://github.com/yourusername/AgenticLoop.git
+git clone https://github.com/luohaha/AgenticLoop.git
 cd AgenticLoop
 ./scripts/bootstrap.sh
 ```

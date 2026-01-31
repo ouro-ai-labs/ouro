@@ -89,6 +89,5 @@ docker push yourusername/agentic-loop:latest
 | Method | Command |
 |--------|---------|
 | Local dev | `./scripts/bootstrap.sh` |
-| PyPI | `pip install AgenticLoop` |
 | Docker | `docker run agentic-loop --task "..."` |
-| From source | `pip install git+https://github.com/yourusername/AgenticLoop.git` |
+| From source | `pip install git+https://github.com/luohaha/AgenticLoop.git` |
