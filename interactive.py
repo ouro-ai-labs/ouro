@@ -686,14 +686,14 @@ class ModelSetupSession:
     def _mask_secret(self, value: str | None) -> str:
         return mask_secret(value)
 
-    async def _handle_model_command(self, user_input: str) -> None:
+    async def _handle_model_command(self, user_input: str) -> bool:
         colors = Theme.get_colors()
 
         try:
             parts = shlex.split(user_input)
         except ValueError as e:
             terminal_ui.print_error(str(e), title="Invalid /model command")
-            return
+            return False
 
         if len(parts) == 1:
             if not self.model_manager.list_models():
@@ -701,13 +701,23 @@ class ModelSetupSession:
                 terminal_ui.console.print(
                     f"[{colors.text_muted}]Run /model edit to configure `.aloop/models.yaml`.[/{colors.text_muted}]\n"
                 )
-                return
+                return False
             picked = await pick_model_id(self.model_manager, title="Select Model")
             if picked:
                 self.model_manager.switch_model(picked)
                 terminal_ui.print_success(f"Selected model: {picked}")
-                return
-            return
+                current = self.model_manager.get_current_model()
+                if current:
+                    is_valid, error_msg = self.model_manager.validate_model(current)
+                    if is_valid:
+                        terminal_ui.print_success("Model configuration looks good. Starting agent…")
+                        return True
+                    terminal_ui.print_error(error_msg)
+                    terminal_ui.console.print(
+                        f"[{colors.text_muted}]Fix the config and then run /continue.[/{colors.text_muted}]\n"
+                    )
+                return False
+            return False
 
         sub = parts[1]
 
@@ -717,7 +727,7 @@ class ModelSetupSession:
                 terminal_ui.console.print(
                     f"[{colors.text_muted}]Edit the YAML directly instead of using subcommands.[/{colors.text_muted}]\n"
                 )
-                return
+                return False
 
             terminal_ui.console.print(
                 f"[{colors.text_muted}]Save the file to auto-reload (Ctrl+C to cancel)...[/]\n"
@@ -730,15 +740,16 @@ class ModelSetupSession:
                 terminal_ui.console.print(
                     f"[{colors.text_muted}]Tip: set EDITOR='code' (or similar) for /model edit.[/{colors.text_muted}]\n"
                 )
-                return
+                return False
             self.model_manager.reload()
             terminal_ui.print_success("Reloaded `.aloop/models.yaml`")
             self._show_models()
-            return
+            return False
         terminal_ui.print_error("Unknown /model command.")
         terminal_ui.console.print(
             f"[{colors.text_muted}]Use /model to pick, or /model edit to configure.[/{colors.text_muted}]\n"
         )
+        return False
 
     async def run(self) -> bool:
         colors = Theme.get_colors()
@@ -755,9 +766,18 @@ class ModelSetupSession:
             if not user_input:
                 continue
 
-            # Allow typing model_id without the /model prefix.
+            # Allow typing a model_id without the /model prefix, but avoid
+            # accidentally interpreting normal text as model selection.
             if not user_input.startswith("/"):
-                user_input = f"/model {user_input}"
+                model_ids = set(self.model_manager.get_model_ids())
+                if user_input in model_ids:
+                    user_input = f"/model {user_input}"
+                else:
+                    terminal_ui.print_error(
+                        "You're in model setup mode. Use /continue to start the agent, or /help.",
+                        title="Model Setup",
+                    )
+                    continue
 
             parts = user_input.split()
             cmd = parts[0].lower()
@@ -770,7 +790,9 @@ class ModelSetupSession:
                 continue
 
             if cmd == "/model":
-                await self._handle_model_command(user_input)
+                ready = await self._handle_model_command(user_input)
+                if ready:
+                    return True
                 continue
 
             if cmd in ("/continue", "/start"):
