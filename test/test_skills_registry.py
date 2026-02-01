@@ -2,7 +2,7 @@ import textwrap
 
 import pytest
 
-from utils.skills import SkillsRegistry
+from agent.skills import SkillsRegistry
 
 
 @pytest.mark.asyncio

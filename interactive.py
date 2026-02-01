@@ -6,12 +6,12 @@ import signal
 
 from rich.table import Table
 
+from agent.skills import SkillsRegistry
 from config import Config
 from llm import ModelManager
 from memory import MemoryManager
 from utils import get_log_file_path, terminal_ui
 from utils.runtime import get_history_file
-from utils.skills import SkillsRegistry
 from utils.tui.command_registry import CommandRegistry, CommandSpec
 from utils.tui.input_handler import InputHandler
 from utils.tui.model_ui import (

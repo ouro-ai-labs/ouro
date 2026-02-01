@@ -8,6 +8,7 @@ import warnings
 from rich.console import Console
 
 from agent.agent import LoopAgent
+from agent.skills import SkillsRegistry
 from config import Config
 from interactive import run_interactive_mode, run_model_setup_mode
 from llm import LiteLLMAdapter, ModelManager
@@ -23,7 +24,6 @@ from tools.web_fetch import WebFetchTool
 from tools.web_search import WebSearchTool
 from utils import setup_logger, terminal_ui
 from utils.runtime import ensure_runtime_dirs
-from utils.skills import SkillsRegistry
 
 warnings.filterwarnings("ignore", message="Pydantic serializer warnings.*", category=UserWarning)
 
