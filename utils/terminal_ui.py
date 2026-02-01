@@ -38,12 +38,28 @@ ALOOP_LOGO = r"""
 ╚═╝  ╚═╝╚══════╝ ╚═════╝  ╚═════╝ ╚═╝"""
 
 
+TAGLINES = [
+    "Think. Act. Observe. Repeat.",
+    "Your terminal, now with agency.",
+    "Reasoning in loops, so you don't have to.",
+    "One loop to rule them all.",
+    "Where thoughts become tool calls.",
+    "The agent that thinks before it acts. Usually.",
+    "Ctrl+C is your safe word.",
+    "Turning vibes into function calls since 2025.",
+    "I think, therefore I tool_call.",
+    "sudo make me a sandwich. Actually, I can do that now.",
+]
+
+
 def print_banner(subtitle: Optional[str] = None) -> None:
-    """Print the ASCII art banner with optional subtitle."""
+    """Print the ASCII art banner with a random tagline."""
+    import random
+
     colors = _get_colors()
     content = f"[bold {colors.primary}]{ALOOP_LOGO.lstrip(chr(10))}[/bold {colors.primary}]"
-    if subtitle:
-        content += f"\n\n[{colors.text_secondary}]{subtitle}[/{colors.text_secondary}]"
+    tagline = subtitle or random.choice(TAGLINES)
+    content += f"\n\n[{colors.text_secondary}]{tagline}[/{colors.text_secondary}]"
 
     console.print(Panel(content, border_style=colors.primary, box=box.DOUBLE, padding=(1, 2)))
 
