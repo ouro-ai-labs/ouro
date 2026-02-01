@@ -336,13 +336,22 @@ Original messages ({count} messages, ~{tokens} tokens):
             if i >= 0:
                 preserve_indices.add(i)
 
-        # Step 4: Ensure tool pairs stay together
-        for assistant_idx, user_idx in tool_pairs:
-            # If either message in the pair is marked for preservation, preserve both
-            if assistant_idx in preserve_indices or user_idx in preserve_indices:
-                preserve_indices.add(assistant_idx)
-                preserve_indices.add(user_idx)
-            # Otherwise both will be compressed together
+        # Step 4: Ensure tool pairs stay together (iterate until stable)
+        # A single pass can miss pairs: e.g. pair [A, T1] is skipped because
+        # neither is preserved, then pair [A, T2] preserves A because T2 is in
+        # the recent window — but T1 was already skipped.  Fixed-point loop
+        # ensures all pairs containing a preserved index are fully preserved.
+        changed = True
+        while changed:
+            changed = False
+            for assistant_idx, user_idx in tool_pairs:
+                if assistant_idx in preserve_indices or user_idx in preserve_indices:
+                    if assistant_idx not in preserve_indices:
+                        preserve_indices.add(assistant_idx)
+                        changed = True
+                    if user_idx not in preserve_indices:
+                        preserve_indices.add(user_idx)
+                        changed = True
 
         # Step 5: Build preserved and to_compress lists
         preserved = []

@@ -362,6 +362,65 @@ class TestMessageSeparation:
                 tool_id in preserved_tool_use_ids
             ), f"Tool result for {tool_id} is preserved but its use is not"
 
+    async def test_multi_tool_call_pair_preservation(self, set_memory_config, mock_llm):
+        """Test that ALL tool responses are preserved when an assistant message
+        with multiple tool_calls is partially in the recent window.
+
+        Regression test: an assistant message at index N has 5 tool_calls with
+        responses at N+1..N+5.  If only N+3..N+5 fall inside the recent window,
+        a single-pass pair check would skip [N, N+1] and [N, N+2] because N is
+        not yet marked when those pairs are visited.  The fixed-point loop must
+        pull N+1 and N+2 into the preserved set.
+        """
+        # Use MIN_SIZE=3 so only the last 3 messages are initially preserved.
+        set_memory_config(MEMORY_SHORT_TERM_MIN_SIZE=3, MEMORY_PRESERVE_SYSTEM_PROMPTS=False)
+        compressor = WorkingMemoryCompressor(mock_llm)
+
+        # Build messages: user, assistant(5 tool_calls), 5 tool responses, assistant final
+        messages = [
+            LLMMessage(role="user", content="Do many things"),
+            LLMMessage(
+                role="assistant",
+                content=None,
+                tool_calls=[
+                    {
+                        "id": f"tc_{i}",
+                        "type": "function",
+                        "function": {"name": "tool", "arguments": "{}"},
+                    }
+                    for i in range(5)
+                ],
+            ),
+        ]
+        messages.extend(
+            LLMMessage(role="tool", content=f"result {i}", tool_call_id=f"tc_{i}", name="tool")
+            for i in range(5)
+        )
+        messages.append(LLMMessage(role="assistant", content="All done."))
+
+        # Total 8 messages (indices 0-7).  Last 3 = indices 5, 6, 7.
+        # Index 5 is tool response tc_3, index 6 is tool response tc_4,
+        # index 7 is assistant final.
+        # Pair [1,5] triggers preserving index 1, which must cascade to
+        # also preserve indices 2,3,4 (tool responses tc_0, tc_1, tc_2).
+        preserved, to_compress = compressor._separate_messages(messages)
+
+        preserved_tool_call_ids: set[str] = set()
+        preserved_tool_response_ids: set[str] = set()
+        for msg in preserved:
+            if msg.role == "assistant" and msg.tool_calls:
+                for tc in msg.tool_calls:
+                    tid = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
+                    if tid:
+                        preserved_tool_call_ids.add(tid)
+            if msg.role == "tool" and hasattr(msg, "tool_call_id") and msg.tool_call_id:
+                preserved_tool_response_ids.add(msg.tool_call_id)
+
+        # All 5 tool_call_ids must have their responses preserved
+        for i in range(5):
+            assert f"tc_{i}" in preserved_tool_call_ids, f"tc_{i} assistant not preserved"
+            assert f"tc_{i}" in preserved_tool_response_ids, f"tc_{i} response not preserved"
+
 
 class TestTokenEstimation:
     """Test token estimation logic."""
