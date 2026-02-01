@@ -1,23 +1,10 @@
-# Configuration Guide
-
-This repo uses YAML-based configuration for model management via `.aloop/models.yaml`.
-Model settings are not read from environment variables; use `.aloop/models.yaml` only.
+# Configuration
 
 ## Model Configuration
 
-On first run, `.aloop/models.yaml` is created automatically with a template. Edit it to configure your LLM providers:
-
-```bash
-# Open the config file
-$EDITOR .aloop/models.yaml
-```
-
-### YAML Configuration Format
+Models are configured in `.aloop/models.yaml` (auto-created on first run, gitignored).
 
 ```yaml
-# Model Configuration
-# This file is gitignored - do not commit to version control
-
 models:
   anthropic/claude-3-5-sonnet-20241022:
     api_key: sk-ant-...
@@ -26,7 +13,6 @@ models:
 
   openai/gpt-4o:
     api_key: sk-...
-    timeout: 300
 
   ollama/llama2:
     api_base: http://localhost:11434
@@ -34,108 +20,105 @@ models:
 default: anthropic/claude-3-5-sonnet-20241022
 ```
 
-### Configuration Fields
+The model ID (key under `models`) uses the LiteLLM `provider/model` format. See [LiteLLM Providers](https://docs.litellm.ai/docs/providers) for supported providers.
 
-The model ID (LiteLLM `provider/model`) is the key under `models`.
+### Model Fields
 
-| Field | Required | Description | Example |
-|-------|----------|-------------|---------|
-| `api_key` | Yes* | API key | `sk-ant-xxx` |
-| `api_base` | No | Custom base URL for proxies | `https://custom.api.com` |
-| `timeout` | No | Request timeout in seconds | `600` |
-| `drop_params` | No | Drop unsupported params | `true` |
+| Field | Required | Description |
+|-------|----------|-------------|
+| `api_key` | Yes* | Provider API key |
+| `api_base` | No | Custom base URL (proxies, Azure, local models) |
+| `timeout` | No | Request timeout in seconds |
+| `drop_params` | No | Drop unsupported params silently |
 
-*Required for most providers except local ones like Ollama.
+*Not required for local models (e.g., Ollama).
 
-### Model Examples
+### Model Management
+
+**CLI**: `aloop --model openai/gpt-4o` or `python main.py --model openai/gpt-4o`
+
+**Interactive**:
+- `/model` -- pick from configured models (arrow keys + Enter)
+- `/model edit` -- open `.aloop/models.yaml` in your editor (auto-reload on save)
+
+## Runtime Settings
+
+Settings live in `.aloop/config` (KEY=VALUE format, auto-created with defaults).
+
+### Agent
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `MAX_ITERATIONS` | `1000` | Maximum ReAct loop iterations |
+| `TOOL_TIMEOUT` | `600` | Tool execution timeout in seconds |
+| `RALPH_LOOP_MAX_ITERATIONS` | `3` | Max Ralph verification attempts |
+
+### Memory
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `MEMORY_ENABLED` | `true` | Enable memory management |
+| `MEMORY_COMPRESSION_THRESHOLD` | `60000` | Token count that triggers compression |
+| `MEMORY_SHORT_TERM_SIZE` | `100` | Max recent messages kept at full fidelity |
+| `MEMORY_SHORT_TERM_MIN_SIZE` | `6` | Minimum messages to always preserve |
+| `MEMORY_COMPRESSION_RATIO` | `0.3` | Target compression ratio (0.3 = 30% of original) |
+
+### Retry
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `RETRY_MAX_ATTEMPTS` | `3` | Retry attempts on rate-limit (429) errors |
+| `RETRY_INITIAL_DELAY` | `1.0` | Initial retry delay in seconds |
+| `RETRY_MAX_DELAY` | `60.0` | Maximum retry delay in seconds |
+
+Retry uses exponential backoff with jitter: `delay = min(initial * 2^attempt, max_delay) * uniform(0.75, 1.25)`.
+
+### TUI
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `TUI_THEME` | `dark` | Theme (`dark` or `light`) |
+| `TUI_SHOW_THINKING` | `true` | Show agent thinking display |
+| `TUI_THINKING_MAX_PREVIEW` | `300` | Max characters in thinking preview |
+| `TUI_STATUS_BAR` | `true` | Show status bar (tokens, cost, model) |
+| `TUI_COMPACT_MODE` | `false` | Compact output mode |
+
+### Notifications
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `RESEND_API_KEY` | `""` | [Resend](https://resend.com) API key for email notifications |
+| `NOTIFY_EMAIL_FROM` | `""` | Email sender address |
+
+### Logging
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `LOG_LEVEL` | `DEBUG` | Logging level |
+
+## Custom Endpoints
+
+Use `api_base` to route requests through proxies, Azure, or local servers:
 
 ```yaml
-# Anthropic Claude
 models:
-  anthropic/claude-3-5-sonnet-20241022:
-    api_key: sk-ant-...
-
-# OpenAI GPT
-models:
+  # Corporate proxy
   openai/gpt-4o:
     api_key: sk-...
+    api_base: http://proxy.company.com
 
-# Google Gemini
-models:
-  gemini/gemini-1.5-pro:
-    api_key: ...
+  # Azure OpenAI
+  azure/gpt-4:
+    api_key: your_azure_key
+    api_base: https://your-resource.openai.azure.com
 
-# Local Ollama (no API key needed)
-models:
+  # Local model
   ollama/llama2:
     api_base: http://localhost:11434
 ```
 
-For the full list of providers/models, see: https://docs.litellm.ai/docs/providers
+## Security
 
-## Interactive Mode Commands
-
-When running in interactive mode, you can manage models using the `/model` command:
-
-### Pick Model (Cursor)
-```bash
-> /model
-```
-Pick a model with arrow keys and Enter (Esc to cancel).
-
-### Edit Model Config
-```bash
-> /model edit
-```
-Open `.aloop/models.yaml` in your editor, then it will auto-reload after you save.
-
-Add/remove/default are done by editing `.aloop/models.yaml` directly.
-
-## Ralph Loop (Outer Verification)
-
-An outer loop verifies that the agent's final answer actually satisfies
-the original task. If incomplete, feedback is injected and the inner
-ReAct loop re-enters. Enabled by default.
-
-```bash
-RALPH_LOOP_MAX_ITERATIONS=3    # Max verification attempts before returning
-```
-
-## Email Notification Configuration (Resend)
-
-Used by the `notify` tool to send emails via [Resend](https://resend.com):
-
-```bash
-RESEND_API_KEY=re_xxxxxxxx
-NOTIFY_EMAIL_FROM=AgenticLoop <onboarding@resend.dev>
-```
-
-## Retry Configuration
-
-## CLI Usage
-
-You can specify a model when starting the agent:
-
-```bash
-# Use specific model for a single task
-python main.py --task "Calculate 1+1" --model openai/gpt-4o
-
-# Start interactive mode with specific model
-python main.py --model openai/gpt-4o
-```
-
-## Validation
-
-```bash
-# Sanity check (requires correct API key for your model)
-python main.py --task "Calculate 1+1"
-
-# Run tests
-python -m pytest test/
-```
-
-## Security Notes
-
-- `.aloop/models.yaml` is automatically gitignored to prevent accidental commits of API keys
-- Keep your API keys secure and rotate them regularly
-- The YAML file permissions should be set to user-readable only (0600) on Unix systems
+- `.aloop/models.yaml` is gitignored. Never commit API keys.
+- Set file permissions to `0600` on Unix: `chmod 600 .aloop/models.yaml`
+- Rotate API keys regularly.

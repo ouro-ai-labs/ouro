@@ -1,319 +1,199 @@
-# Agentic Loop
+<div align="center">
+<pre>
+ █████╗ ██╗      ██████╗  ██████╗ ██████╗
+██╔══██╗██║     ██╔═══██╗██╔═══██╗██╔══██╗
+███████║██║     ██║   ██║██║   ██║██████╔╝
+██╔══██║██║     ██║   ██║██║   ██║██╔═══╝
+██║  ██║███████╗╚██████╔╝╚██████╔╝██║
+╚═╝  ╚═╝╚══════╝ ╚═════╝  ╚═════╝ ╚═╝
+</pre>
 
-General AI Agent System
+**General-purpose AI agent with ReAct reasoning, tool use, and memory management.**
+
+Supports 100+ LLM providers via LiteLLM.
+
+</div>
 
 ## Installation
 
-Prerequisites for development:
-- Python 3.12+
-- `uv` (https://github.com/astral-sh/uv)
-
-### Option 1: Install from PyPI (Recommended - Coming Soon)
+Prerequisites: Python 3.12+ and [uv](https://github.com/astral-sh/uv).
 
 ```bash
-pip install AgenticLoop
-```
-
-### Option 2: Install from Source (Development)
-
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/AgenticLoop.git
+git clone https://github.com/luohaha/AgenticLoop.git
 cd AgenticLoop
-
-# Bootstrap (recommended)
 ./scripts/bootstrap.sh
-```
-
-### Option 3: Install from GitHub
-
-```bash
-pip install git+https://github.com/yourusername/AgenticLoop.git
-```
-
-### Option 4: Docker
-
-```bash
-docker pull yourusername/AgenticLoop:latest
-docker run -it --rm -e ANTHROPIC_API_KEY=your_key AgenticLoop --mode react
 ```
 
 ## Quick Start
 
-For repo workflow (install/test/format/build/publish), see `AGENTS.md`.
+### 1. Configure Models
 
-### 0. Install Dependencies (Recommended)
-
-```bash
-./scripts/bootstrap.sh
-```
-
-Optional (recommended): enable git hooks for consistent formatting/linting on commit:
-
-```bash
-source .venv/bin/activate
-pre-commit install
-```
-
-### 1. Configuration
-
-On first run, `.aloop/models.yaml` is created automatically with a template. Edit it to configure your models and API keys (this file is gitignored):
-
-```bash
-$EDITOR .aloop/models.yaml
-```
-
-Example `.aloop/models.yaml`:
+On first run, `.aloop/models.yaml` is created with a template. Edit it to add your provider and API key:
 
 ```yaml
 models:
   openai/gpt-4o:
     api_key: sk-...
-    timeout: 300
 
   anthropic/claude-3-5-sonnet-20241022:
     api_key: sk-ant-...
 
-  # Local model example
   ollama/llama2:
     api_base: http://localhost:11434
 
 default: openai/gpt-4o
 ```
 
-Non-model runtime settings live in `.aloop/config` (created automatically). Example:
+See [LiteLLM Providers](https://docs.litellm.ai/docs/providers) for the full list.
 
-```bash
-MAX_ITERATIONS=100
-MEMORY_ENABLED=true
-```
-
-**Switching Models:**
-
-In interactive mode, use the `/model` command:
-```bash
-# Pick a model
-/model
-
-# Or edit the config
-/model edit
-```
-
-Or use the CLI flag:
-```bash
-python main.py --task "Hello" --model openai/gpt-4o
-```
-
-**Model setup:**
-
-Edit `.aloop/models.yaml` and add your provider model IDs + API keys.
-
-See [LiteLLM Providers](https://docs.litellm.ai/docs/providers) for 100+ supported providers.
-
-### 2. Usage
-
-#### Command Line (After Installation)
+### 2. Run
 
 ```bash
 # Interactive mode
 aloop
 
-# Single task (ReAct mode)
-aloop --mode react --task "Calculate 123 * 456"
+# Single task (returns raw result)
+aloop --task "Calculate 123 * 456"
 
-# Single task (Plan-Execute mode)
-aloop --mode plan --task "Build a web scraper"
+# Resume last session
+aloop --resume
 
-# Show help
-aloop --help
+# Resume specific session (ID prefix)
+aloop --resume a1b2c3d4
 ```
 
-#### Direct Python Execution (Development)
+## CLI Reference
 
-If running from source without installation:
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--task TEXT` | `-t` | Run a single task and exit |
+| `--model ID` | `-m` | LiteLLM model ID to use |
+| `--resume [ID]` | `-r` | Resume a session (`latest` if no ID given) |
+| `--verbose` | `-v` | Enable verbose logging to `.aloop/logs/` |
 
-**ReAct Mode (Interactive)**
+## Interactive Commands
 
-```bash
-python main.py --mode react --task "Calculate 123 * 456"
-```
+### Slash Commands
 
-**Plan-and-Execute Mode (Planning)**
+| Command | Description |
+|---------|-------------|
+| `/help` | Show help |
+| `/clear` | Clear conversation and start fresh |
+| `/stats` | Show memory and token usage statistics |
+| `/resume [id]` | List or resume a previous session |
+| `/model` | Pick a model (arrow keys + Enter) |
+| `/model edit` | Open `.aloop/models.yaml` in editor (auto-reload on save) |
+| `/theme` | Toggle dark/light theme |
+| `/verbose` | Toggle thinking display |
+| `/compact` | Toggle compact output |
+| `/exit` | Exit (also `/quit`) |
 
-```bash
-python main.py --mode plan --task "Search for Python agent tutorials and summarize top 3 results"
-```
+### Keyboard Shortcuts
 
-**Interactive Input**
+| Key | Action |
+|-----|--------|
+| `/` | Command autocomplete |
+| `Ctrl+C` | Cancel current operation |
+| `Ctrl+L` | Clear screen |
+| `Ctrl+T` | Toggle thinking display |
+| `Ctrl+S` | Show quick stats |
+| Up/Down | Navigate command history |
 
-```bash
-python main.py --mode react
-# Then enter your task, press Enter twice to submit
-```
+## How It Works
 
-## Memory Management
+**ReAct loop**: The agent follows a Think-Act-Observe cycle. It reasons about the task, selects a tool, observes the result, and repeats until it has an answer.
 
-The system includes intelligent memory management that automatically optimizes token usage for long-running tasks:
+**Ralph verification**: For single tasks (`--task`), an outer loop verifies the agent's answer against the original task. If incomplete, feedback is injected and the ReAct loop re-enters. Configurable via `RALPH_LOOP_MAX_ITERATIONS` (default: 3).
 
-```bash
-python main.py --task "Complex multi-step task with many iterations..."
+**Memory compression**: When context grows past a token threshold, older messages are compressed via LLM summarization. Recent messages are kept at full fidelity. Strategies: `sliding_window` (default), `selective`, `deletion`.
 
-# Memory statistics shown at the end:
-# --- Memory Statistics ---
-# Total tokens: 45,234
-# Compressions: 3
-# Net savings: 15,678 tokens (34.7%)
-# Total cost: $0.0234
-```
+**Session persistence**: Conversations are saved as YAML files under `.aloop/sessions/`. Resume with `--resume` or `/resume`.
 
-**Key features:**
-- Automatic compression when context grows large
-- 30-70% token reduction for long conversations
-- Multiple compression strategies
-- Cost tracking across providers
-- Transparent operation (no code changes needed)
+## Tools
 
-See [Memory Management Documentation](docs/memory-management.md) for detailed information.
+| Tool | Description |
+|------|-------------|
+| `read_file` | Read file contents |
+| `write_file` | Write content to a file |
+| `search_files` | Search for files by name |
+| `edit_file` | Exact string replacement in files |
+| `smart_edit` | LLM-assisted file editing |
+| `glob_files` | Glob pattern file matching |
+| `grep_content` | Regex search in file contents |
+| `code_navigator` | AST-based code navigation (tree-sitter) |
+| `calculate` | Evaluate expressions / run Python code |
+| `shell` | Execute shell commands |
+| `shell_task_status` | Check background shell task status |
+| `web_search` | Web search (DuckDuckGo) |
+| `web_fetch` | Fetch and extract web page content |
+| `explore_context` | Explore project structure and context |
+| `parallel_execute` | Run multiple tool calls in parallel |
+| `notify` | Send email notifications (Resend) |
+| `manage_todo_list` | Manage a task/todo list |
 
 ## Project Structure
 
 ```
 AgenticLoop/
-├── README.md                    # This document
-├── config.py                    # Configuration management
-├── main.py                      # CLI entry point
-├── docs/                        # 📚 Documentation
-│   ├── examples.md              # Detailed usage examples
-│   ├── configuration.md         # Configuration guide
-│   ├── memory-management.md     # Memory system docs
-│   ├── advanced-features.md     # Advanced features & optimization
-│   └── extending.md             # Extension guide
-├── llm/                         # LLM abstraction layer
-│   ├── base.py                  # Base data structures (LLMMessage, LLMResponse)
-│   ├── litellm_adapter.py       # LiteLLM adapter (100+ providers)
-│   └── retry.py                 # Retry logic for rate limits
-├── agent/                       # Agent implementations
-│   ├── base.py                  # BaseAgent abstract class
-│   ├── context.py               # Context injection
-│   ├── agent.py                 # ReAct agent + Ralph verification loop
-│   ├── plan_execute_agent.py   # Plan-and-Execute mode
-│   ├── tool_executor.py         # Tool execution engine
-│   └── todo.py                  # Todo list management
-├── memory/                      # 🧠 Memory management system
-│   ├── types.py                 # Core data structures
-│   ├── manager.py               # Memory orchestrator with persistence
-│   ├── short_term.py            # Short-term memory
-│   ├── compressor.py            # LLM-driven compression
-│   ├── token_tracker.py         # Token tracking & costs
-│   └── store.py                 # SQLite-based persistent storage
-├── tools/                       # Tool implementations
-│   ├── base.py                  # BaseTool abstract class
-│   ├── file_ops.py              # File operation tools (read/write/search)
-│   ├── advanced_file_ops.py     # Advanced tools (Glob/Grep/Edit)
-│   ├── calculator.py            # Code execution/calculator
-│   ├── shell.py                 # Shell commands
-│   ├── web_search.py            # Web search
-│   ├── todo.py                  # Todo list management
-│   └── delegation.py            # Sub-agent delegation
-├── utils/                       # Utilities
-│   └── logger.py                # Logging setup
-└── examples/                    # Example code
-    ├── react_example.py         # ReAct mode example
-    └── plan_execute_example.py  # Plan-Execute example
+├── main.py                 # Entry point (argparse)
+├── cli.py                  # CLI wrapper (`aloop` entry point)
+├── interactive.py          # Interactive session, model setup, TUI
+├── config.py               # Runtime config (.aloop/config)
+├── agent/
+│   ├── base.py             # BaseAgent (ReAct + Ralph loops)
+│   ├── agent.py            # ReActAgent
+│   ├── verification.py     # LLMVerifier for Ralph loop
+│   ├── context.py          # Context injection (cwd, platform, date)
+│   ├── tool_executor.py    # Tool execution engine
+│   └── todo.py             # Todo list data structure
+├── llm/
+│   ├── litellm_adapter.py  # LiteLLM adapter (100+ providers)
+│   ├── model_manager.py    # Model config from .aloop/models.yaml
+│   ├── retry.py            # Retry with exponential backoff
+│   └── message_types.py    # LLMMessage, LLMResponse, ToolCall
+├── memory/
+│   ├── manager.py          # Memory orchestrator + persistence
+│   ├── compressor.py       # LLM-driven compression
+│   ├── short_term.py       # Short-term memory (sliding window)
+│   ├── token_tracker.py    # Token counting + cost tracking
+│   ├── types.py            # Core data structures
+│   └── store/
+│       └── yaml_file_memory_store.py  # YAML session persistence
+├── tools/                  # 18 tool implementations
+├── utils/
+│   ├── tui/                # TUI components (input, themes, status bar)
+│   ├── logger.py           # Logging setup
+│   └── model_pricing.py    # Model pricing data
+├── docs/                   # Documentation
+├── test/                   # Tests
+├── scripts/                # Dev scripts (bootstrap.sh, dev.sh)
+└── rfc/                    # RFC design documents
 ```
+
+## Configuration
+
+Runtime settings live in `.aloop/config` (auto-created). Key settings:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `MAX_ITERATIONS` | `1000` | Maximum agent loop iterations |
+| `TOOL_TIMEOUT` | `600` | Tool execution timeout (seconds) |
+| `RALPH_LOOP_MAX_ITERATIONS` | `3` | Max verification attempts |
+| `MEMORY_ENABLED` | `true` | Enable memory management |
+| `MEMORY_COMPRESSION_THRESHOLD` | `60000` | Token threshold for compression |
+| `MEMORY_SHORT_TERM_SIZE` | `100` | Messages kept at full fidelity |
+| `RETRY_MAX_ATTEMPTS` | `3` | Rate-limit retry attempts |
+
+See [Configuration Guide](docs/configuration.md) for all settings.
 
 ## Documentation
 
-- **[Examples](docs/examples.md)**: Detailed usage examples and patterns
-- **[Configuration](docs/configuration.md)**: Complete configuration guide
-- **[Memory Management](docs/memory-management.md)**: Memory system documentation
-- **[Advanced Features](docs/advanced-features.md)**: Optimization and advanced techniques
-- **[Extending](docs/extending.md)**: How to add tools, agents, and LLM providers
-- **[Packaging Guide](docs/packaging.md)**: Package and distribute the system
-
-## Configuration Options
-
-See the [Configuration Guide](docs/configuration.md) for all options. Key settings:
-
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `.aloop/models.yaml` | Model configuration (models + keys + default) | - |
-| `MAX_ITERATIONS` | Maximum agent iterations | `100` |
-| `MEMORY_COMPRESSION_THRESHOLD` | Compress when exceeded | `25000` |
-| `MEMORY_SHORT_TERM_SIZE` | Recent messages to keep | `100` |
-| `RETRY_MAX_ATTEMPTS` | Retry attempts for rate limits | `3` |
-| `LOG_LEVEL` | Logging level | `DEBUG` |
-
-See [Configuration Guide](docs/configuration.md) for detailed options.
-
-## Testing
-
-Run basic tests:
-
-```bash
-./scripts/bootstrap.sh
-source .venv/bin/activate
-./scripts/dev.sh test -q
-```
-
-## Learning Resources
-
-- **ReAct Paper**: [ReAct: Synergizing Reasoning and Acting in Language Models](https://arxiv.org/abs/2210.03629)
-- **Anthropic API Documentation**: [docs.anthropic.com](https://docs.anthropic.com)
-- **Tool Use Guide**: [Tool Use (Function Calling)](https://docs.anthropic.com/en/docs/tool-use)
-
-## Features
-
-- ✅ **Multi-Provider Support**: 100+ LLM providers via LiteLLM (Anthropic, OpenAI, Google, Azure, AWS Bedrock, local models, etc.)
-- ✅ **Intelligent Memory Management**: Automatic compression with 30-70% token reduction
-- ✅ **Persistent Memory**: SQLite-based session storage and recovery
-- ✅ **ReAct & Plan-Execute Modes**: Flexible agent architectures
-- ✅ **Rich Tool Ecosystem**: File operations, web search, shell commands, code execution
-- ✅ **Automatic Retry Logic**: Built-in handling for rate limits and API errors
-- ✅ **Cost Tracking**: Token usage and cost monitoring across providers
-
-## Future Improvements
-
-- [ ] Streaming output to display agent thinking process
-- [ ] Parallel tool execution
-- [ ] Human-in-the-loop for dangerous operations
-- [ ] Multi-agent collaboration system
-- [ ] Semantic retrieval with vector database
+- [Configuration](docs/configuration.md) -- model setup, runtime settings, custom endpoints
+- [Examples](docs/examples.md) -- usage patterns and programmatic API
+- [Memory Management](docs/memory-management.md) -- compression, persistence, token tracking
+- [Extending](docs/extending.md) -- adding tools, agents, LLM providers
+- [Packaging](docs/packaging.md) -- building, publishing, Docker
 
 ## License
 
 MIT License
-
-## Development
-
-### Building and Packaging
-
-See the [Packaging Guide](docs/packaging.md) for instructions on:
-- Building distributable packages
-- Publishing to PyPI
-- Creating Docker images
-- Generating standalone executables
-
-Quick commands:
-```bash
-# Bootstrap local dev environment (creates .venv, installs deps)
-./scripts/bootstrap.sh
-
-# Build distribution packages
-./scripts/dev.sh build
-
-# Publish to PyPI
-./scripts/dev.sh publish
-```
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit issues and pull requests.
-
-### How to Contribute
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request

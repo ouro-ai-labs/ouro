@@ -150,7 +150,7 @@ Unified entrypoint: `./scripts/dev.sh format`
 - Configuration & `.aloop/models.yaml`: `docs/configuration.md`
 - Packaging & release checklist: `docs/packaging.md`
 - Extending tools/agents: `docs/extending.md`
-- Memory system: `docs/memory-management.md`, `docs/memory_persistence.md`
+- Memory system: `docs/memory-management.md`
 - Usage examples: `docs/examples.md`
 
 ## Safety & Secrets
@@ -206,5 +206,5 @@ Review existing RFCs before implementation to understand design decisions and co
 - If you change CLI flags / behavior: update `README.md` and `docs/examples.md`.
 - If you change configuration/env vars: update `docs/configuration.md`.
 - If you change packaging/versioning: update `pyproject.toml` and `docs/packaging.md`.
-- If you change memory/compression/persistence: add/adjust tests under `test/memory/` and update `docs/memory-management.md` / `docs/memory_persistence.md`.
+- If you change memory/compression/persistence: add/adjust tests under `test/memory/` and update `docs/memory-management.md`.
 - **Significant changes**: write an RFC in `rfc/` before implementation (see RFC Design Documents section above).
