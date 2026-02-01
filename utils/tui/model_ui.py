@@ -49,6 +49,10 @@ async def open_in_editor(path: str) -> tuple[bool, bool]:
             return False, False
         return (await proc.wait()) == 0, True
 
+    if shutil.which("vi"):
+        proc = await asyncio.create_subprocess_exec("vi", path)
+        return (await proc.wait()) == 0, True
+
     if shutil.which("code"):
         # Don't use `-w` here; we prefer to return to the TUI after the file is saved
         # (and auto-reloaded), without requiring the user to close the editor tab.
