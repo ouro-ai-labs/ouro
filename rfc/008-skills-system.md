@@ -8,7 +8,7 @@ Draft
 
 Introduce a minimal skills system for aloop:
 
-- **Skill**: reusable workflow package, loaded on explicit invocation
+- **Skill**: reusable workflow package with progressive disclosure
 - **Command**: user entrypoint (`/review`) that may depend on skills
 
 ## Problem Statement
@@ -16,6 +16,7 @@ Introduce a minimal skills system for aloop:
 aloop needs a structured way to:
 
 - Provide opt-in, reusable workflows without bloating context
+- Let LLM automatically select skills based on task matching
 - Make context assembly auditable and deterministic
 
 ## Design
@@ -24,7 +25,7 @@ aloop needs a structured way to:
 
 | Object | Description |
 |--------|-------------|
-| **Skill** | Reusable workflow package. Indexed at startup; body loaded on invocation. |
+| **Skill** | Reusable workflow package. Metadata indexed at startup; body loaded on invocation. |
 | **Command** | Explicit entrypoint (e.g. `/review`). May declare `requires-skills`. |
 
 ### 2) File Layout
@@ -46,7 +47,7 @@ Follows the [Agent Skills open format](https://agentskills.io/specification):
 ```yaml
 ---
 name: code-review
-description: Review code for style and correctness.
+description: Review code for style and correctness. Use when reviewing PRs, checking code quality, or when user mentions code review.
 ---
 
 Instructions for the agent...
@@ -58,7 +59,7 @@ Instructions for the agent...
 
 **Constraints**:
 - `name`: 1–64 chars, lowercase + hyphens, must match directory name
-- `description`: 1–1024 chars
+- `description`: 1–1024 chars. **Critical**: This is the primary trigger mechanism. Include both what the skill does AND when to use it.
 
 Optional directories: `scripts/`, `references/`, `assets/` (read-only in MVP).
 
@@ -76,21 +77,36 @@ Review the changes: $ARGUMENTS
 
 `name` is derived from filename (`.aloop/commands/review.md` → `/review`).
 
-### 5) Invocation
+### 5) Progressive Disclosure
 
-| Syntax | Action |
-|--------|--------|
-| `/<command> <args>` | Invoke command, load its `requires-skills` |
-| `$skill-name <args>` | Invoke skill directly |
+Skills use a three-level loading system to manage context efficiently:
 
-### 6) Context Assembly
+1. **Metadata (~100 tokens)**: `name` + `description` loaded at startup for ALL skills
+2. **System Prompt Injection**: Available skills list injected into system prompt so LLM knows what's available
+3. **Full Body (on invocation)**: Complete `SKILL.md` body loaded only when skill is triggered
 
-1. **On invocation**: command template + skill bodies from `requires-skills`
-2. **Template variable**: `$ARGUMENTS` expands to user input
+### 6) Invocation
 
-Skills follow **progressive disclosure**: only `name` + `description` are indexed at startup; full body is loaded when invoked.
+Skills can be invoked in two ways:
 
-### 7) Skill Management
+| Method | Trigger | Example |
+|--------|---------|---------|
+| **Explicit** | User types `$skill-name` or `/<command>` | `$lint src/` or `/review` |
+| **Implicit** | LLM matches task to skill description | User: "check my code" → LLM selects `code-review` |
+
+**Trigger rules** (injected into system prompt):
+- If user names a skill (with `$SkillName` or plain text), use that skill
+- If task clearly matches a skill's description, LLM must use that skill
+- Multiple matches → use all matching skills
+- Skills do not carry across turns unless re-mentioned
+
+### 7) Context Assembly
+
+1. **At startup**: Render skills section into system prompt (name + description + path for each skill)
+2. **On invocation**: Load skill body, inject as user message with `<skill>` tags
+3. **Template variable**: `$ARGUMENTS` expands to user input
+
+### 8) Skill Management
 
 `/skills` opens an interactive menu:
 
@@ -111,13 +127,37 @@ Press enter to confirm or esc to go back
 - Uninstall removes directory from `~/.aloop/skills/`
 - Restart required after install/uninstall to reload registry
 
-### 8) Startup Flow
+### 9) Startup Flow
 
 1. Scan `.aloop/commands/*.md` → parse frontmatter
 2. Scan `~/.aloop/skills/*/SKILL.md` → parse frontmatter (`name` + `description`)
 3. Build registry (no body loading)
+4. **Render skills section** → inject into system prompt
 
 **Error handling**: Malformed files are skipped with a warning.
+
+### 10) System Prompt Injection
+
+At startup, render available skills into the system prompt:
+
+```markdown
+## Skills
+A skill is a set of local instructions stored in a `SKILL.md` file.
+
+### Available skills
+- code-review: Review code for style and correctness. (file: ~/.aloop/skills/code-review/SKILL.md)
+- lint: Run linters on source files. (file: ~/.aloop/skills/lint/SKILL.md)
+
+### How to use skills
+- If user names a skill (with `$SkillName` or plain text) OR task matches a skill's description, use that skill
+- After deciding to use a skill, open its `SKILL.md` and follow the workflow
+- Announce which skill(s) you're using and why
+```
+
+This enables LLM to:
+1. See all available skills and their descriptions
+2. Automatically select matching skills based on user intent
+3. Load full instructions only when needed
 
 ## References
 
@@ -126,7 +166,6 @@ Press enter to confirm or esc to go back
 
 ## Future Work
 
-- Implicit skill selection (auto-match by description)
 - Enable/disable state (`~/.aloop/skills.json`)
 - Repo-scoped skills (`.aloop/skills/`)
 - Autocomplete for `$` prefix
@@ -135,6 +174,7 @@ Press enter to confirm or esc to go back
 
 ## Next Steps
 
-1. Implement skill indexer + loader
-2. Add `/command` and `$skill` parsing to input handler
-3. Integrate context assembly into agent loop
+1. ~~Implement skill indexer + loader~~
+2. ~~Add `/command` and `$skill` parsing to input handler~~
+3. **Add `render_skills_section()` for system prompt injection**
+4. **Integrate skills into agent's system prompt**

@@ -8,7 +8,7 @@ import warnings
 from rich.console import Console
 
 from agent.agent import LoopAgent
-from agent.skills import SkillsRegistry
+from agent.skills import SkillsRegistry, render_skills_section
 from config import Config
 from interactive import run_interactive_mode, run_model_setup_mode
 from llm import LiteLLMAdapter, ModelManager
@@ -227,6 +227,10 @@ def main():
         skills_registry = SkillsRegistry()
         try:
             await skills_registry.load()
+            # Inject skills section into agent's system prompt
+            skills_section = render_skills_section(list(skills_registry.skills.values()))
+            agent.set_skills_section(skills_section)
+            # Resolve explicit skill/command invocations
             resolved = await skills_registry.resolve_user_input(task)
             task = resolved.rendered
         except Exception as e:

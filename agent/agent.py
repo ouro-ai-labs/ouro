@@ -1,6 +1,7 @@
 """Loop agent implementation."""
 
 import logging
+from typing import Optional
 
 from config import Config
 from llm import LLMMessage
@@ -14,6 +15,18 @@ logger = logging.getLogger(__name__)
 
 class LoopAgent(BaseAgent):
     """Primary agent implementation — one unified loop for all tasks."""
+
+    # Skills section to inject into system prompt (set by caller)
+    _skills_section: Optional[str] = None
+
+    def set_skills_section(self, skills_section: Optional[str]) -> None:
+        """Set the skills section to inject into system prompt.
+
+        Args:
+            skills_section: Rendered skills section from render_skills_section(),
+                           or None to disable skills injection.
+        """
+        self._skills_section = skills_section
 
     SYSTEM_PROMPT = """<role>
 You are a helpful AI assistant that uses tools to accomplish tasks efficiently and reliably.
@@ -189,6 +202,10 @@ When to use each approach:
                         system_content = system_content + "\n" + ltm_section
                 except Exception:
                     logger.warning("Failed to load long-term memory", exc_info=True)
+
+            # Inject skills section if available
+            if self._skills_section:
+                system_content = system_content + "\n\n" + self._skills_section
 
             # Add system message only on first turn
             await self.memory.add_message(LLMMessage(role="system", content=system_content))

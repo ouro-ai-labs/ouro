@@ -6,7 +6,7 @@ import signal
 
 from rich.table import Table
 
-from agent.skills import SkillsRegistry
+from agent.skills import SkillsRegistry, render_skills_section
 from config import Config
 from llm import ModelManager
 from memory import MemoryManager
@@ -615,6 +615,10 @@ class InteractiveSession:
 
         try:
             await self.skills_registry.load()
+            # Inject skills section into agent's system prompt
+            skills_section = render_skills_section(list(self.skills_registry.skills.values()))
+            if hasattr(self.agent, "set_skills_section"):
+                self.agent.set_skills_section(skills_section)
         except Exception as e:
             terminal_ui.print_warning(f"Failed to load skills registry: {e}")
 
