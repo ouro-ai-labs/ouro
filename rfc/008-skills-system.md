@@ -8,7 +8,6 @@ Draft
 
 Introduce a minimal skills system for aloop:
 
-- **ProjectProfile**: always-on repo guidance (`AGENTS.md`)
 - **Skill**: reusable workflow package, loaded on explicit invocation
 - **Command**: user entrypoint (`/review`) that may depend on skills
 
@@ -16,7 +15,6 @@ Introduce a minimal skills system for aloop:
 
 aloop needs a structured way to:
 
-- Keep repo workflow guidance consistently available
 - Provide opt-in, reusable workflows without bloating context
 - Make context assembly auditable and deterministic
 
@@ -26,7 +24,6 @@ aloop needs a structured way to:
 
 | Object | Description |
 |--------|-------------|
-| **ProjectProfile** | Always-on repo guidance. Source: `AGENTS.md` at repo root. |
 | **Skill** | Reusable workflow package. Indexed at startup; body loaded on invocation. |
 | **Command** | Explicit entrypoint (e.g. `/review`). May declare `requires-skills`. |
 
@@ -34,7 +31,6 @@ aloop needs a structured way to:
 
 ```
 # Project files (checked into repo)
-AGENTS.md                              # ProjectProfile
 .aloop/commands/<name>.md              # Repo-specific commands
 
 # User-level (not in repo)
@@ -89,9 +85,10 @@ Review the changes: $ARGUMENTS
 
 ### 6) Context Assembly
 
-1. **Always load**: `AGENTS.md` (ProjectProfile)
-2. **On invocation**: command template + skill bodies from `requires-skills`
-3. **Template variable**: `$ARGUMENTS` expands to user input
+1. **On invocation**: command template + skill bodies from `requires-skills`
+2. **Template variable**: `$ARGUMENTS` expands to user input
+
+Skills follow **progressive disclosure**: only `name` + `description` are indexed at startup; full body is loaded when invoked.
 
 ### 7) Skill Management
 
@@ -116,10 +113,9 @@ Press enter to confirm or esc to go back
 
 ### 8) Startup Flow
 
-1. Load `AGENTS.md`
-2. Scan `.aloop/commands/*.md` → parse frontmatter
-3. Scan `~/.aloop/skills/*/SKILL.md` → parse frontmatter (`name` + `description`)
-4. Build registry (no body loading)
+1. Scan `.aloop/commands/*.md` → parse frontmatter
+2. Scan `~/.aloop/skills/*/SKILL.md` → parse frontmatter (`name` + `description`)
+3. Build registry (no body loading)
 
 **Error handling**: Malformed files are skipped with a warning.
 

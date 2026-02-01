@@ -11,6 +11,7 @@ from llm import ModelManager
 from memory import MemoryManager
 from utils import get_log_file_path, terminal_ui
 from utils.runtime import get_history_file
+from utils.skills import SkillsRegistry
 from utils.tui.command_registry import CommandRegistry, CommandSpec
 from utils.tui.input_handler import InputHandler
 from utils.tui.model_ui import (
@@ -19,6 +20,7 @@ from utils.tui.model_ui import (
     parse_kv_args,
     pick_model_id,
 )
+from utils.tui.skills_ui import SkillsAction, pick_skills_action
 from utils.tui.status_bar import StatusBar
 from utils.tui.theme import Theme, set_theme
 
@@ -56,6 +58,7 @@ class InteractiveSession:
                 CommandSpec("theme", "Toggle between dark and light theme"),
                 CommandSpec("verbose", "Toggle verbose thinking display"),
                 CommandSpec("compact", "Compress conversation memory"),
+                CommandSpec("skills", "Manage skills (list/install/uninstall)"),
                 CommandSpec(
                     "model",
                     "Manage models",
@@ -84,6 +87,7 @@ class InteractiveSession:
         # Initialize status bar
         self.status_bar = StatusBar(terminal_ui.console)
         self.status_bar.update(mode="LOOP")
+        self.skills_registry = SkillsRegistry()
 
         # Set up signal handler for graceful interruption
         self._setup_signal_handler()
@@ -308,14 +312,14 @@ class InteractiveSession:
             model_name=model_name,
         )
 
-    async def _handle_command(self, user_input: str) -> bool:
+    async def _handle_command(self, user_input: str) -> bool | None:
         """Handle a slash command.
 
         Args:
             user_input: User input starting with /
 
         Returns:
-            True if should continue loop, False if should exit
+            True if command was handled, False if should exit, None if not handled
         """
         command_parts = user_input.split()
         command = command_parts[0].lower()
@@ -356,7 +360,14 @@ class InteractiveSession:
         elif command == "/model":
             await self._handle_model_command(user_input)
 
+        elif command == "/skills":
+            await self._handle_skills_menu()
+
         else:
+            if command.startswith("/"):
+                command_name = command[1:]
+                if command_name in self.skills_registry.commands:
+                    return None
             colors = Theme.get_colors()
             terminal_ui.console.print(
                 f"[bold {colors.error}]Unknown command: {command}[/bold {colors.error}]"
@@ -364,8 +375,60 @@ class InteractiveSession:
             terminal_ui.console.print(
                 f"[{colors.text_muted}]Type /help to see available commands[/{colors.text_muted}]\n"
             )
+            return True
 
         return True
+
+    async def _handle_skills_menu(self) -> None:
+        action = await pick_skills_action()
+        if action is None:
+            return
+
+        if action == SkillsAction.LIST:
+            self._show_skills_list()
+            return
+
+        if action == SkillsAction.INSTALL:
+            source = await self.input_handler.prompt_async("Install path or URL: ")
+            if not source:
+                terminal_ui.print_warning("Install cancelled")
+                return
+            result = await self.skills_registry.install_skill(source)
+            if result:
+                terminal_ui.print_success(f"Installed skill: {result.name}")
+                terminal_ui.print_info("Restart aloop to reload skills registry")
+            return
+
+        if action == SkillsAction.UNINSTALL:
+            name = await self.input_handler.prompt_async("Uninstall skill name: ")
+            if not name:
+                terminal_ui.print_warning("Uninstall cancelled")
+                return
+            ok = await self.skills_registry.uninstall_skill(name)
+            if ok:
+                terminal_ui.print_success(f"Removed skill: {name}")
+                terminal_ui.print_info("Restart aloop to reload skills registry")
+
+    def _show_skills_list(self) -> None:
+        colors = Theme.get_colors()
+        skills = sorted(self.skills_registry.skills.values(), key=lambda s: s.name)
+        if not skills:
+            terminal_ui.print_warning("No installed skills found")
+            terminal_ui.console.print()
+            return
+
+        table = Table(show_header=True, header_style=f"bold {colors.primary}", box=None)
+        table.add_column("Name", style=colors.primary, width=24)
+        table.add_column("Description", style=colors.text_primary)
+
+        for skill in skills:
+            table.add_row(skill.name, skill.description)
+
+        terminal_ui.console.print(
+            f"\n[bold {colors.primary}]Installed Skills:[/bold {colors.primary}]\n"
+        )
+        terminal_ui.console.print(table)
+        terminal_ui.console.print()
 
     def _show_models(self) -> None:
         """Display available models and current selection."""
@@ -550,6 +613,11 @@ class InteractiveSession:
         if Config.TUI_STATUS_BAR:
             self.status_bar.show()
 
+        try:
+            await self.skills_registry.load()
+        except Exception as e:
+            terminal_ui.print_warning(f"Failed to load skills registry: {e}")
+
         while True:
             try:
                 # Get user input
@@ -561,10 +629,11 @@ class InteractiveSession:
 
                 # Handle commands
                 if user_input.startswith("/"):
-                    should_continue = await self._handle_command(user_input)
-                    if not should_continue:
+                    command_result = await self._handle_command(user_input)
+                    if command_result is False:
                         break
-                    continue
+                    if command_result is True:
+                        continue
 
                 # Process user message
                 self.conversation_count += 1
@@ -580,12 +649,15 @@ class InteractiveSession:
                     self.status_bar.update(is_processing=True)
 
                 try:
+                    resolved = await self.skills_registry.resolve_user_input(user_input)
                     # Create a task for the agent run so it can be cancelled
                     self.current_task = asyncio.create_task(
-                        self.agent.run(user_input, verify=False)
+                        self.agent.run(resolved.rendered, verify=False)
                     )
-                    result = await self.current_task
-                    self.current_task = None
+                    try:
+                        result = await self.current_task
+                    finally:
+                        self.current_task = None
 
                     # Display agent response
                     terminal_ui.console.print(

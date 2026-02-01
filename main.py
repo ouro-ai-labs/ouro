@@ -23,6 +23,7 @@ from tools.web_fetch import WebFetchTool
 from tools.web_search import WebSearchTool
 from utils import setup_logger, terminal_ui
 from utils.runtime import ensure_runtime_dirs
+from utils.skills import SkillsRegistry
 
 warnings.filterwarnings("ignore", message="Pydantic serializer warnings.*", category=UserWarning)
 
@@ -222,6 +223,14 @@ def main():
 
         # Single-turn mode: execute one task and exit
         task = args.task
+
+        skills_registry = SkillsRegistry()
+        try:
+            await skills_registry.load()
+            resolved = await skills_registry.resolve_user_input(task)
+            task = resolved.rendered
+        except Exception as e:
+            terminal_ui.print_warning(f"Failed to load skills registry: {e}")
 
         # Quiet mode: suppress all Rich UI output, print raw result only
         terminal_ui.console = Console(quiet=True)
