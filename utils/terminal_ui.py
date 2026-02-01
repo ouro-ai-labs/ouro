@@ -29,6 +29,25 @@ def _get_colors():
     return Theme.get_colors()
 
 
+ALOOP_LOGO = r"""
+ █████╗ ██╗      ██████╗  ██████╗ ██████╗
+██╔══██╗██║     ██╔═══██╗██╔═══██╗██╔══██╗
+███████║██║     ██║   ██║██║   ██║██████╔╝
+██╔══██║██║     ██║   ██║██║   ██║██╔═══╝
+██║  ██║███████╗╚██████╔╝╚██████╔╝██║
+╚═╝  ╚═╝╚══════╝ ╚═════╝  ╚═════╝ ╚═╝"""
+
+
+def print_banner(subtitle: Optional[str] = None) -> None:
+    """Print the ASCII art banner with optional subtitle."""
+    colors = _get_colors()
+    content = f"[bold {colors.primary}]{ALOOP_LOGO.lstrip(chr(10))}[/bold {colors.primary}]"
+    if subtitle:
+        content += f"\n\n[{colors.text_secondary}]{subtitle}[/{colors.text_secondary}]"
+
+    console.print(Panel(content, border_style=colors.primary, box=box.DOUBLE, padding=(1, 2)))
+
+
 def print_header(title: str, subtitle: Optional[str] = None) -> None:
     """Print a formatted header panel.
 

@@ -488,8 +488,7 @@ class InteractiveSession:
     async def run(self) -> None:
         """Run the interactive session loop."""
         # Print header
-        terminal_ui.print_header(
-            "Agentic Loop - Interactive Mode",
+        terminal_ui.print_banner(
             subtitle="Multi-turn conversation with AI Agent",
         )
 
