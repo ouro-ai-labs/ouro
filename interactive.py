@@ -41,7 +41,7 @@ class InteractiveSession:
         self.command_registry = CommandRegistry(
             commands=[
                 CommandSpec("help", "Show this help message"),
-                CommandSpec("clear", "Clear conversation memory and start fresh"),
+                CommandSpec("reset", "Clear conversation memory and start fresh"),
                 CommandSpec("stats", "Show memory and token usage statistics"),
                 CommandSpec(
                     "resume",
@@ -51,7 +51,6 @@ class InteractiveSession:
                 CommandSpec("theme", "Toggle between dark and light theme"),
                 CommandSpec("verbose", "Toggle verbose thinking display"),
                 CommandSpec("compact", "Compress conversation memory"),
-                CommandSpec("clean", "Clear conversation context and start fresh"),
                 CommandSpec(
                     "model",
                     "Manage models",
@@ -308,7 +307,7 @@ class InteractiveSession:
         elif command == "/help":
             self._show_help()
 
-        elif command == "/clear":
+        elif command == "/reset":
             self.agent.memory.reset()
             self.conversation_count = 0
             self._update_status_bar()
@@ -330,13 +329,6 @@ class InteractiveSession:
 
         elif command == "/compact":
             await self._compact_memory()
-
-        elif command == "/clean":
-            self.agent.memory.reset()
-            self.conversation_count = 0
-            self._update_status_bar()
-            terminal_ui.print_success("Conversation context cleared. Starting fresh.")
-            terminal_ui.console.print()
 
         elif command == "/model":
             await self._handle_model_command(user_input)
