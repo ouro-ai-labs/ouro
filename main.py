@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import importlib.metadata
 import warnings
 
 from rich.console import Console
@@ -137,6 +138,13 @@ async def _resolve_session_id(resume_arg: str) -> str:
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(description="Run an AI agent with tool-calling capabilities")
+
+    try:
+        version = importlib.metadata.version("aloop")
+    except importlib.metadata.PackageNotFoundError:
+        version = "dev"
+    parser.add_argument("--version", "-V", action="version", version=f"aloop {version}")
+
     parser.add_argument(
         "--task",
         "-t",
