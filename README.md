@@ -14,12 +14,18 @@ agent itself, not by a hardcoded workflow. Simple architecture, emergent capabil
 
 ## Installation
 
-Prerequisites: Python 3.12+ and [uv](https://github.com/astral-sh/uv).
+Prerequisites: Python 3.12+.
+
+```bash
+pip install aloop
+```
+
+Or install from source (for development):
 
 ```bash
 git clone https://github.com/luohaha/aloop.git
 cd aloop
-./scripts/bootstrap.sh
+./scripts/bootstrap.sh   # requires uv
 ```
 
 ## Quick Start
