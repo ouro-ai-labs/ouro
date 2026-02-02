@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-02-02
+
+### Fixed
+
+- Include missing `agent.prompts` and `memory.store` subpackages in wheel
+
+### Changed
+
+- Add `pip install aloop` as primary installation method in README
+
 ## [0.1.0] - 2026-02-02
 
 ### Added
