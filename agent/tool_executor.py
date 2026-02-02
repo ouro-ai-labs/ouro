@@ -33,6 +33,9 @@ class ToolExecutor:
             else:
                 result = await self.tools[tool_name].execute(**tool_input)
             return str(result)
+        except asyncio.CancelledError:
+            # Re-raise CancelledError to allow proper cleanup
+            raise
         except TimeoutError:
             return f"Error: Tool '{tool_name}' timed out after {timeout}s"
         except Exception as e:

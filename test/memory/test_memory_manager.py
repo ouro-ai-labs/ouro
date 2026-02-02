@@ -438,3 +438,138 @@ class TestEdgeCases:
 
         await manager.compress()
         assert manager.compression_count == 1
+
+
+class TestMemoryManagerRollback:
+    """Test rollback functionality for interrupted exchanges."""
+
+    async def test_rollback_incomplete_exchange_with_tool_calls(self, mock_llm):
+        """Test rollback when last message is assistant with tool_calls."""
+        manager = MemoryManager(mock_llm)
+
+        # Add user message
+        user_msg = LLMMessage(role="user", content="Search for files")
+        await manager.add_message(user_msg)
+
+        # Add assistant message with tool_calls (simulating interrupted execution)
+        assistant_msg = LLMMessage(
+            role="assistant",
+            content=[
+                {"type": "text", "text": "I'll search for files"},
+                {"type": "tool_use", "id": "t1", "name": "search", "input": {"query": "*.py"}},
+            ],
+        )
+        await manager.add_message(assistant_msg)
+
+        # Should have 2 messages
+        assert manager.short_term.count() == 2
+
+        # Rollback incomplete exchange
+        manager.rollback_incomplete_exchange()
+
+        # Should only remove the assistant message, keep the user message
+        assert manager.short_term.count() == 1
+        assert manager.short_term.get_messages()[0].role == "user"
+
+    async def test_rollback_incomplete_exchange_no_rollback_needed(self, mock_llm):
+        """Test rollback when last message is complete (no tool_calls)."""
+        manager = MemoryManager(mock_llm)
+
+        # Add complete exchange
+        user_msg = LLMMessage(role="user", content="Hello")
+        assistant_msg = LLMMessage(role="assistant", content="Hi there!")
+
+        await manager.add_message(user_msg)
+        await manager.add_message(assistant_msg)
+
+        # Should have 2 messages
+        assert manager.short_term.count() == 2
+
+        # Rollback should not remove anything (no tool_calls)
+        manager.rollback_incomplete_exchange()
+
+        # Should still have 2 messages
+        assert manager.short_term.count() == 2
+
+    async def test_rollback_incomplete_exchange_with_tool_results(self, mock_llm):
+        """Test rollback when exchange is complete (has tool results)."""
+        manager = MemoryManager(mock_llm)
+
+        # Add complete exchange with tool use and results
+        messages = [
+            LLMMessage(role="user", content="Search for files"),
+            LLMMessage(
+                role="assistant",
+                content=[
+                    {"type": "text", "text": "I'll search"},
+                    {"type": "tool_use", "id": "t1", "name": "search", "input": {}},
+                ],
+            ),
+            LLMMessage(
+                role="user",
+                content=[{"type": "tool_result", "tool_use_id": "t1", "content": "results"}],
+            ),
+            LLMMessage(role="assistant", content="Here are the results"),
+        ]
+
+        for msg in messages:
+            await manager.add_message(msg)
+
+        # Should have 4 messages
+        assert manager.short_term.count() == 4
+
+        # Rollback should not remove anything (exchange is complete)
+        manager.rollback_incomplete_exchange()
+
+        # Should still have 4 messages
+        assert manager.short_term.count() == 4
+
+    async def test_rollback_incomplete_exchange_empty_memory(self, mock_llm):
+        """Test rollback on empty memory."""
+        manager = MemoryManager(mock_llm)
+
+        # Should not crash
+        manager.rollback_incomplete_exchange()
+
+        assert manager.short_term.count() == 0
+
+    async def test_rollback_incomplete_exchange_only_user_message(self, mock_llm):
+        """Test rollback when only user message exists."""
+        manager = MemoryManager(mock_llm)
+
+        user_msg = LLMMessage(role="user", content="Hello")
+        await manager.add_message(user_msg)
+
+        # Rollback should not remove user message alone
+        manager.rollback_incomplete_exchange()
+
+        # Should still have 1 message
+        assert manager.short_term.count() == 1
+
+    async def test_rollback_recalculates_tokens(self, mock_llm):
+        """Test that rollback recalculates token count."""
+        manager = MemoryManager(mock_llm)
+
+        # Add messages
+        user_msg = LLMMessage(role="user", content="Search for files")
+        assistant_msg = LLMMessage(
+            role="assistant",
+            content=[
+                {"type": "text", "text": "I'll search"},
+                {"type": "tool_use", "id": "t1", "name": "search", "input": {}},
+            ],
+        )
+
+        await manager.add_message(user_msg)
+        initial_tokens = manager.current_tokens
+
+        await manager.add_message(assistant_msg)
+        tokens_after_assistant = manager.current_tokens
+
+        assert tokens_after_assistant > initial_tokens
+
+        # Rollback
+        manager.rollback_incomplete_exchange()
+
+        # Tokens should be recalculated (should be same as initial since only assistant removed)
+        assert manager.current_tokens == initial_tokens
