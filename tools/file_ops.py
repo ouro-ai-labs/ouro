@@ -1,7 +1,5 @@
-"""File operation tools for reading, writing, and searching files."""
+"""File operation tools for reading and writing files."""
 
-import asyncio
-import glob
 import os
 from typing import Any, Dict
 
@@ -111,40 +109,3 @@ class FileWriteTool(BaseTool):
             return f"Successfully wrote to {file_path}"
         except Exception as e:
             return f"Error writing file: {str(e)}"
-
-
-class FileSearchTool(BaseTool):
-    """Search for files matching a pattern in a directory."""
-
-    @property
-    def name(self) -> str:
-        return "search_files"
-
-    @property
-    def description(self) -> str:
-        return "Search for files matching a pattern in a directory"
-
-    @property
-    def parameters(self) -> Dict[str, Any]:
-        return {
-            "directory": {
-                "type": "string",
-                "description": "Directory to search in (default: current directory)",
-            },
-            "pattern": {
-                "type": "string",
-                "description": "File name pattern (e.g., '*.py', 'test_*')",
-            },
-        }
-
-    async def execute(self, directory: str = ".", pattern: str = "*") -> str:
-        """Search for files matching pattern."""
-        try:
-            search_path = os.path.join(directory, "**", pattern)
-            files = await asyncio.to_thread(lambda: glob.glob(search_path, recursive=True))
-            if files:
-                return "\n".join(files)
-            else:
-                return "No files found matching pattern"
-        except Exception as e:
-            return f"Error searching files: {str(e)}"

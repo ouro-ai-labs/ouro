@@ -9,8 +9,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent.agent import LoopAgent
 from llm import LiteLLMAdapter, ModelManager
-from tools.calculator import CalculatorTool
 from tools.file_ops import FileReadTool, FileWriteTool
+from tools.shell import ShellTool
 from tools.web_search import WebSearchTool
 
 
@@ -38,17 +38,17 @@ async def main():
     agent = LoopAgent(
         llm=llm,
         tools=[
-            CalculatorTool(),
             FileReadTool(),
             FileWriteTool(),
+            ShellTool(),
             WebSearchTool(),
         ],
         max_iterations=10,
     )
 
-    # Example 1: Simple calculation
+    # Example 1: Simple calculation using shell
     print("\n--- Example 1: Simple Calculation ---")
-    result1 = await agent.run("What is 12345 multiplied by 67890?")
+    result1 = await agent.run("What is 12345 multiplied by 67890? Use python to calculate.")
     print(f"\nResult: {result1}")
 
     # Example 2: File operations

@@ -1,7 +1,10 @@
 # RFC 005: Timer Tool & Notify Tool
 
-**Status**: Draft
+**Status**: Partially Rejected (NotifyTool removed)
 **Created**: 2026-01-29
+**Updated**: 2026-02-03
+
+**Note**: NotifyTool has been removed from the codebase as it required external configuration (Resend API) and had limited use cases. Email notifications can be achieved through shell commands or custom extensions when needed.
 
 ## Problem Statement
 

@@ -12,12 +12,10 @@ from config import Config
 from interactive import run_interactive_mode, run_model_setup_mode
 from llm import LiteLLMAdapter, ModelManager
 from memory import MemoryManager
-from tools.advanced_file_ops import EditTool, GlobTool, GrepTool
-from tools.calculator import CalculatorTool
+from tools.advanced_file_ops import GlobTool, GrepTool
 from tools.code_navigator import CodeNavigatorTool
 from tools.explore import ExploreTool
-from tools.file_ops import FileReadTool, FileSearchTool, FileWriteTool
-from tools.notify import NotifyTool
+from tools.file_ops import FileReadTool, FileWriteTool
 from tools.parallel_execute import ParallelExecutionTool
 from tools.shell import ShellTool
 from tools.shell_background import BackgroundTaskManager, ShellTaskStatusTool
@@ -46,18 +44,14 @@ def create_agent(model_id: str | None = None):
     tools = [
         FileReadTool(),
         FileWriteTool(),
-        FileSearchTool(),
-        CalculatorTool(),
         WebSearchTool(),
         WebFetchTool(),
         GlobTool(),
         GrepTool(),
-        EditTool(),
         SmartEditTool(),
         CodeNavigatorTool(),
         ShellTool(task_manager=task_manager),
         ShellTaskStatusTool(task_manager=task_manager),
-        NotifyTool(),
     ]
 
     # Initialize model manager

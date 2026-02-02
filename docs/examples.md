@@ -121,7 +121,8 @@ aloop --task "List all classes and functions in src/"
 import asyncio
 from agent.agent import LoopAgent
 from llm import LiteLLMAdapter, ModelManager
-from tools import CalculatorTool, FileReadTool
+from tools.file_ops import FileReadTool
+from tools.shell import ShellTool
 
 async def main():
     mm = ModelManager()
@@ -138,10 +139,10 @@ async def main():
     agent = LoopAgent(
         llm=llm,
         max_iterations=15,
-        tools=[CalculatorTool(), FileReadTool()],
+        tools=[ShellTool(), FileReadTool()],
     )
 
-    result = await agent.run("Calculate 2^100")
+    result = await agent.run("Calculate 2^100 using python")
     print(result)
 
 if __name__ == "__main__":
