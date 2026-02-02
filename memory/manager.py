@@ -512,3 +512,27 @@ class MemoryManager:
         self.was_compressed_last_iteration = False
         self.last_compression_savings = 0
         self.compression_count = 0
+
+    def rollback_incomplete_exchange(self) -> None:
+        """Rollback the last incomplete assistant response with tool_calls.
+
+        This is used when a task is interrupted before tool execution completes.
+        It removes the assistant message if it contains tool_calls but no results.
+        The user message is preserved so the agent can see the original question.
+
+        This prevents API errors about missing tool responses on the next turn.
+        """
+        messages = self.short_term.get_messages()
+        if not messages:
+            return
+
+        # Check if last message is an assistant message with tool_calls
+        last_msg = messages[-1]
+        if last_msg.role == "assistant" and self._message_has_tool_calls(last_msg):
+            # Remove only the assistant message with tool_calls
+            # Keep the user message so the agent can still see the question
+            self.short_term.remove_last(1)
+            logger.debug("Removed incomplete assistant message with tool_calls")
+
+            # Recalculate token count
+            self.current_tokens = self._recalculate_current_tokens()

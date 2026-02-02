@@ -75,3 +75,14 @@ class ShortTermMemory:
             Number of messages in short-term memory
         """
         return len(self.messages)
+
+    def remove_last(self, count: int = 1) -> None:
+        """Remove the last N messages (newest) from memory.
+
+        This is useful for rolling back incomplete exchanges (e.g., after interruption).
+
+        Args:
+            count: Number of messages to remove from the end (default: 1)
+        """
+        for _ in range(min(count, len(self.messages))):
+            self.messages.pop()

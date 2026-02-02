@@ -1,6 +1,8 @@
 """Interactive multi-turn conversation mode for the agent."""
 
+import asyncio
 import shlex
+import signal
 
 from rich.table import Table
 
@@ -36,6 +38,9 @@ class InteractiveSession:
 
         # Use the agent's model manager to avoid divergence
         self.model_manager = getattr(agent, "model_manager", None) or ModelManager()
+
+        # Track current task for interruption support
+        self.current_task = None
 
         # Initialize TUI components
         self.command_registry = CommandRegistry(
@@ -79,6 +84,24 @@ class InteractiveSession:
         # Initialize status bar
         self.status_bar = StatusBar(terminal_ui.console)
         self.status_bar.update(mode="LOOP")
+
+        # Set up signal handler for graceful interruption
+        self._setup_signal_handler()
+
+    def _setup_signal_handler(self) -> None:
+        """Set up SIGINT handler for graceful task interruption."""
+
+        def handle_sigint(sig, frame):
+            """Handle SIGINT (Ctrl+C) by canceling the current task."""
+            if self.current_task and not self.current_task.done():
+                colors = Theme.get_colors()
+                terminal_ui.console.print(
+                    f"\n[bold {colors.warning}]Interrupting...[/bold {colors.warning}]"
+                )
+                self.current_task.cancel()
+            # Don't raise - let the asyncio.CancelledError propagate
+
+        signal.signal(signal.SIGINT, handle_sigint)
 
     def _on_clear_screen(self) -> None:
         """Handle Ctrl+L - clear screen."""
@@ -557,7 +580,12 @@ class InteractiveSession:
                     self.status_bar.update(is_processing=True)
 
                 try:
-                    result = await self.agent.run(user_input, verify=False)
+                    # Create a task for the agent run so it can be cancelled
+                    self.current_task = asyncio.create_task(
+                        self.agent.run(user_input, verify=False)
+                    )
+                    result = await self.current_task
+                    self.current_task = None
 
                     # Display agent response
                     terminal_ui.console.print(
@@ -571,12 +599,25 @@ class InteractiveSession:
                         self.status_bar.update(is_processing=False)
                         self.status_bar.show()
 
+                except asyncio.CancelledError:
+                    terminal_ui.console.print(
+                        f"\n[bold {colors.warning}]Task interrupted by user.[/bold {colors.warning}]\n"
+                    )
+                    if Config.TUI_STATUS_BAR:
+                        self.status_bar.update(is_processing=False)
+                    self.current_task = None
+
+                    # Rollback incomplete exchange to prevent API errors on next turn
+                    self.agent.memory.rollback_incomplete_exchange()
+
+                    continue
                 except KeyboardInterrupt:
                     terminal_ui.console.print(
                         f"\n[bold {colors.warning}]Task interrupted by user.[/bold {colors.warning}]\n"
                     )
                     if Config.TUI_STATUS_BAR:
                         self.status_bar.update(is_processing=False)
+                    self.current_task = None
                     continue
                 except Exception as e:
                     terminal_ui.print_error(str(e))
