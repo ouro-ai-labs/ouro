@@ -47,8 +47,6 @@ class SmartEditTool(BaseTool):
     def description(self) -> str:
         return """Intelligent code editing tool with fuzzy matching and preview.
 
-This is the RECOMMENDED tool for editing code (prefer over edit_file).
-
 Features:
 - Fuzzy matching: Automatically handles whitespace/indentation differences
 - Diff preview: Shows exactly what will change
@@ -281,15 +279,15 @@ IMPORTANT:
         try:
             async with aiofiles.open(path, "w", encoding="utf-8") as f:
                 await f.write(new_content)
-            output_parts.append(f"✓ Successfully edited {path}")
+            output_parts.append(f"Successfully edited {path}")
             return "\n".join(output_parts)
         except Exception as e:
             # Rollback if writing failed
             if create_backup and backup_path and await aiofiles.os.path.exists(str(backup_path)):
                 await self._copy_file(backup_path, path)
-                output_parts.append(f"✗ Edit failed, restored from backup: {e}")
+                output_parts.append(f"Edit failed, restored from backup: {e}")
             else:
-                output_parts.append(f"✗ Edit failed: {e}")
+                output_parts.append(f"Edit failed: {e}")
             return "\n".join(output_parts)
 
     async def _smart_insert(
@@ -351,7 +349,7 @@ IMPORTANT:
 
         async with aiofiles.open(path, "w", encoding="utf-8") as f:
             await f.write(new_content)
-        output_parts.append(f"✓ Successfully inserted code {position} anchor in {path}")
+        output_parts.append(f"Successfully inserted code {position} anchor in {path}")
         return "\n".join(output_parts)
 
     async def _block_edit(
@@ -402,7 +400,7 @@ IMPORTANT:
 
         async with aiofiles.open(path, "w", encoding="utf-8") as f:
             await f.write(new_content)
-        output_parts.append(f"✓ Successfully edited lines {start_line}-{end_line} in {path}")
+        output_parts.append(f"Successfully edited lines {start_line}-{end_line} in {path}")
         return "\n".join(output_parts)
 
     def _fuzzy_find(self, target: str, text: str) -> Optional[Tuple[int, int, float]]:

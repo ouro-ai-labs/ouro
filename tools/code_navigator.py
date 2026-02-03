@@ -354,7 +354,7 @@ WHEN TO USE GREP INSTEAD:
                                 "line": start_line,
                                 "end_line": end_line,
                                 "signature": signature,
-                                "docstring": "(tree-sitter: no docstring extraction)",
+                                "docstring": "(no docstring)",
                                 "decorators": [],
                                 "language": lang,
                             }
@@ -412,7 +412,7 @@ WHEN TO USE GREP INSTEAD:
                                 "line": start_line,
                                 "bases": [],
                                 "methods": [],
-                                "docstring": "(tree-sitter: no docstring extraction)",
+                                "docstring": "(no docstring)",
                                 "decorators": [],
                                 "language": lang,
                             }
@@ -494,7 +494,7 @@ WHEN TO USE GREP INSTEAD:
         output_parts = [f"Found {len(results)} function(s) named '{name}':\n"]
         for r in results:
             lang_tag = f" [{r.get('language', 'python')}]" if r.get("language") else ""
-            output_parts.append(f"📍 {r['file']}:{r['line']}{lang_tag}")
+            output_parts.append(f"{r['file']}:{r['line']}{lang_tag}")
             if r.get("decorators"):
                 output_parts.append(f"   Decorators: {', '.join(r['decorators'])}")
             output_parts.append(f"   {r['signature']}")
@@ -570,7 +570,7 @@ WHEN TO USE GREP INSTEAD:
         output_parts = [f"Found {len(results)} class(es) named '{name}':\n"]
         for r in results:
             lang_tag = f" [{r.get('language', 'python')}]" if r.get("language") else ""
-            output_parts.append(f"📍 {r['file']}:{r['line']}{lang_tag}")
+            output_parts.append(f"{r['file']}:{r['line']}{lang_tag}")
             output_parts.append(
                 f"   class {name}({', '.join(r['bases']) if r['bases'] else 'object'})"
             )
@@ -746,7 +746,7 @@ WHEN TO USE GREP INSTEAD:
 
         # Imports
         if structure["imports"]:
-            output_parts.append("📦 IMPORTS:")
+            output_parts.append("IMPORTS:")
             for imp in structure["imports"][:20]:
                 if imp.get("type") == "import":
                     line = f"   Line {imp['line']}: import {imp['name']}"
@@ -765,7 +765,7 @@ WHEN TO USE GREP INSTEAD:
 
         # Classes
         if structure["classes"]:
-            output_parts.append("📘 CLASSES:")
+            output_parts.append("CLASSES:")
             for cls in structure["classes"]:
                 bases_str = f"({', '.join(cls['bases'])})" if cls.get("bases") else ""
                 output_parts.append(f"   Line {cls['line']}: class {cls['name']}{bases_str}")
@@ -783,7 +783,7 @@ WHEN TO USE GREP INSTEAD:
 
         # Functions
         if structure["functions"]:
-            output_parts.append("🔧 FUNCTIONS:")
+            output_parts.append("FUNCTIONS:")
             for func in structure["functions"]:
                 if lang == "python":
                     output_parts.append(
@@ -915,7 +915,7 @@ WHEN TO USE GREP INSTEAD:
 
         for r in unique_results:
             lang_tag = f" [{r.get('language', 'python')}]" if r.get("language") else ""
-            output_parts.append(f"📍 {r['file']}:{r['line']}{lang_tag}")
+            output_parts.append(f"{r['file']}:{r['line']}{lang_tag}")
             context = str(r["context"])
             if len(context) > 80:
                 context = context[:80] + "..."
