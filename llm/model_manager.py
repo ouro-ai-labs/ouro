@@ -34,6 +34,12 @@ models:
   # ollama/llama2:
   #   api_base: http://localhost:11434
 default: null
+
+# Embedding model configuration for long-term memory semantic search
+# embedding:
+#   model: text-embedding-3-small
+#   api_key: sk-...  # Optional if same as default model's provider
+#   api_base: null   # Optional custom endpoint
 """
 
 
@@ -117,6 +123,7 @@ class ModelManager:
         self.models: dict[str, ModelProfile] = {}
         self.default_model_id: str | None = None
         self.current_model_id: str | None = None
+        self._embedding_config: dict[str, Any] | None = None
         self._load()
 
     def _ensure_yaml(self) -> None:
@@ -193,6 +200,18 @@ class ModelManager:
             self.default_model_id = next(iter(self.models.keys()), None)
 
         self.current_model_id = self.default_model_id
+
+        # Load embedding configuration
+        embedding = config.get("embedding")
+        if isinstance(embedding, dict):
+            self._embedding_config = {
+                "model": embedding.get("model"),
+                "api_key": embedding.get("api_key"),
+                "api_base": embedding.get("api_base"),
+            }
+        else:
+            self._embedding_config = None
+
         logger.info(f"Loaded {len(self.models)} models from {self.config_path}")
 
     def _save(self) -> None:
@@ -262,4 +281,32 @@ class ModelManager:
         self.models.clear()
         self.default_model_id = None
         self.current_model_id = None
+        self._embedding_config = None
         self._load()
+
+    def get_embedding_config(self) -> dict[str, Any] | None:
+        """Get embedding model configuration.
+
+        Returns:
+            Dict with 'model', 'api_key', and 'api_base' keys, or None if not configured.
+            If api_key is not set but a default model exists with the same provider,
+            the default model's api_key will be used.
+        """
+        if not self._embedding_config:
+            return None
+
+        config = dict(self._embedding_config)
+
+        # If no api_key set, try to inherit from default model
+        if not config.get("api_key") and self.default_model_id:
+            default_model = self.models.get(self.default_model_id)
+            if default_model and default_model.api_key:
+                # Check if embedding model uses same provider
+                # OpenAI embedding models don't have provider prefix but work with OpenAI API keys
+                embedding_model = config.get("model", "")
+                if embedding_model and (
+                    default_model.provider == "openai" or embedding_model.startswith("openai/")
+                ):
+                    config["api_key"] = default_model.api_key
+
+        return config

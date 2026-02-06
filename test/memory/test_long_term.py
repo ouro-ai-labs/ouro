@@ -2,33 +2,35 @@
 
 import pytest
 
-from memory.long_term import LongTermMemory
+from memory.long_term import Memory, MemoryIndexer
 
 
 @pytest.fixture
-async def memory(tmp_path):
-    """Create a LongTermMemory instance with a temp directory."""
+async def indexer(tmp_path):
+    """Create a MemoryIndexer instance with a temp directory."""
     memory_dir = str(tmp_path / "memory")
-    mem = LongTermMemory(memory_dir=memory_dir)
-    return mem
+    idx = MemoryIndexer(memory_dir=memory_dir)
+    return idx
 
 
-class TestLongTermMemory:
-    """Tests for LongTermMemory class."""
+class TestMemoryIndexer:
+    """Tests for MemoryIndexer class."""
 
-    async def test_save_creates_memory(self, memory):
-        """Test that save creates a memory with correct fields."""
-        saved = await memory.save("User prefers pytest", category="preferences")
+    async def test_save_creates_memory(self, indexer):
+        """Test that save_memory creates a memory with correct fields."""
+        saved = await indexer.save_memory("User prefers pytest", category="preference")
 
         assert saved.id is not None
         assert saved.content == "User prefers pytest"
-        assert saved.category == "preferences"
+        assert saved.category == "preference"
         assert saved.created_at is not None
         assert len(saved.keywords) > 0
 
-    async def test_save_extracts_keywords(self, memory):
+    async def test_save_extracts_keywords(self, indexer):
         """Test that keywords are extracted from content."""
-        saved = await memory.save("User prefers pytest over unittest for testing Python code")
+        saved = await indexer.save_memory(
+            "User prefers pytest over unittest for testing Python code"
+        )
 
         # Should extract meaningful keywords
         keywords_lower = [k.lower() for k in saved.keywords]
@@ -36,9 +38,9 @@ class TestLongTermMemory:
         assert "unittest" in keywords_lower
         assert "python" in keywords_lower
 
-    async def test_save_filters_stop_words(self, memory):
+    async def test_save_filters_stop_words(self, indexer):
         """Test that stop words are filtered from keywords."""
-        saved = await memory.save("The user is a developer who likes to code")
+        saved = await indexer.save_memory("The user is a developer who likes to code")
 
         keywords_lower = [k.lower() for k in saved.keywords]
         # Stop words should be filtered
@@ -49,9 +51,9 @@ class TestLongTermMemory:
         assert "user" in keywords_lower
         assert "developer" in keywords_lower
 
-    async def test_save_persists_to_file(self, memory, tmp_path):
+    async def test_save_persists_to_file(self, indexer, tmp_path):
         """Test that memories are persisted to YAML file."""
-        await memory.save("Test memory content", category="test")
+        await indexer.save_memory("Test memory content", category="fact")
 
         # Check file exists
         memory_file = tmp_path / "memory" / "memories.yaml"
@@ -60,216 +62,189 @@ class TestLongTermMemory:
         # Check content
         content = memory_file.read_text()
         assert "Test memory content" in content
-        assert "category: test" in content
+        assert "category: fact" in content
 
-    async def test_search_returns_relevant_results(self, memory):
-        """Test that search returns relevant memories."""
-        await memory.save("User prefers pytest for testing", category="preferences")
-        await memory.save("Project uses black for formatting", category="project")
-        await memory.save("Always use type hints in Python", category="preferences")
+    async def test_search_returns_relevant_results(self, indexer):
+        """Test that search returns relevant memories using keyword fallback."""
+        await indexer.save_memory("User prefers pytest for testing", category="preference")
+        await indexer.save_memory("Project uses black for formatting", category="fact")
+        await indexer.save_memory("Always use type hints in Python", category="preference")
 
-        results = await memory.search("pytest testing")
+        # Keyword search (no embedding configured)
+        results = await indexer.search("pytest testing")
 
         assert len(results) > 0
         # First result should be about pytest
-        assert "pytest" in results[0].memory.content.lower()
+        assert "pytest" in results[0].content.lower()
 
-    async def test_search_filters_by_category(self, memory):
+    async def test_search_filters_by_category(self, indexer):
         """Test that search can filter by category."""
-        await memory.save("User prefers pytest", category="preferences")
-        await memory.save("Project uses pytest", category="project")
+        await indexer.save_memory("User prefers pytest", category="preference")
+        await indexer.save_memory("Project uses pytest", category="fact")
 
-        results = await memory.search("pytest", category="preferences")
+        results = await indexer.search("pytest", category="preference")
 
         assert len(results) == 1
-        assert results[0].memory.category == "preferences"
+        assert results[0].category == "preference"
 
-    async def test_search_respects_limit(self, memory):
+    async def test_search_filters_by_source(self, indexer):
+        """Test that search can filter by source."""
+        await indexer.save_memory("User prefers pytest", category="preference")
+
+        results = await indexer.search("pytest", source="memories")
+
+        assert len(results) >= 1
+        assert all(r.source == "memories" for r in results)
+
+    async def test_search_respects_limit(self, indexer):
         """Test that search respects the limit parameter."""
         for i in range(10):
-            await memory.save(f"Memory about Python topic {i}", category="fact")
+            await indexer.save_memory(f"Memory about Python topic {i}", category="fact")
 
-        results = await memory.search("Python", limit=3)
+        results = await indexer.search("Python", limit=3)
 
         assert len(results) <= 3
 
-    async def test_search_returns_empty_for_no_matches(self, memory):
-        """Test that search returns empty list when nothing matches with high min_score."""
-        await memory.save("User prefers pytest", category="preferences")
+    async def test_list_all_returns_all_memories(self, indexer):
+        """Test that list_memories returns all stored memories."""
+        await indexer.save_memory("Memory 1", category="decision")
+        await indexer.save_memory("Memory 2", category="fact")
+        await indexer.save_memory("Memory 3", category="decision")
 
-        # Use higher min_score to exclude results that only have recency bonus
-        results = await memory.search("completely unrelated xyz123", min_score=30.0)
-
-        assert len(results) == 0
-
-    async def test_search_fuzzy_matching(self, memory):
-        """Test that fuzzy matching works for similar terms."""
-        await memory.save("User prefers pytest for testing Python applications")
-
-        # Should match despite slight differences
-        results = await memory.search("pytest python test")
-
-        assert len(results) > 0
-        assert results[0].score > 0
-
-    async def test_list_all_returns_all_memories(self, memory):
-        """Test that list_all returns all stored memories."""
-        await memory.save("Memory 1", category="a")
-        await memory.save("Memory 2", category="b")
-        await memory.save("Memory 3", category="a")
-
-        all_memories = await memory.list_all()
+        all_memories = await indexer.list_memories()
 
         assert len(all_memories) == 3
 
-    async def test_list_all_filters_by_category(self, memory):
-        """Test that list_all can filter by category."""
-        await memory.save("Memory 1", category="a")
-        await memory.save("Memory 2", category="b")
-        await memory.save("Memory 3", category="a")
+    async def test_list_all_filters_by_category(self, indexer):
+        """Test that list_memories can filter by category."""
+        await indexer.save_memory("Memory 1", category="decision")
+        await indexer.save_memory("Memory 2", category="fact")
+        await indexer.save_memory("Memory 3", category="decision")
 
-        filtered = await memory.list_all(category="a")
+        filtered = await indexer.list_memories(category="decision")
 
         assert len(filtered) == 2
-        assert all(m.category == "a" for m in filtered)
+        assert all(m.category == "decision" for m in filtered)
 
-    async def test_delete_removes_memory(self, memory):
-        """Test that delete removes a memory by ID."""
-        saved = await memory.save("To be deleted", category="test")
+    async def test_delete_removes_memory(self, indexer):
+        """Test that delete_memory removes a memory by ID."""
+        saved = await indexer.save_memory("To be deleted", category="fact")
         memory_id = saved.id
 
-        result = await memory.delete(memory_id)
+        result = await indexer.delete_memory(memory_id)
 
         assert result is True
-        all_memories = await memory.list_all()
+        all_memories = await indexer.list_memories()
         assert len(all_memories) == 0
 
-    async def test_delete_returns_false_for_unknown_id(self, memory):
-        """Test that delete returns False for non-existent ID."""
-        result = await memory.delete("nonexistent")
+    async def test_delete_returns_false_for_unknown_id(self, indexer):
+        """Test that delete_memory returns False for non-existent ID."""
+        result = await indexer.delete_memory("nonexistent")
 
         assert result is False
 
-    async def test_clear_removes_all_memories(self, memory):
-        """Test that clear removes all memories."""
-        await memory.save("Memory 1")
-        await memory.save("Memory 2")
-        await memory.save("Memory 3")
+    async def test_clear_removes_all_memories(self, indexer):
+        """Test that clear_memories removes all memories."""
+        await indexer.save_memory("Memory 1")
+        await indexer.save_memory("Memory 2")
+        await indexer.save_memory("Memory 3")
 
-        deleted = await memory.clear()
+        deleted = await indexer.clear_memories()
 
         assert deleted == 3
-        all_memories = await memory.list_all()
+        all_memories = await indexer.list_memories()
         assert len(all_memories) == 0
 
-    async def test_clear_by_category(self, memory):
-        """Test that clear can target a specific category."""
-        await memory.save("Memory 1", category="keep")
-        await memory.save("Memory 2", category="delete")
-        await memory.save("Memory 3", category="delete")
+    async def test_clear_by_category(self, indexer):
+        """Test that clear_memories can target a specific category."""
+        await indexer.save_memory("Memory 1", category="preference")
+        await indexer.save_memory("Memory 2", category="fact")
+        await indexer.save_memory("Memory 3", category="fact")
 
-        deleted = await memory.clear(category="delete")
+        deleted = await indexer.clear_memories(category="fact")
 
         assert deleted == 2
-        remaining = await memory.list_all()
+        remaining = await indexer.list_memories()
         assert len(remaining) == 1
-        assert remaining[0].category == "keep"
+        assert remaining[0].category == "preference"
 
     async def test_persistence_across_instances(self, tmp_path):
         """Test that memories persist across different instances."""
         memory_dir = str(tmp_path / "memory")
 
         # Save with first instance
-        mem1 = LongTermMemory(memory_dir=memory_dir)
-        await mem1.save("Persistent memory", category="test")
+        idx1 = MemoryIndexer(memory_dir=memory_dir)
+        await idx1.save_memory("Persistent memory", category="fact")
 
         # Load with new instance
-        mem2 = LongTermMemory(memory_dir=memory_dir)
-        results = await mem2.search("Persistent")
+        idx2 = MemoryIndexer(memory_dir=memory_dir)
+        results = await idx2.search("Persistent")
 
         assert len(results) == 1
-        assert results[0].memory.content == "Persistent memory"
+        assert results[0].content == "Persistent memory"
 
-    async def test_chinese_content_and_keywords(self, memory):
-        """Test that Chinese content is handled correctly."""
-        saved = await memory.save("用户偏好使用中文注释编写代码", category="preferences")
-
-        # Should extract Chinese keywords
-        assert len(saved.keywords) > 0
-
-        # Should be searchable
-        results = await memory.search("中文注释")
-        assert len(results) > 0
-
-    async def test_keyword_extraction_limits(self, memory):
+    async def test_keyword_extraction_limits(self, indexer):
         """Test that keyword extraction is limited to prevent excessive keywords."""
         # Create content with many words
         long_content = " ".join([f"word{i}" for i in range(100)])
-        saved = await memory.save(long_content)
+        saved = await indexer.save_memory(long_content)
 
-        # Keywords should be limited
-        assert len(saved.keywords) <= 20
+        # Keywords should be limited (to 10)
+        assert len(saved.keywords) <= 10
 
+    async def test_valid_categories(self, indexer):
+        """Test that only valid categories are accepted."""
+        # Valid categories
+        for cat in ["decision", "preference", "fact"]:
+            saved = await indexer.save_memory(f"Memory with {cat}", category=cat)
+            assert saved.category == cat
 
-class TestKeywordExtraction:
-    """Tests for keyword extraction functionality."""
-
-    async def test_extracts_meaningful_words(self, memory):
-        """Test extraction of meaningful words."""
-        saved = await memory.save("Python developer prefers pytest framework")
-
-        keywords = [k.lower() for k in saved.keywords]
-        assert "python" in keywords
-        assert "developer" in keywords
-        assert "pytest" in keywords
-        assert "framework" in keywords
-
-    async def test_handles_mixed_language(self, memory):
-        """Test handling of mixed language content."""
-        saved = await memory.save("User prefers Python 用户喜欢")
-
-        # Should have both English and Chinese keywords
-        assert len(saved.keywords) > 0
-
-    async def test_deduplicates_keywords(self, memory):
-        """Test that duplicate keywords are removed."""
-        saved = await memory.save("python Python PYTHON pyTHon")
-
-        # Should only have one 'python' keyword
-        keywords_lower = [k.lower() for k in saved.keywords]
-        assert keywords_lower.count("python") == 1
+        # Invalid category defaults to 'fact'
+        saved = await indexer.save_memory("Invalid category", category="invalid")
+        assert saved.category == "fact"
 
 
-class TestSearchScoring:
-    """Tests for search scoring functionality."""
+class TestKeywordSearch:
+    """Tests for keyword-based search (fallback when embeddings not configured)."""
 
-    async def test_exact_match_scores_higher(self, memory):
-        """Test that exact keyword matches score higher than fuzzy matches."""
-        await memory.save("pytest is the best testing framework", category="fact")
-        await memory.save("testing code is important", category="fact")
+    async def test_exact_match_in_content(self, indexer):
+        """Test that exact substring matches are found."""
+        await indexer.save_memory("pytest is the best testing framework", category="fact")
+        await indexer.save_memory("testing code is important", category="fact")
 
-        results = await memory.search("pytest")
+        results = await indexer.search("pytest")
 
-        # pytest exact match should be first
-        assert "pytest" in results[0].memory.content.lower()
-        assert results[0].score > results[1].score if len(results) > 1 else True
+        assert len(results) >= 1
+        assert "pytest" in results[0].content.lower()
 
-    async def test_category_match_adds_score(self, memory):
-        """Test that matching category in query adds to score."""
-        await memory.save("Use pytest for testing", category="preferences")
+    async def test_keyword_overlap_scoring(self, indexer):
+        """Test that keyword overlap affects scoring."""
+        await indexer.save_memory("Python testing with pytest framework", category="fact")
+        await indexer.save_memory("General programming tips", category="fact")
 
-        results = await memory.search("preferences testing")
+        results = await indexer.search("python pytest testing")
 
-        # Should have higher score due to category match
-        assert len(results) > 0
-        assert results[0].memory.category == "preferences"
+        # First result should have better keyword overlap
+        assert len(results) >= 1
+        assert "pytest" in results[0].content.lower() or "python" in results[0].content.lower()
 
-    async def test_min_score_filtering(self, memory):
-        """Test that results below min_score are filtered out."""
-        await memory.save("completely unrelated content xyz")
 
-        results = await memory.search("pytest testing", min_score=50.0)
+class TestMemoryDataClass:
+    """Tests for the Memory data class."""
 
-        # Should filter out low-scoring results
-        for result in results:
-            assert result.score >= 50.0
+    def test_memory_fields(self):
+        """Test Memory dataclass has expected fields."""
+        mem = Memory(
+            id="test123",
+            content="Test content",
+            category="fact",
+            created_at="2024-01-01T00:00:00",
+            source="memories",
+            keywords=["test", "content"],
+        )
+
+        assert mem.id == "test123"
+        assert mem.content == "Test content"
+        assert mem.category == "fact"
+        assert mem.source == "memories"
+        assert mem.keywords == ["test", "content"]

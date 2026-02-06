@@ -16,7 +16,7 @@ from tools.advanced_file_ops import GlobTool, GrepTool
 from tools.code_navigator import CodeNavigatorTool
 from tools.explore import ExploreTool
 from tools.file_ops import FileReadTool, FileWriteTool
-from tools.memory_tools import MemoryRecallTool, MemorySaveTool
+from tools.memory_tools import MemoryRecallTool
 from tools.parallel_execute import ParallelExecutionTool
 from tools.shell import ShellTool
 from tools.shell_background import BackgroundTaskManager, ShellTaskStatusTool
@@ -57,7 +57,7 @@ def create_agent(model_id: str | None = None):
 
     # Add long-term memory tools if enabled
     if Config.MEMORY_LONG_TERM_ENABLED:
-        tools.extend([MemorySaveTool(), MemoryRecallTool()])
+        tools.append(MemoryRecallTool())
 
     # Initialize model manager
     model_manager = ModelManager()
