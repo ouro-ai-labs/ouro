@@ -34,14 +34,8 @@ WHEN TO UPDATE MEMORY:
 - User explicitly asks you to remember something
 
 HOW TO UPDATE MEMORY:
-1. Read the target YAML file with read_file
-2. Add your new entry to the entries list (keep the YAML schema)
-3. Write the updated file with write_file
-4. Commit with shell: cd {memory_dir} && git add -A && git commit -m "memory: <brief description>"
-
-YAML SCHEMA (each file is a plain list):
-  - "concise statement of what to remember"
-  - "another memory entry"
+1. Read the target YAML file, add your new entry (keep the plain-list YAML format), and write it back.
+2. Commit the change with git so it persists across sessions.
 
 RULES:
 - Be selective — only store information useful across FUTURE sessions

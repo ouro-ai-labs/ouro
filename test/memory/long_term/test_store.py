@@ -1,7 +1,5 @@
 """Tests for GitMemoryStore."""
 
-import subprocess
-
 import pytest
 
 from memory.long_term.store import GitMemoryStore, MemoryCategory
@@ -74,9 +72,11 @@ class TestGitMemoryStore:
         """Malformed YAML should return empty list instead of crashing."""
         import os
 
+        import aiofiles
+
         bad_path = os.path.join(git_store.memory_dir, "decisions.yaml")
-        with open(bad_path, "w") as f:
-            f.write("not: valid: yaml: [[[")
+        async with aiofiles.open(bad_path, "w") as f:
+            await f.write("not: valid: yaml: [[[")
 
         memories = await git_store.load_all()
         # Should not raise; decisions will be empty or partially parsed
@@ -86,9 +86,11 @@ class TestGitMemoryStore:
         """YAML that is a dict (not a list) should return empty list."""
         import os
 
+        import aiofiles
+
         path = os.path.join(git_store.memory_dir, "facts.yaml")
-        with open(path, "w") as f:
-            f.write("foo: bar\n")
+        async with aiofiles.open(path, "w") as f:
+            await f.write("foo: bar\n")
 
         memories = await git_store.load_all()
         assert memories[MemoryCategory.FACTS] == []
