@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ouro-ai"
-version = "0.2.1"
+version = "0.2.2"
 description = "General AI Agent System"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -66,7 +66,7 @@ ouro = "cli:main"
 
 [tool.setuptools]
 # Use current flat structure
-packages = ["agent", "agent.prompts", "llm", "memory", "memory.store", "tools", "utils", "utils.tui"]
+packages = ["agent", "agent.prompts", "agent.skills", "llm", "memory", "memory.long_term", "memory.store", "tools", "utils", "utils.tui"]
 py-modules = ["main", "interactive", "config", "cli"]
 
 [tool.setuptools.package-data]
