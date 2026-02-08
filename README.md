@@ -1,16 +1,18 @@
 <div align="center">
-<picture>
-  <img alt="OURO" src="docs/assets/logo.svg" width="440">
-</picture>
 
-**One loop is all you need.**
+<img alt="OURO" src="docs/assets/logo.png" width="440">
 
-ouro is an AI agent built on a single, unified loop. Planning, parallel sub-agents,
-self-verification — everything folds into the same loop, chosen autonomously by the
-agent itself, not by a hardcoded workflow. Simple architecture, emergent capability.
+[![PyPI](https://img.shields.io/pypi/v/ouro-ai)](https://pypi.org/project/ouro-ai/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)]()
 
+*An open-source AI agent framework built on a single, unified loop.*
 
 </div>
+
+Ouro is derived from Ouroboros—the ancient symbol of a serpent consuming its own tail to form a perfect circle. It represents the ultimate cycle: a closed loop of self-consumption, constant renewal, and infinite iteration.
+
+At Ouro AI Lab, this is our blueprint. We are building the next generation of AI agents capable of autonomous evolution—systems that learn from their own outputs, refine their own logic, and achieve a state of infinite self-improvement.
 
 ## Installation
 
@@ -39,7 +41,7 @@ models:
   openai/gpt-4o:
     api_key: sk-...
 
-  anthropic/claude-3-5-sonnet-20241022:
+  anthropic/claude-sonnet-4:
     api_key: sk-ant-...
 
   ollama/llama2:
@@ -203,6 +205,12 @@ See [Configuration Guide](docs/configuration.md) for all settings.
 - [Memory Management](docs/memory-management.md) -- compression, persistence, token tracking
 - [Extending](docs/extending.md) -- adding tools, agents, LLM providers
 - [Packaging](docs/packaging.md) -- building, publishing, Docker
+
+## Contributing
+
+Contributions are welcome! Please open an [issue](https://github.com/ouro-ai-labs/ouro/issues) or submit a pull request.
+
+For development setup, see the [Installation](#installation) section (install from source).
 
 ## License
 
