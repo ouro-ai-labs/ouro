@@ -5,7 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.1] - 2026-02-08
+
+### Added
+
+- Cross-session long-term memory system with git-backed persistence (`~/.ouro/memory/`)
+- LLM-driven memory consolidation for decisions, preferences, and project facts
+- Skills system MVP with YAML frontmatter parsing, registry, and installer
+- Bundled system skills: skill-creator and skill-installer
+- `/skills` interactive menu for listing, installing, and uninstalling skills
+
+### Changed
+
+- Updated README with new Ouroboros logo, PyPI/license badges, and contributing section
+- Added RFC 008 design document for long-term memory system
 
 ## [0.2.0] - 2026-02-08
 
