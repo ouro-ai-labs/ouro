@@ -1,16 +1,18 @@
 <div align="center">
-<picture>
-  <img alt="OURO" src="docs/assets/logo.svg" width="440">
-</picture>
 
-**One loop is all you need.**
+<img alt="OURO" src="docs/assets/logo.png" width="440">
 
-ouro is an AI agent built on a single, unified loop. Planning, parallel sub-agents,
-self-verification — everything folds into the same loop, chosen autonomously by the
-agent itself, not by a hardcoded workflow. Simple architecture, emergent capability.
+[![PyPI](https://img.shields.io/pypi/v/ouro-ai)](https://pypi.org/project/ouro-ai/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)]()
 
+*An open-source AI agent framework built on a single, unified loop.*
 
 </div>
+
+Ouro is derived from Ouroboros—the ancient symbol of a serpent consuming its own tail to form a perfect circle. It represents the ultimate cycle: a closed loop of self-consumption, constant renewal, and infinite iteration.
+
+At Ouro AI Lab, this is our blueprint. We are building the next generation of AI agents capable of autonomous evolution—systems that learn from their own outputs, refine their own logic, and achieve a state of infinite self-improvement.
 
 ## Installation
 
@@ -39,7 +41,7 @@ models:
   openai/gpt-4o:
     api_key: sk-...
 
-  anthropic/claude-3-5-sonnet-20241022:
+  anthropic/claude-sonnet-4:
     api_key: sk-ant-...
 
   ollama/llama2:
@@ -89,7 +91,7 @@ ouro --resume a1b2c3d4
 | `/model edit` | Open `~/.ouro/models.yaml` in editor (auto-reload on save) |
 | `/theme` | Toggle dark/light theme |
 | `/verbose` | Toggle thinking display |
-| `/compact` | Toggle compact output |
+| `/compact` | Trigger memory compression and show token savings |
 | `/exit` | Exit (also `/quit`) |
 
 ### Keyboard Shortcuts
@@ -97,28 +99,21 @@ ouro --resume a1b2c3d4
 | Key | Action |
 |-----|--------|
 | `/` | Command autocomplete |
-| `Ctrl+C` | Cancel current operation |
+| `Ctrl+C` | Graceful interrupt (cancels current operation, rolls back incomplete memory) |
 | `Ctrl+L` | Clear screen |
 | `Ctrl+T` | Toggle thinking display |
 | `Ctrl+S` | Show quick stats |
 | Up/Down | Navigate command history |
 
-## How It Works
-
-**Agent loop**: The agent follows a Think-Act-Observe cycle. It reasons about the task, selects a tool, observes the result, and repeats until it has an answer. Planning, sub-agent dispatch, and tool use all happen inside this single loop.
-
-**Ralph verification**: For single tasks (`--task`), an outer loop verifies the agent's answer against the original task. If incomplete, feedback is injected and the agent loop re-enters. Configurable via `RALPH_LOOP_MAX_ITERATIONS` (default: 3).
-
-**Memory compression**: When context grows past a token threshold, older messages are compressed via LLM summarization. Recent messages are kept at full fidelity. Strategies: `sliding_window` (default), `selective`, `deletion`.
-
-**Session persistence**: Conversations are saved as YAML files under `~/.ouro/sessions/`. Resume with `--resume` or `/resume`.
-
 ## Features
 
-- **AGENTS.md support**: Project-specific instructions guide the agent automatically (see [AGENTS.md Guide](docs/agents-md-guide.md))
-- **Memory management**: Automatic compression and persistence of conversation history
-- **Ralph verification**: Self-verification loop for single tasks
-- **Tool-rich**: 18+ specialized tools for file ops, code navigation, web search, and more
+- **Unified agent loop**: Think-Act-Observe cycle — planning, sub-agents, and tool use all happen in one loop, chosen autonomously by the agent
+- **Self-verification**: An outer loop verifies the agent's answer against the original task and re-enters if incomplete
+- **Memory compression**: LLM-driven summarization when context exceeds a token threshold, with multiple strategies (`sliding_window`, `selective`, `deletion`)
+- **Git-aware memory**: Git-based memory system that persists and manages agent memory through version control
+- **Session persistence**: Conversations saved as human-readable YAML files under `~/.ouro/sessions/`, resumable via `--resume` or `/resume`
+- **Parallel exploration**: Concurrent tool calls for exploring codebases and gathering information in parallel
+- **Parallel sub-agents**: Spawn multiple sub-agents to work on independent subtasks simultaneously
 
 ## Tools
 
@@ -203,6 +198,12 @@ See [Configuration Guide](docs/configuration.md) for all settings.
 - [Memory Management](docs/memory-management.md) -- compression, persistence, token tracking
 - [Extending](docs/extending.md) -- adding tools, agents, LLM providers
 - [Packaging](docs/packaging.md) -- building, publishing, Docker
+
+## Contributing
+
+Contributions are welcome! Please open an [issue](https://github.com/ouro-ai-labs/ouro/issues) or submit a pull request.
+
+For development setup, see the [Installation](#installation) section (install from source).
 
 ## License
 
