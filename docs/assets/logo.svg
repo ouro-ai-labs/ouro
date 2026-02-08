@@ -9,10 +9,10 @@
       text { fill: #0969da; }
     }
   </style>
-  <text x="50%" y="20" text-anchor="middle" xml:space="preserve"> █████╗ ██╗      ██████╗  ██████╗ ██████╗ </text>
-  <text x="50%" y="38" text-anchor="middle" xml:space="preserve">██╔══██╗██║     ██╔═══██╗██╔═══██╗██╔══██╗</text>
-  <text x="50%" y="56" text-anchor="middle" xml:space="preserve">███████║██║     ██║   ██║██║   ██║██████╔╝</text>
-  <text x="50%" y="74" text-anchor="middle" xml:space="preserve">██╔══██║██║     ██║   ██║██║   ██║██╔═══╝ </text>
-  <text x="50%" y="92" text-anchor="middle" xml:space="preserve">██║  ██║███████╗╚██████╔╝╚██████╔╝██║     </text>
-  <text x="50%" y="110" text-anchor="middle" xml:space="preserve">╚═╝  ╚═╝╚══════╝ ╚═════╝  ╚═════╝ ╚═╝     </text>
+  <text x="50%" y="20" text-anchor="middle" xml:space="preserve"> ██████╗ ██╗   ██╗██████╗  ██████╗ </text>
+  <text x="50%" y="38" text-anchor="middle" xml:space="preserve">██╔═══██╗██║   ██║██╔══██╗██╔═══██╗</text>
+  <text x="50%" y="56" text-anchor="middle" xml:space="preserve">██║   ██║██║   ██║██████╔╝██║   ██║</text>
+  <text x="50%" y="74" text-anchor="middle" xml:space="preserve">██║   ██║██║   ██║██╔══██╗██║   ██║</text>
+  <text x="50%" y="92" text-anchor="middle" xml:space="preserve">╚██████╔╝╚██████╔╝██║  ██║╚██████╔╝</text>
+  <text x="50%" y="110" text-anchor="middle" xml:space="preserve"> ╚═════╝  ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ </text>
 </svg>

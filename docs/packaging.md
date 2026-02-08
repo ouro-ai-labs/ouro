@@ -16,11 +16,11 @@ ouro --help
 ./scripts/dev.sh build
 ```
 
-Creates `dist/ouro-*.whl` and `dist/ouro-*.tar.gz`.
+Creates `dist/ouro_ai-*.whl` and `dist/ouro_ai-*.tar.gz`.
 
 Test locally:
 ```bash
-pip install dist/ouro-*.whl
+pip install dist/ouro_ai-*.whl
 ouro --task "Calculate 1+1"
 ```
 
@@ -93,7 +93,7 @@ docker push yourusername/ouro:latest
 4. Open a PR, get it merged to `main`
 5. Tag the release: `git tag v0.x.0 && git push --tags`
 6. GitHub Actions automatically: tests -> build -> publish to PyPI -> create GitHub Release
-7. Verify the release on [pypi.org](https://pypi.org/project/ouro/) and GitHub Releases
+7. Verify the release on [pypi.org](https://pypi.org/project/ouro-ai/) and GitHub Releases
 
 ## Distribution Summary
 

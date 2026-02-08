@@ -105,7 +105,7 @@ case "$cmd" in
 
     echo ""
     echo "Next steps:"
-    echo "  1. Test locally: pip install dist/ouro-*.whl"
+    echo "  1. Test locally: pip install dist/ouro_ai-*.whl"
     echo "  2. Upload to PyPI: twine upload dist/*"
     ;;
   publish)

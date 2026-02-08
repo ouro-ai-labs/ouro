@@ -132,7 +132,7 @@ def main():
     parser = argparse.ArgumentParser(description="Run an AI agent with tool-calling capabilities")
 
     try:
-        version = importlib.metadata.version("ouro")
+        version = importlib.metadata.version("ouro-ai")
     except importlib.metadata.PackageNotFoundError:
         version = "dev"
     parser.add_argument("--version", "-V", action="version", version=f"ouro {version}")

@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Add `pip install ouro` as primary installation method in README
+- Add `pip install ouro-ai` as primary installation method in README
 
 ## [0.1.0] - 2026-02-02
 

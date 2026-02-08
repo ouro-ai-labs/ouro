@@ -17,7 +17,7 @@ agent itself, not by a hardcoded workflow. Simple architecture, emergent capabil
 Prerequisites: Python 3.12+.
 
 ```bash
-pip install ouro
+pip install ouro-ai
 ```
 
 Or install from source (for development):
