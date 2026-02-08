@@ -660,9 +660,7 @@ class ModelSetupSession:
                 CommandSpec(
                     "model",
                     "Pick a model",
-                    subcommands={
-                        "edit": CommandSpec("edit", "Open `.ouro/models.yaml` in editor")
-                    },
+                    subcommands={"edit": CommandSpec("edit", "Open `.ouro/models.yaml` in editor")},
                 ),
                 CommandSpec("exit", "Quit"),
             ]
