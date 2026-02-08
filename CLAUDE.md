@@ -77,6 +77,7 @@ Change impact reminders:
 - CLI changes → update `README.md`, `docs/examples.md`
 - Config changes → update `docs/configuration.md`
 - Workflow scripts → update `AGENTS.md`, `docs/packaging.md`
+- **New subpackages** → add to `pyproject.toml` `[tool.setuptools] packages` list (see Packaging Checklist below)
 
 Run a quick smoke task (requires a configured provider in `~/.ouro/models.yaml`):
 
@@ -208,3 +209,19 @@ Review existing RFCs before implementation to understand design decisions and co
 - If you change packaging/versioning: update `pyproject.toml` and `docs/packaging.md`.
 - If you change memory/compression/persistence: add/adjust tests under `test/memory/` and update `docs/memory-management.md`.
 - **Significant changes**: write an RFC in `rfc/` before implementation (see RFC Design Documents section above).
+
+## Packaging Checklist
+
+**IMPORTANT**: This project uses an **explicit** package list in `pyproject.toml` (`[tool.setuptools] packages`). Setuptools does **not** auto-discover subpackages.
+
+When adding a new directory with `__init__.py` (i.e. a new Python subpackage), you **must** add it to the `packages` list in `pyproject.toml`. Forgetting this causes `ModuleNotFoundError` on PyPI installs (this has happened twice: v0.1.1 and v0.2.1).
+
+Before every release, verify the packages list is complete:
+
+```bash
+# List all packages in source tree (excluding test/.venv)
+find . -name '__init__.py' -not -path './.venv/*' -not -path './test/*' | sed 's|/[^/]*$||;s|^\./||' | tr '/' '.' | sort
+
+# Compare with pyproject.toml
+grep '^packages' pyproject.toml
+```
