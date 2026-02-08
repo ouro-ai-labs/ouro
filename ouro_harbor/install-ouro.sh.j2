@@ -1,0 +1,25 @@
+#!/bin/bash
+set -euo pipefail
+
+# Clear proxy settings that may leak from the host into the container
+unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY all_proxy no_proxy NO_PROXY 2>/dev/null || true
+
+# Install system dependencies only if missing
+if ! command -v curl &>/dev/null || ! command -v git &>/dev/null; then
+    apt-get update
+    apt-get install -y --no-install-recommends curl git
+fi
+
+# Install uv (Python package manager)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source "$HOME/.local/bin/env"
+
+# Install ouro
+{% if version %}
+uv tool install ouro-ai=={{ version }}
+{% else %}
+uv tool install ouro-ai
+{% endif %}
+
+echo "INSTALL_SUCCESS"
