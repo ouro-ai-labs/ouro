@@ -2,7 +2,7 @@
 
 ## Overview
 
-aloop supports project-specific instructions via AGENTS.md files. The agent will automatically look for and read these files when relevant (e.g., before modifying code, exploring a codebase, or starting complex tasks).
+ouro supports project-specific instructions via AGENTS.md files. The agent will automatically look for and read these files when relevant (e.g., before modifying code, exploring a codebase, or starting complex tasks).
 
 ## How It Works
 
@@ -148,7 +148,7 @@ AGENTS.md is compatible with:
 - **Cursor**: Supports AGENTS.md alongside other rule systems
 - **Jules** (Google): Reads AGENTS.md automatically
 
-### aloop Difference
+### ouro Difference
 Unlike other tools that auto-load AGENTS.md at startup:
 - **On-demand reading**: Agent decides when to read based on context
 - **Token-efficient**: Only loads when relevant (saves tokens on simple tasks)
@@ -156,7 +156,7 @@ Unlike other tools that auto-load AGENTS.md at startup:
 - **Tool-based**: Uses existing tools (no special loader needed)
 
 ### Migration from Other Tools
-If you're coming from another tool, your existing AGENTS.md should work as-is. aloop will read and follow the same instructions.
+If you're coming from another tool, your existing AGENTS.md should work as-is. ouro will read and follow the same instructions.
 
 ## Examples
 
@@ -254,4 +254,4 @@ cd backend
 - [AGENTS.md Official Site](https://agents.md/) - Cross-platform standard
 - [GitHub Blog: How to write a great agents.md](https://github.blog/ai-and-ml/github-copilot/how-to-write-a-great-agents-md-lessons-from-over-2500-repositories/)
 - [Builder.io: AGENTS.md tips](https://www.builder.io/blog/agents-md)
-- [aloop Configuration Guide](configuration.md) - Model setup and runtime settings
+- [ouro Configuration Guide](configuration.md) - Model setup and runtime settings

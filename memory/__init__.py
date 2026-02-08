@@ -1,4 +1,4 @@
-"""Memory management system for aloop framework.
+"""Memory management system for ouro framework.
 
 This module provides intelligent memory management with automatic compression,
 token tracking, cost optimization, and YAML-based persistence.

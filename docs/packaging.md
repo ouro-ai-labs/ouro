@@ -7,7 +7,7 @@ Prerequisites: Python 3.12+ and [uv](https://github.com/astral-sh/uv).
 ```bash
 ./scripts/bootstrap.sh
 source .venv/bin/activate
-aloop --help
+ouro --help
 ```
 
 ## Building
@@ -16,12 +16,12 @@ aloop --help
 ./scripts/dev.sh build
 ```
 
-Creates `dist/aloop-*.whl` and `dist/aloop-*.tar.gz`.
+Creates `dist/ouro-*.whl` and `dist/ouro-*.tar.gz`.
 
 Test locally:
 ```bash
-pip install dist/aloop-*.whl
-aloop --task "Calculate 1+1"
+pip install dist/ouro-*.whl
+ouro --task "Calculate 1+1"
 ```
 
 ## Publishing to PyPI
@@ -41,7 +41,7 @@ git push --tags
 
 ```bash
 ./scripts/dev.sh publish --test
-pip install --index-url https://test.pypi.org/simple/ aloop
+pip install --index-url https://test.pypi.org/simple/ ouro
 ```
 
 ### Manual — Production PyPI
@@ -57,32 +57,32 @@ pip install --index-url https://test.pypi.org/simple/ aloop
 ### Build
 
 ```bash
-docker build -t aloop:latest .
+docker build -t ouro:latest .
 ```
 
 ### Run
 
-Mount `.aloop/` to provide model configuration:
+Mount `.ouro/` to provide model configuration:
 
 ```bash
 # Interactive mode
 docker run -it --rm \
-  -v $(pwd)/.aloop:/app/.aloop \
-  aloop
+  -v $(pwd)/.ouro:/app/.ouro \
+  ouro
 
 # Single task
 docker run --rm \
-  -v $(pwd)/.aloop:/app/.aloop \
-  aloop --task "Calculate 1+1"
+  -v $(pwd)/.ouro:/app/.ouro \
+  ouro --task "Calculate 1+1"
 ```
 
 ### Publish
 
 ```bash
-docker tag aloop:latest yourusername/aloop:0.1.0
-docker tag aloop:latest yourusername/aloop:latest
-docker push yourusername/aloop:0.1.0
-docker push yourusername/aloop:latest
+docker tag ouro:latest yourusername/ouro:0.1.0
+docker tag ouro:latest yourusername/ouro:latest
+docker push yourusername/ouro:0.1.0
+docker push yourusername/ouro:latest
 ```
 
 ## Release Checklist
@@ -93,12 +93,12 @@ docker push yourusername/aloop:latest
 4. Open a PR, get it merged to `main`
 5. Tag the release: `git tag v0.x.0 && git push --tags`
 6. GitHub Actions automatically: tests -> build -> publish to PyPI -> create GitHub Release
-7. Verify the release on [pypi.org](https://pypi.org/project/aloop/) and GitHub Releases
+7. Verify the release on [pypi.org](https://pypi.org/project/ouro/) and GitHub Releases
 
 ## Distribution Summary
 
 | Method | Command |
 |--------|---------|
 | Local dev | `./scripts/bootstrap.sh` |
-| Docker | `docker run aloop --task "..."` |
-| From source | `pip install git+https://github.com/luohaha/aloop.git` |
+| Docker | `docker run ouro --task "..."` |
+| From source | `pip install git+https://github.com/ouro-ai-labs/ouro.git` |

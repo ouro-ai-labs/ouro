@@ -2,7 +2,7 @@
 
 ## Model Configuration
 
-Models are configured in `~/.aloop/models.yaml` (auto-created on first run).
+Models are configured in `~/.ouro/models.yaml` (auto-created on first run).
 
 ```yaml
 models:
@@ -35,15 +35,15 @@ The model ID (key under `models`) uses the LiteLLM `provider/model` format. See 
 
 ### Model Management
 
-**CLI**: `aloop --model openai/gpt-4o` or `python main.py --model openai/gpt-4o`
+**CLI**: `ouro --model openai/gpt-4o` or `python main.py --model openai/gpt-4o`
 
 **Interactive**:
 - `/model` -- pick from configured models (arrow keys + Enter)
-- `/model edit` -- open `~/.aloop/models.yaml` in your editor (auto-reload on save)
+- `/model edit` -- open `~/.ouro/models.yaml` in your editor (auto-reload on save)
 
 ## Runtime Settings
 
-Settings live in `~/.aloop/config` (KEY=VALUE format, auto-created with defaults).
+Settings live in `~/.ouro/config` (KEY=VALUE format, auto-created with defaults).
 
 ### Agent
 
@@ -119,6 +119,6 @@ models:
 
 ## Security
 
-- `~/.aloop/models.yaml` contains API keys. Never commit them to version control.
-- Set file permissions to `0600` on Unix: `chmod 600 ~/.aloop/models.yaml`
+- `~/.ouro/models.yaml` contains API keys. Never commit them to version control.
+- Set file permissions to `0600` on Unix: `chmod 600 ~/.ouro/models.yaml`
 - Rotate API keys regularly.

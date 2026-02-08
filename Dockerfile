@@ -1,4 +1,4 @@
-# Multi-stage Docker build for aloop
+# Multi-stage Docker build for ouro
 
 FROM python:3.12-slim AS base
 
@@ -30,5 +30,5 @@ ENTRYPOINT ["python", "main.py"]
 CMD ["--help"]
 
 # Usage:
-# Build: docker build -t aloop .
-# Run: docker run -it --rm -e ANTHROPIC_API_KEY=your_key aloop --task "Hello"
+# Build: docker build -t ouro .
+# Run: docker run -it --rm -e ANTHROPIC_API_KEY=your_key ouro --task "Hello"

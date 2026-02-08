@@ -29,13 +29,13 @@ def _get_colors():
     return Theme.get_colors()
 
 
-ALOOP_LOGO = r"""
- █████╗ ██╗      ██████╗  ██████╗ ██████╗
-██╔══██╗██║     ██╔═══██╗██╔═══██╗██╔══██╗
-███████║██║     ██║   ██║██║   ██║██████╔╝
-██╔══██║██║     ██║   ██║██║   ██║██╔═══╝
-██║  ██║███████╗╚██████╔╝╚██████╔╝██║
-╚═╝  ╚═╝╚══════╝ ╚═════╝  ╚═════╝ ╚═╝"""
+OURO_LOGO = r"""
+ ██████╗ ██╗   ██╗██████╗  ██████╗
+██╔═══██╗██║   ██║██╔══██╗██╔═══██╗
+██║   ██║██║   ██║██████╔╝██║   ██║
+██║   ██║██║   ██║██╔══██╗██║   ██║
+╚██████╔╝╚██████╔╝██║  ██║╚██████╔╝
+ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝ ╚═════╝"""
 
 
 TAGLINES = [
@@ -57,7 +57,7 @@ def print_banner(subtitle: Optional[str] = None) -> None:
     import random
 
     colors = _get_colors()
-    content = f"[bold {colors.primary}]{ALOOP_LOGO.lstrip(chr(10))}[/bold {colors.primary}]"
+    content = f"[bold {colors.primary}]{OURO_LOGO.lstrip(chr(10))}[/bold {colors.primary}]"
     tagline = subtitle or random.choice(TAGLINES)
     content += f"\n\n[italic {colors.secondary}]{tagline}[/italic {colors.secondary}]"
 

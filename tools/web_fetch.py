@@ -449,7 +449,7 @@ class WebFetchTool(BaseTool):
         self, url: str, format: str, timeout: float
     ) -> tuple[httpx.Response, bytes, list[str]]:
         headers = {
-            "User-Agent": "Mozilla/5.0 (compatible; aloop/1.0)",
+            "User-Agent": "Mozilla/5.0 (compatible; ouro/1.0)",
             "Accept": ACCEPT_HEADERS.get(format, "*/*"),
             "Accept-Language": "en-US,en;q=0.9",
         }

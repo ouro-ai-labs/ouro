@@ -1,4 +1,4 @@
-"""TUI (Terminal User Interface) package for aloop.
+"""TUI (Terminal User Interface) package for ouro.
 
 This package provides a modern, professional terminal UI with:
 - Theme support (dark/light modes)

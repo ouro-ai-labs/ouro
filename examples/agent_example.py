@@ -23,7 +23,7 @@ async def main():
     mm = ModelManager()
     profile = mm.get_current_model()
     if not profile:
-        print("No models configured. Edit .aloop/models.yaml and set `default`.")
+        print("No models configured. Edit .ouro/models.yaml and set `default`.")
         return
 
     llm = LiteLLMAdapter(

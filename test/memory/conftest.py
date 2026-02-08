@@ -72,7 +72,7 @@ def mock_llm(tmp_path, monkeypatch):
     """Create a mock LLM instance.
 
     Also patches the default sessions dir to use a temp directory
-    so tests don't write to the real .aloop/sessions/.
+    so tests don't write to the real .ouro/sessions/.
     """
     sessions_dir = str(tmp_path / "sessions")
     monkeypatch.setattr(

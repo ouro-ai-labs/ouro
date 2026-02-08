@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Add `pip install aloop` as primary installation method in README
+- Add `pip install ouro` as primary installation method in README
 
 ## [0.1.0] - 2026-02-02
 
@@ -51,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Parallel execution tool and explore tool
 - Memory management with compression, YAML-based persistence, and session resume
 - Multi-provider LLM support via LiteLLM with thinking/reasoning display
-- Model configuration via `~/.aloop/models.yaml` with interactive setup
+- Model configuration via `~/.ouro/models.yaml` with interactive setup
 - Async-first runtime (async LLM, memory, and tools)
 - CHANGELOG.md
 - GitHub Actions CI and release workflow (tag-triggered PyPI publishing)

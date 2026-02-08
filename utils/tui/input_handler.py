@@ -140,7 +140,7 @@ class CommandCompleter(Completer):
             "verbose": "Toggle verbose output",
             "compact": "Compress conversation memory",
             "model": "Manage models",
-            "model edit": "Edit `.aloop/models.yaml` (auto-reload on save)",
+            "model edit": "Edit `.ouro/models.yaml` (auto-reload on save)",
             "exit": "Exit interactive mode",
             "quit": "Same as /exit",
         }

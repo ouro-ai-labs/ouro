@@ -20,7 +20,7 @@ async def main():
     mm = ModelManager()
     profile = mm.get_current_model()
     if not profile:
-        print("No models configured. Edit .aloop/models.yaml and set `default`.")
+        print("No models configured. Edit .ouro/models.yaml and set `default`.")
         return
 
     llm = LiteLLMAdapter(
@@ -39,7 +39,7 @@ async def main():
 
     print("\n--- Example 1: Fetch web page (raw tool output) ---")
     result1 = await agent.run(
-        "Use the web_fetch tool to fetch https://github.com/luohaha/agentic-loop in markdown format with a 20s timeout. "
+        "Use the web_fetch tool to fetch https://github.com/ouro-ai-labs/ouro in markdown format with a 20s timeout. "
         "Return the raw tool output JSON without extra commentary."
     )
     print(f"\nResult:\n{result1}")

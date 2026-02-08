@@ -8,7 +8,7 @@
 
 ## Problem Statement
 
-aloop currently has no way for an agent to schedule delayed or periodic tasks, nor to send notifications to users outside the terminal. This limits the agent to purely synchronous, on-demand interactions.
+ouro currently has no way for an agent to schedule delayed or periodic tasks, nor to send notifications to users outside the terminal. This limits the agent to purely synchronous, on-demand interactions.
 
 Two common use cases motivate this RFC:
 
@@ -19,7 +19,7 @@ Two common use cases motivate this RFC:
 
 - **Async-first**: Both tools use `asyncio.sleep` / `aiosmtplib` — no blocking I/O.
 - **Simple agent integration**: The agent calls TimerTool, which blocks (awaits) until the trigger time, then returns a message. The agent then acts on it. For recurring tasks, the agent simply calls TimerTool again.
-- **Minimal configuration**: NotifyTool reads SMTP settings from `.aloop/config`. TimerTool requires no external configuration.
+- **Minimal configuration**: NotifyTool reads SMTP settings from `.ouro/config`. TimerTool requires no external configuration.
 
 ## Proposed Approach
 
@@ -50,9 +50,9 @@ Sends an email via the [Resend](https://resend.com) HTTP API. Uses `httpx` (alre
 - `subject` (string, required): Email subject
 - `body` (string, required): Email body (plain text)
 
-**Configuration** (`.aloop/config`):
+**Configuration** (`.ouro/config`):
 - `RESEND_API_KEY`: Resend API key
-- `NOTIFY_EMAIL_FROM`: Sender address (e.g. `aloop <onboarding@resend.dev>`)
+- `NOTIFY_EMAIL_FROM`: Sender address (e.g. `ouro <onboarding@resend.dev>`)
 
 ## Alternatives Considered
 

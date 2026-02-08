@@ -1,4 +1,4 @@
-"""Logging configuration for the agentic loop system."""
+"""Logging configuration for ouro."""
 
 import logging
 from datetime import datetime
@@ -20,10 +20,10 @@ def setup_logger(
     """Configure the logging system globally.
 
     This should be called once at the start of the application when --verbose is enabled.
-    Logging is written to .aloop/logs/ by default.
+    Logging is written to .ouro/logs/ by default.
 
     Args:
-        log_dir: Directory to store log files (default: .aloop/logs/)
+        log_dir: Directory to store log files (default: .ouro/logs/)
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
         log_to_console: Whether to also log to console
     """
@@ -59,7 +59,7 @@ def setup_logger(
     log_path.mkdir(exist_ok=True, parents=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = log_path / f"aloop_{timestamp}.log"
+    log_file = log_path / f"ouro_{timestamp}.log"
     _log_file_path = str(log_file)
 
     file_handler = logging.FileHandler(log_file, encoding="utf-8")

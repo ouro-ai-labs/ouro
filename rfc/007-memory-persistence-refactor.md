@@ -18,7 +18,7 @@ The existing memory persistence layer uses SQLite (`aiosqlite`) with a single `s
 - **Human-readable persistence**: Session files should be viewable and editable with any text editor
 - **Backend abstraction**: Decouple persistence interface from implementation
 - **Session recovery**: Enable resuming previous sessions via CLI (`--resume`) and interactive (`/resume`)
-- **Consistency**: Use YAML format, consistent with `.aloop/models.yaml`
+- **Consistency**: Use YAML format, consistent with `.ouro/models.yaml`
 - **Simplicity**: Remove SQLite dependency entirely (no migration needed)
 
 ## Approach
@@ -37,8 +37,8 @@ Extracted serialization logic into `memory/serialization.py`:
 ### YAML File Backend
 
 `YamlFileMemoryStore(MemoryStore)` in `memory/yaml_backend.py`:
-- **Directory structure**: `.aloop/sessions/YYYY-MM-DD_<uuid[:8]>/session.yaml`
-- **Index file**: `.aloop/sessions/.index.yaml` maps UUID to directory name, lazily rebuilt
+- **Directory structure**: `.ouro/sessions/YYYY-MM-DD_<uuid[:8]>/session.yaml`
+- **Index file**: `.ouro/sessions/.index.yaml` maps UUID to directory name, lazily rebuilt
 - **Atomic writes**: Write to `.tmp` then `os.replace()` for crash safety
 - **Write lock**: `asyncio.Lock()` serializes concurrent writes
 - **Async I/O**: Uses `aiofiles` for reads/writes, `asyncio.to_thread` for filesystem metadata

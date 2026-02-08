@@ -22,7 +22,7 @@ def test_smart_edit_in_agent():
     mm = ModelManager()
     profile = mm.get_current_model()
     if not profile:
-        pytest.skip("No models configured. Edit .aloop/models.yaml and set `default`.")
+        pytest.skip("No models configured. Edit .ouro/models.yaml and set `default`.")
 
     is_valid, error_msg = mm.validate_model(profile)
     if not is_valid:
@@ -30,7 +30,7 @@ def test_smart_edit_in_agent():
 
     if profile.provider == "ollama" and not profile.api_base:
         pytest.skip(
-            "Ollama model requires api_base in .aloop/models.yaml (e.g. http://localhost:11434)"
+            "Ollama model requires api_base in .ouro/models.yaml (e.g. http://localhost:11434)"
         )
 
     # Create a temporary test file

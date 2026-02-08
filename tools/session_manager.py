@@ -157,7 +157,7 @@ Examples:
         "--sessions-dir",
         type=str,
         default=None,
-        help="Path to sessions directory (default: .aloop/sessions/)",
+        help="Path to sessions directory (default: .ouro/sessions/)",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Command to run")

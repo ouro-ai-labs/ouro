@@ -110,7 +110,7 @@ class ModelProfile:
 class ModelManager:
     """Manages multiple models with YAML persistence."""
 
-    CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".aloop", "models.yaml")
+    CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".ouro", "models.yaml")
 
     def __init__(self, config_path: str | None = None):
         self.config_path = config_path or self.CONFIG_PATH

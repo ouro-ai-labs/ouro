@@ -2,11 +2,11 @@
 
 - **Status**: Draft
 - **Created**: 2026-01-24
-- **Author**: aloop Team
+- **Author**: ouro Team
 
 ## Abstract
 
-This RFC proposes an incremental migration of aloop to an **asyncio-first** runtime. The goal is to make the agent loop, tool execution, LLM calls, and persistence **non-blocking**, enabling safe concurrency, cancellation, and predictable timeouts — while **preserving existing user-visible behavior**.
+This RFC proposes an incremental migration of ouro to an **asyncio-first** runtime. The goal is to make the agent loop, tool execution, LLM calls, and persistence **non-blocking**, enabling safe concurrency, cancellation, and predictable timeouts — while **preserving existing user-visible behavior**.
 
 ## Reader Guide
 
@@ -78,7 +78,7 @@ This RFC intentionally aligns with patterns proven in production agent runtimes:
 **Shared design theme**
 - Keep orchestration and tool side effects behind clear boundaries, and prefer deterministic, structured progress reporting over free-form prints.
 
-Implication for aloop:
+Implication for ouro:
 - Keep orchestration async-first and structured.
 - Prefer producing deterministic, structured progress (even if initially only used internally by the CLI/TUI).
 - Prefer explicit lifecycle management for long-lived resources (LLM sessions, DB connections, subprocess handles).

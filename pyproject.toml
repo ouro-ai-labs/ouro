@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "aloop"
+name = "ouro"
 version = "0.1.2"
 description = "General AI Agent System"
 readme = "README.md"
@@ -56,13 +56,13 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/luohaha/aloop"
-Documentation = "https://github.com/luohaha/aloop#readme"
-Repository = "https://github.com/luohaha/aloop"
-Issues = "https://github.com/luohaha/aloop/issues"
+Homepage = "https://github.com/ouro-ai-labs/ouro"
+Documentation = "https://github.com/ouro-ai-labs/ouro#readme"
+Repository = "https://github.com/ouro-ai-labs/ouro"
+Issues = "https://github.com/ouro-ai-labs/ouro/issues"
 
 [project.scripts]
-aloop = "cli:main"
+ouro = "cli:main"
 
 [tool.setuptools]
 # Use current flat structure

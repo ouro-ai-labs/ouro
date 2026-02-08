@@ -50,7 +50,7 @@ coverage.xml
 .hypothesis/
 
 # Model configuration (contains API keys)
-.aloop/models.yaml
+.ouro/models.yaml
 .pytest_cache/
 cover/
 
@@ -150,12 +150,12 @@ venv.bak/
 
 # Runtime data (SQLite memory DB, etc.)
 data/
-.aloop/
+.ouro/
 
 # Claude Code local rules/state (project-local)
 .claude/
 
-# Tool caches (legacy; now under .aloop/cache)
+# Tool caches (legacy; now under .ouro/cache)
 
 # Spyder project settings
 .spyderproject

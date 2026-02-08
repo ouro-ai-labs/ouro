@@ -5,14 +5,14 @@ import random
 
 # Define path constants directly to avoid circular imports with utils
 # (utils.terminal_ui imports Config, and utils.runtime is in the utils package)
-_RUNTIME_DIR = os.path.join(os.path.expanduser("~"), ".aloop")
+_RUNTIME_DIR = os.path.join(os.path.expanduser("~"), ".ouro")
 _CONFIG_FILE = os.path.join(_RUNTIME_DIR, "config")
 
 # Default configuration template
 _DEFAULT_CONFIG = """\
-# aloop Configuration
+# ouro Configuration
 #
-# NOTE: Model configuration lives in `~/.aloop/models.yaml`.
+# NOTE: Model configuration lives in `~/.ouro/models.yaml`.
 # This file controls non-model runtime settings only.
 
 TOOL_TIMEOUT=600
@@ -44,7 +44,7 @@ def _load_config(path: str) -> dict[str, str]:
 
 
 def _ensure_config():
-    """Ensure ~/.aloop/config exists, create with defaults if not."""
+    """Ensure ~/.ouro/config exists, create with defaults if not."""
     if not os.path.exists(_CONFIG_FILE):
         os.makedirs(_RUNTIME_DIR, exist_ok=True)
         with open(_CONFIG_FILE, "w", encoding="utf-8") as f:
@@ -71,8 +71,8 @@ class Config:
     All configuration is centralized here. Access config values directly via Config.XXX.
     """
 
-    # Model configuration is handled by `~/.aloop/models.yaml` via ModelManager.
-    # `~/.aloop/config` controls non-model runtime settings only.
+    # Model configuration is handled by `~/.ouro/models.yaml` via ModelManager.
+    # `~/.ouro/config` controls non-model runtime settings only.
     TOOL_TIMEOUT = float(_cfg.get("TOOL_TIMEOUT", "600"))
 
     # Agent Configuration
@@ -98,7 +98,7 @@ class Config:
 
     # Logging Configuration
     # Note: Logging is now controlled via --verbose flag
-    # LOG_DIR is now ~/.aloop/logs/ (see utils.runtime)
+    # LOG_DIR is now ~/.ouro/logs/ (see utils.runtime)
     LOG_LEVEL = _cfg.get("LOG_LEVEL", "DEBUG").upper()
 
     # TUI Configuration
@@ -141,6 +141,6 @@ class Config:
         Raises:
             ValueError: If required configuration is missing
         """
-        # Model configuration is handled by `~/.aloop/models.yaml` via ModelManager.
-        # `~/.aloop/config` is used for non-model runtime settings only.
+        # Model configuration is handled by `~/.ouro/models.yaml` via ModelManager.
+        # `~/.ouro/config` is used for non-model runtime settings only.
         return

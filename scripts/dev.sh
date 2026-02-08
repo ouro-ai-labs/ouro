@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-aloop dev workflow helper.
+ouro dev workflow helper.
 
 Usage:
   ./scripts/dev.sh <command> [args...]
@@ -89,7 +89,7 @@ case "$cmd" in
   build)
     source ./scripts/_env.sh
 
-    echo "🔨 Building aloop package..."
+    echo "🔨 Building ouro package..."
 
     echo "Cleaning previous builds..."
     rm -rf build/ dist/ *.egg-info
@@ -105,7 +105,7 @@ case "$cmd" in
 
     echo ""
     echo "Next steps:"
-    echo "  1. Test locally: pip install dist/aloop-*.whl"
+    echo "  1. Test locally: pip install dist/ouro-*.whl"
     echo "  2. Upload to PyPI: twine upload dist/*"
     ;;
   publish)

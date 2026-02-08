@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Command-line interface for aloop."""
+"""Command-line interface for ouro."""
 
 import os
 import sys

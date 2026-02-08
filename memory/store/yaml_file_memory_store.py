@@ -1,7 +1,7 @@
 """YAML file-based memory persistence backend.
 
-Stores each session as a human-readable YAML file under .aloop/sessions/.
-Directory structure: .aloop/sessions/YYYY-MM-DD_<uuid[:8]>/session.yaml
+Stores each session as a human-readable YAML file under .ouro/sessions/.
+Directory structure: .ouro/sessions/YYYY-MM-DD_<uuid[:8]>/session.yaml
 """
 
 import asyncio
@@ -37,7 +37,7 @@ class YamlFileMemoryStore(MemoryStore):
         """Initialize YAML file backend.
 
         Args:
-            sessions_dir: Path to sessions directory (default: .aloop/sessions/)
+            sessions_dir: Path to sessions directory (default: .ouro/sessions/)
         """
         self.sessions_dir = sessions_dir or get_sessions_dir()
         self._write_lock = asyncio.Lock()

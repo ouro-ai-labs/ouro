@@ -62,7 +62,7 @@ class InteractiveSession:
                     subcommands={
                         "edit": CommandSpec(
                             "edit",
-                            "Edit `.aloop/models.yaml` (auto-reload on save)",
+                            "Edit `.ouro/models.yaml` (auto-reload on save)",
                         )
                     },
                 ),
@@ -381,7 +381,7 @@ class InteractiveSession:
         if not profiles:
             terminal_ui.print_error("No models configured.")
             terminal_ui.console.print(
-                f"[{colors.text_muted}]Use /model edit (recommended) or edit `.aloop/models.yaml` manually.[/{colors.text_muted}]\n"
+                f"[{colors.text_muted}]Use /model edit (recommended) or edit `.ouro/models.yaml` manually.[/{colors.text_muted}]\n"
             )
             return
 
@@ -464,7 +464,7 @@ class InteractiveSession:
             if not self.model_manager.list_models():
                 terminal_ui.print_error("No models configured yet.")
                 terminal_ui.console.print(
-                    f"[{colors.text_muted}]Run /model edit to configure `.aloop/models.yaml`.[/{colors.text_muted}]\n"
+                    f"[{colors.text_muted}]Run /model edit to configure `.ouro/models.yaml`.[/{colors.text_muted}]\n"
                 )
                 return
             picked = await pick_model_id(self.model_manager, title="Select Model")
@@ -497,11 +497,11 @@ class InteractiveSession:
                 return
 
             self.model_manager.reload()
-            terminal_ui.print_success("Reloaded `.aloop/models.yaml`")
+            terminal_ui.print_success("Reloaded `.ouro/models.yaml`")
             current_after = self.model_manager.get_current_model()
             if not current_after:
                 terminal_ui.print_error(
-                    "No models configured after reload. Edit `.aloop/models.yaml` and set `default`."
+                    "No models configured after reload. Edit `.ouro/models.yaml` and set `default`."
                 )
                 return
 
@@ -661,7 +661,7 @@ class ModelSetupSession:
                     "model",
                     "Pick a model",
                     subcommands={
-                        "edit": CommandSpec("edit", "Open `.aloop/models.yaml` in editor")
+                        "edit": CommandSpec("edit", "Open `.ouro/models.yaml` in editor")
                     },
                 ),
                 CommandSpec("exit", "Quit"),
@@ -676,7 +676,7 @@ class ModelSetupSession:
         colors = Theme.get_colors()
         terminal_ui.console.print(
             f"\n[bold {colors.primary}]Model Setup[/bold {colors.primary}] "
-            f"[{colors.text_muted}](edit `.aloop/models.yaml`)[/{colors.text_muted}]\n"
+            f"[{colors.text_muted}](edit `.ouro/models.yaml`)[/{colors.text_muted}]\n"
         )
         terminal_ui.console.print(f"[{colors.text_muted}]Commands:[/{colors.text_muted}]\n")
         for cmd in self.command_registry.commands:
@@ -703,7 +703,7 @@ class ModelSetupSession:
         if not models:
             terminal_ui.print_error("No models configured yet.")
             terminal_ui.console.print(
-                f"[{colors.text_muted}]Use /model edit to configure `.aloop/models.yaml`.[/{colors.text_muted}]\n"
+                f"[{colors.text_muted}]Use /model edit to configure `.ouro/models.yaml`.[/{colors.text_muted}]\n"
             )
             return
 
@@ -744,7 +744,7 @@ class ModelSetupSession:
             if not self.model_manager.list_models():
                 terminal_ui.print_error("No models configured yet.")
                 terminal_ui.console.print(
-                    f"[{colors.text_muted}]Run /model edit to configure `.aloop/models.yaml`.[/{colors.text_muted}]\n"
+                    f"[{colors.text_muted}]Run /model edit to configure `.ouro/models.yaml`.[/{colors.text_muted}]\n"
                 )
                 return False
             picked = await pick_model_id(self.model_manager, title="Select Model")
@@ -778,7 +778,7 @@ class ModelSetupSession:
                 )
                 return False
             self.model_manager.reload()
-            terminal_ui.print_success("Reloaded `.aloop/models.yaml`")
+            terminal_ui.print_success("Reloaded `.ouro/models.yaml`")
             self._show_models()
             return self._maybe_ready_to_start()
 
@@ -805,7 +805,7 @@ class ModelSetupSession:
     async def run(self) -> bool:
         colors = Theme.get_colors()
         terminal_ui.print_header(
-            "Agentic Loop - Model Setup", subtitle="Configure `.aloop/models.yaml` to start"
+            "Agentic Loop - Model Setup", subtitle="Configure `.ouro/models.yaml` to start"
         )
         terminal_ui.console.print(
             f"[{colors.text_muted}]Tip: Use /model edit (recommended) to configure, or /model to pick.[/{colors.text_muted}]\n"

@@ -6,24 +6,24 @@ Run a task and exit. The `--task` flag outputs the raw result only (no TUI chrom
 
 ```bash
 # Simple calculation
-aloop --task "Calculate the first 10 digits of pi"
+ouro --task "Calculate the first 10 digits of pi"
 
 # File operations
-aloop --task "Create a file hello.txt with content 'Hello, Agent!'"
-aloop --task "Read data.csv and count the number of rows"
+ouro --task "Create a file hello.txt with content 'Hello, Agent!'"
+ouro --task "Read data.csv and count the number of rows"
 
 # Web search
-aloop --task "Search for the latest news about AI agents"
+ouro --task "Search for the latest news about AI agents"
 
 # Shell
-aloop --task "List all Python files in the current directory"
-aloop --task "Check git status and show recent commits"
+ouro --task "List all Python files in the current directory"
+ouro --task "Check git status and show recent commits"
 
 # Code generation
-aloop --task "Write a Python script to calculate fibonacci numbers and save it to fib.py"
+ouro --task "Write a Python script to calculate fibonacci numbers and save it to fib.py"
 
 # Specify model
-aloop --task "Summarize this README" --model openai/gpt-4o
+ouro --task "Summarize this README" --model openai/gpt-4o
 ```
 
 From source (without install):
@@ -37,7 +37,7 @@ python main.py --task "Calculate 1+1"
 Start without `--task` to enter interactive mode:
 
 ```bash
-aloop
+ouro
 ```
 
 Type your request and press Enter twice to submit. The agent will think, use tools, and respond.
@@ -48,7 +48,7 @@ Type your request and press Enter twice to submit. The agent will think, use too
 /help                    Show available commands
 /stats                   Show token usage and cost
 /model                   Pick a different model
-/model edit              Edit ~/.aloop/models.yaml in your editor
+/model edit              Edit ~/.ouro/models.yaml in your editor
 /theme                   Toggle dark/light theme
 /verbose                 Toggle thinking display
 /compact                 Toggle compact output
@@ -73,13 +73,13 @@ Sessions are automatically saved. Resume with the CLI or interactively:
 
 ```bash
 # Resume most recent session
-aloop --resume
+ouro --resume
 
 # Resume by session ID prefix
-aloop --resume a1b2c3d4
+ouro --resume a1b2c3d4
 
 # Resume and continue with a new task
-aloop --resume a1b2c3d4 --task "Continue the analysis"
+ouro --resume a1b2c3d4 --task "Continue the analysis"
 ```
 
 In interactive mode:
@@ -94,25 +94,25 @@ The agent automatically selects tools based on the task. Some examples of what t
 
 **File operations**:
 ```bash
-aloop --task "Read all .txt files in ./data and create a summary"
-aloop --task "Find all TODO comments in Python files"
+ouro --task "Read all .txt files in ./data and create a summary"
+ouro --task "Find all TODO comments in Python files"
 ```
 
 **Web search and fetch**:
 ```bash
-aloop --task "Search for Python 3.12 new features and summarize"
-aloop --task "Fetch https://example.com and extract the main content"
+ouro --task "Search for Python 3.12 new features and summarize"
+ouro --task "Fetch https://example.com and extract the main content"
 ```
 
 **Shell commands**:
 ```bash
-aloop --task "Show disk usage and available space"
-aloop --task "Run pytest and summarize the results"
+ouro --task "Show disk usage and available space"
+ouro --task "Run pytest and summarize the results"
 ```
 
 **Code navigation** (tree-sitter AST):
 ```bash
-aloop --task "List all classes and functions in src/"
+ouro --task "List all classes and functions in src/"
 ```
 
 ## Programmatic Usage
@@ -128,7 +128,7 @@ async def main():
     mm = ModelManager()
     profile = mm.get_current_model()
     if not profile:
-        raise RuntimeError("No models configured. Edit ~/.aloop/models.yaml.")
+        raise RuntimeError("No models configured. Edit ~/.ouro/models.yaml.")
 
     llm = LiteLLMAdapter(
         model=profile.model_id,
@@ -151,12 +151,12 @@ if __name__ == "__main__":
 
 ## Troubleshooting
 
-**Task not completing**: Increase `MAX_ITERATIONS` in `~/.aloop/config` (default: 1000).
+**Task not completing**: Increase `MAX_ITERATIONS` in `~/.ouro/config` (default: 1000).
 
-**High token usage**: Memory compression is enabled by default. Adjust `MEMORY_COMPRESSION_THRESHOLD` in `~/.aloop/config` to trigger compression earlier. Switch to a cheaper model with `--model` or `/model`.
+**High token usage**: Memory compression is enabled by default. Adjust `MEMORY_COMPRESSION_THRESHOLD` in `~/.ouro/config` to trigger compression earlier. Switch to a cheaper model with `--model` or `/model`.
 
-**API errors**: Verify your API key in `~/.aloop/models.yaml`. Test with a simple task: `aloop --task "Calculate 1+1"`.
+**API errors**: Verify your API key in `~/.ouro/models.yaml`. Test with a simple task: `ouro --task "Calculate 1+1"`.
 
-**Rate limits**: Automatic retry with exponential backoff is built in. Configure `RETRY_MAX_ATTEMPTS` in `~/.aloop/config` (default: 3).
+**Rate limits**: Automatic retry with exponential backoff is built in. Configure `RETRY_MAX_ATTEMPTS` in `~/.ouro/config` (default: 3).
 
-**Verbose output for debugging**: Use `--verbose` to log detailed info to `~/.aloop/logs/`.
+**Verbose output for debugging**: Use `--verbose` to log detailed info to `~/.ouro/logs/`.

@@ -1,4 +1,4 @@
-# aloop — Agent Instructions
+# ouro — Agent Instructions
 
 This file defines the **operational workflow** for making changes in this repo (how to set up, run, test, format, build, and publish). Keep it short, specific, and executable; link to docs for long explanations.
 
@@ -22,10 +22,10 @@ pre-commit install
 
 **IMPORTANT**: Every change must be developed on a new branch using a git worktree, then merged into `main` via pull request.
 
-1. Create a worktree with a new branch: `git worktree add ../aloop-<branch-name> -b <branch-name>`
+1. Create a worktree with a new branch: `git worktree add ../ouro-<branch-name> -b <branch-name>`
 2. Work in the worktree directory, commit changes there.
 3. Push the branch and open a PR to merge into `main`.
-4. After the PR is merged, clean up: `git worktree remove ../aloop-<branch-name>`
+4. After the PR is merged, clean up: `git worktree remove ../ouro-<branch-name>`
 
 Never commit directly to `main`. All changes go through PR review.
 
@@ -35,12 +35,12 @@ Worktrees don't automatically share `.venv`. To avoid re-running bootstrap for e
 
 ```bash
 # main checkout
-cd /path/to/aloop
+cd /path/to/ouro
 ./scripts/bootstrap.sh
 
-# each worktree (example: ../aloop-my-branch)
-cd /path/to/aloop-my-branch
-ln -s ../aloop/.venv .venv
+# each worktree (example: ../ouro-my-branch)
+cd /path/to/ouro-my-branch
+ln -s ../ouro/.venv .venv
 # Point the editable install at *this* worktree (fast; doesn't reinstall deps).
 ./scripts/dev.sh install
 ./scripts/dev.sh check
@@ -78,7 +78,7 @@ Change impact reminders:
 - Config changes → update `docs/configuration.md`
 - Workflow scripts → update `AGENTS.md`, `docs/packaging.md`
 
-Run a quick smoke task (requires a configured provider in `~/.aloop/models.yaml`):
+Run a quick smoke task (requires a configured provider in `~/.ouro/models.yaml`):
 
 ```bash
 python main.py --task "Calculate 1+1"
@@ -147,7 +147,7 @@ Unified entrypoint: `./scripts/dev.sh format`
 
 ## Docs Pointers
 
-- Configuration & `~/.aloop/models.yaml`: `docs/configuration.md`
+- Configuration & `~/.ouro/models.yaml`: `docs/configuration.md`
 - Packaging & release checklist: `docs/packaging.md`
 - Extending tools/agents: `docs/extending.md`
 - Memory system: `docs/memory-management.md`
@@ -155,7 +155,7 @@ Unified entrypoint: `./scripts/dev.sh format`
 
 ## Safety & Secrets
 
-- Never commit `~/.aloop/config` or API keys.
+- Never commit `~/.ouro/config` or API keys.
 - Avoid running destructive shell commands; keep file edits scoped and reversible.
 - Publishing/releasing steps require explicit human intent (see `docs/packaging.md`).
 

@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Bootstrap a local dev environment for aloop.
+Bootstrap a local dev environment for ouro.
 
 Creates/uses `.venv` and installs `.[dev]`.
 

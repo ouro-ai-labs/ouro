@@ -12,7 +12,7 @@ Components:
 
 ## Configuration
 
-All settings go in `~/.aloop/config`:
+All settings go in `~/.ouro/config`:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -86,7 +86,7 @@ Conversations are automatically saved as YAML files when `agent.run()` completes
 ### Directory Structure
 
 ```
-~/.aloop/sessions/
+~/.ouro/sessions/
 ├── .index.yaml                    # UUID-to-directory mapping (auto-managed)
 ├── 2025-01-31_a1b2c3d4/
 │   └── session.yaml
@@ -128,8 +128,8 @@ messages:
 
 **CLI**:
 ```bash
-aloop --resume              # Resume most recent session
-aloop --resume a1b2c3d4     # Resume by ID prefix
+ouro --resume              # Resume most recent session
+ouro --resume a1b2c3d4     # Resume by ID prefix
 ```
 
 **Interactive**:

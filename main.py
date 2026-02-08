@@ -57,8 +57,8 @@ def create_agent(model_id: str | None = None):
 
     if not model_manager.is_configured():
         raise ValueError(
-            "No models configured. Run `aloop` without --task and use /model edit, "
-            "or edit `.aloop/models.yaml` to add at least one model and set `default`."
+            "No models configured. Run `ouro` without --task and use /model edit, "
+            "or edit `.ouro/models.yaml` to add at least one model and set `default`."
         )
 
     # Get the model to use
@@ -74,7 +74,7 @@ def create_agent(model_id: str | None = None):
 
     current_profile = model_manager.get_current_model()
     if not current_profile:
-        raise ValueError("No model available. Please check `.aloop/models.yaml`.")
+        raise ValueError("No model available. Please check `.ouro/models.yaml`.")
 
     is_valid, error_msg = model_manager.validate_model(current_profile)
     if not is_valid:
@@ -132,10 +132,10 @@ def main():
     parser = argparse.ArgumentParser(description="Run an AI agent with tool-calling capabilities")
 
     try:
-        version = importlib.metadata.version("aloop")
+        version = importlib.metadata.version("ouro")
     except importlib.metadata.PackageNotFoundError:
         version = "dev"
-    parser.add_argument("--version", "-V", action="version", version=f"aloop {version}")
+    parser.add_argument("--version", "-V", action="version", version=f"ouro {version}")
 
     parser.add_argument(
         "--task",
@@ -147,7 +147,7 @@ def main():
         "--verbose",
         "-v",
         action="store_true",
-        help="Enable verbose logging to .aloop/logs/",
+        help="Enable verbose logging to .ouro/logs/",
     )
     parser.add_argument(
         "--model",
@@ -197,8 +197,8 @@ def main():
         if args.task:
             terminal_ui.print_error(str(e), title="Model Configuration Error")
             terminal_ui.console.print(
-                "Edit `.aloop/models.yaml` to add models and set `default` (this file is gitignored). "
-                "Tip: run `aloop` (interactive) and use /model edit."
+                "Edit `.ouro/models.yaml` to add models and set `default` (this file is gitignored). "
+                "Tip: run `ouro` (interactive) and use /model edit."
             )
             return
 

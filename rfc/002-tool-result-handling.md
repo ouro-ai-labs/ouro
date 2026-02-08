@@ -2,7 +2,7 @@
 
 - **Status**: Draft
 - **Created**: 2025-01-24
-- **Author**: aloop Team
+- **Author**: ouro Team
 
 ## Abstract
 
@@ -22,7 +22,7 @@ Different systems handle this challenge in different ways:
 
 ### 1.2 The Current Approach
 
-aloop currently uses a centralized `ToolResultProcessor` that:
+ouro currently uses a centralized `ToolResultProcessor` that:
 
 1. Receives raw tool outputs after execution
 2. Checks if output exceeds tool-specific thresholds
@@ -351,4 +351,4 @@ This aligns with the broader principle: let each component do one thing well. To
 
 1. Claude Code tool implementation and error handling patterns
 2. OpenAI function calling best practices
-3. aloop RFC 001: Four-Phase Agent Architecture
+3. ouro RFC 001: Four-Phase Agent Architecture
