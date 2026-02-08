@@ -15,11 +15,11 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 source "$HOME/.local/bin/env"
 
-# Install ouro
+# Install ouro (pin to Python 3.12 — tree-sitter-languages lacks 3.14 wheels)
 {% if version %}
-uv tool install ouro-ai=={{ version }}
+uv tool install --python 3.12 ouro-ai=={{ version }}
 {% else %}
-uv tool install ouro-ai
+uv tool install --python 3.12 ouro-ai
 {% endif %}
 
 echo "INSTALL_SUCCESS"
