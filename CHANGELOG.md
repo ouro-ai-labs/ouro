@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-02-08
+
+### Changed
+
+- Rename project from `aloop` to `ouro` (Ouroboros)
+- PyPI package name is now `ouro-ai` (`pip install ouro-ai`)
+- CLI entry point renamed from `aloop` to `ouro`
+- Runtime directory moved from `~/.aloop/` to `~/.ouro/`
+- GitHub repository moved to `ouro-ai-labs/ouro`
+- Updated ASCII logo and SVG branding
+
 ## [0.1.2] - 2026-02-04
 
 ### Added
