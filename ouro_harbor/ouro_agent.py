@@ -41,7 +41,27 @@ def _resolve_api_key(model_name: str | None) -> str:
     return os.environ.get("OURO_API_KEY", "")
 
 
-def _build_models_yaml(model_name: str, api_key: str) -> str:
+def _resolve_api_base(model_name: str | None) -> str | None:
+    """Return a custom API base URL if one is configured via env vars.
+
+    Checks ``OURO_API_BASE`` first, then provider-specific variables like
+    ``OPENAI_API_BASE`` or ``ANTHROPIC_API_BASE``.
+    """
+    generic = os.environ.get("OURO_API_BASE", "")
+    if generic:
+        return generic
+
+    if model_name and "/" in model_name:
+        provider = model_name.split("/")[0].upper()
+        for suffix in ("_API_BASE", "_BASE_URL"):
+            value = os.environ.get(f"{provider}{suffix}", "")
+            if value:
+                return value
+
+    return None
+
+
+def _build_models_yaml(model_name: str, api_key: str, api_base: str | None) -> str:
     """Return the content of ``~/.ouro/models.yaml`` for the container.
 
     The key under ``models`` is the LiteLLM model ID (e.g.
@@ -49,13 +69,16 @@ def _build_models_yaml(model_name: str, api_key: str) -> str:
     the same key so that ``ouro --model <key>`` resolves correctly.
     """
     timeout = os.environ.get("OURO_TIMEOUT", "600")
-    return (
-        f"default: {model_name}\n"
-        f"models:\n"
-        f"  {model_name}:\n"
-        f"    api_key: {api_key}\n"
-        f"    timeout: {timeout}\n"
-    )
+    lines = [
+        f"default: {model_name}",
+        "models:",
+        f"  {model_name}:",
+        f"    api_key: {api_key}",
+        f"    timeout: {timeout}",
+    ]
+    if api_base:
+        lines.append(f"    api_base: {api_base}")
+    return "\n".join(lines) + "\n"
 
 
 class OuroAgent(BaseInstalledAgent):
@@ -72,8 +95,9 @@ class OuroAgent(BaseInstalledAgent):
     def create_run_agent_commands(self, instruction: str) -> list[ExecInput]:
         model_name: str = self.model_name or "anthropic/claude-sonnet-4-5-20250929"
         api_key = _resolve_api_key(model_name)
+        api_base = _resolve_api_base(model_name)
 
-        models_yaml = _build_models_yaml(model_name, api_key)
+        models_yaml = _build_models_yaml(model_name, api_key, api_base)
         escaped_yaml = shlex.quote(models_yaml)
         escaped_instruction = shlex.quote(instruction)
 
