@@ -56,8 +56,13 @@ class OuroAgent(BaseInstalledAgent):
         if api_base:
             env["OURO_BASE_URL"] = api_base
 
+        # Clear proxy vars that may leak from host into the container
+        _PROXY_VARS = "http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY all_proxy"
+        unset_proxy = f"unset {_PROXY_VARS} 2>/dev/null || true"
+
         # Setup: write models.yaml so ouro can discover the model
         setup_command = (
+            f"{unset_proxy} && "
             "mkdir -p ~/.ouro && "
             f"echo {escaped_yaml} > ~/.ouro/models.yaml && "
             "mkdir -p /logs/agent"
@@ -66,6 +71,7 @@ class OuroAgent(BaseInstalledAgent):
         # Run ouro in single-task mode and tee output for log collection
         escaped_model = shlex.quote(model_name)
         run_command = (
+            f"{unset_proxy} && "
             f"ouro --model {escaped_model} --task {escaped_instruction} "
             f"2>&1 | tee /logs/agent/ouro-output.txt"
         )
