@@ -73,7 +73,9 @@ class OuroAgent(BaseInstalledAgent):
         run_command = (
             f"{unset_proxy} && "
             f"ouro --model {escaped_model} --task {escaped_instruction} "
-            f"2>&1 | tee /logs/agent/ouro-output.txt"
+            f"2>&1 | tee /logs/agent/ouro-output.txt; "
+            # Copy session files to logs dir for debugging (best-effort)
+            "cp -r ~/.ouro/sessions /logs/agent/sessions 2>/dev/null || true"
         )
 
         return [
