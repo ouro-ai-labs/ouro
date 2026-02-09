@@ -9,56 +9,6 @@ from pathlib import Path
 from harbor.agents.installed.base import BaseInstalledAgent, ExecInput
 from harbor.models.agent.context import AgentContext
 
-# Provider prefix → environment variable for the API key
-_PROVIDER_KEY_MAP: dict[str, str] = {
-    "anthropic": "ANTHROPIC_API_KEY",
-    "openai": "OPENAI_API_KEY",
-    "google": "GOOGLE_API_KEY",
-    "gemini": "GEMINI_API_KEY",
-    "mistral": "MISTRAL_API_KEY",
-    "groq": "GROQ_API_KEY",
-    "deepseek": "DEEPSEEK_API_KEY",
-    "together_ai": "TOGETHERAI_API_KEY",
-    "fireworks_ai": "FIREWORKS_API_KEY",
-    "cohere": "CO_API_KEY",
-}
-
-
-def _resolve_api_key(model_name: str | None) -> str:
-    """Pick the right API key env-var value based on the model's provider prefix.
-
-    Falls back to ``OURO_API_KEY`` if the provider-specific variable is unset.
-    """
-    if model_name and "/" in model_name:
-        provider = model_name.split("/")[0].lower()
-        env_var = _PROVIDER_KEY_MAP.get(provider)
-        if env_var:
-            value = os.environ.get(env_var, "")
-            if value:
-                return value
-
-    # Generic fallback
-    return os.environ.get("OURO_API_KEY", "")
-
-
-def _resolve_api_base(model_name: str | None) -> str | None:
-    """Return a custom API base URL if one is configured via env vars.
-
-    Checks ``OURO_BASE_URL`` first, then provider-specific variables like
-    ``OPENAI_BASE_URL`` or ``ANTHROPIC_BASE_URL``.
-    """
-    generic = os.environ.get("OURO_BASE_URL", "")
-    if generic:
-        return generic
-
-    if model_name and "/" in model_name:
-        provider = model_name.split("/")[0].upper()
-        value = os.environ.get(f"{provider}_BASE_URL", "")
-        if value:
-            return value
-
-    return None
-
 
 def _build_models_yaml(model_name: str, api_key: str, api_base: str | None) -> str:
     """Return the content of ``~/.ouro/models.yaml`` for the container.
@@ -93,25 +43,18 @@ class OuroAgent(BaseInstalledAgent):
 
     def create_run_agent_commands(self, instruction: str) -> list[ExecInput]:
         model_name: str = self.model_name or "anthropic/claude-sonnet-4-5-20250929"
-        api_key = _resolve_api_key(model_name)
-        api_base = _resolve_api_base(model_name)
+        api_key = os.environ.get("OURO_API_KEY", "")
+        api_base = os.environ.get("OURO_BASE_URL") or None
 
         models_yaml = _build_models_yaml(model_name, api_key, api_base)
         escaped_yaml = shlex.quote(models_yaml)
         escaped_instruction = shlex.quote(instruction)
 
-        # Propagate provider-specific key + generic fallback into the container
         env: dict[str, str] = {}
-        if model_name and "/" in model_name:
-            provider = model_name.split("/")[0].lower()
-            env_var = _PROVIDER_KEY_MAP.get(provider)
-            if env_var:
-                value = os.environ.get(env_var, "")
-                if value:
-                    env[env_var] = value
-        ouro_key = os.environ.get("OURO_API_KEY", "")
-        if ouro_key:
-            env["OURO_API_KEY"] = ouro_key
+        if api_key:
+            env["OURO_API_KEY"] = api_key
+        if api_base:
+            env["OURO_BASE_URL"] = api_base
 
         # Setup: write models.yaml so ouro can discover the model
         setup_command = (
