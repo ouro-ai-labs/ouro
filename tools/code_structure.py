@@ -5,25 +5,31 @@ FileReadTool to show code structure when a file is too large to read fully.
 """
 
 import ast
-import warnings
+import importlib
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import aiofiles
 
-# Try to import tree-sitter-languages for multi-language support
+# Try to import tree-sitter for multi-language support
 try:
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore",
-            category=FutureWarning,
-            module=r"^tree_sitter(\.|$)",
-        )
-        from tree_sitter_languages import get_language, get_parser
+    from tree_sitter import Language, Parser, Query, QueryCursor
 
     HAS_TREE_SITTER = True
 except ImportError:
     HAS_TREE_SITTER = False
+
+# Map language names to (module_name, entry_function_name)
+LANGUAGE_MODULES = {
+    "javascript": ("tree_sitter_javascript", "language"),
+    "typescript": ("tree_sitter_typescript", "language_typescript"),
+    "go": ("tree_sitter_go", "language"),
+    "rust": ("tree_sitter_rust", "language"),
+    "java": ("tree_sitter_java", "language"),
+    "kotlin": ("tree_sitter_kotlin", "language"),
+    "cpp": ("tree_sitter_cpp", "language"),
+    "c": ("tree_sitter_c", "language"),
+}
 
 
 # Language extension mapping
@@ -62,7 +68,7 @@ FUNCTION_QUERIES = {
     "go": "(function_declaration name: (identifier) @name)",
     "rust": "(function_item name: (identifier) @name)",
     "java": "(method_declaration name: (identifier) @name)",
-    "kotlin": "(function_declaration (simple_identifier) @name)",
+    "kotlin": "(function_declaration (identifier) @name)",
     "cpp": "(function_definition declarator: (function_declarator declarator: (_) @name))",
     "c": "(function_definition declarator: (function_declarator declarator: (_) @name))",
 }
@@ -85,7 +91,7 @@ CLASS_QUERIES = {
         (class_declaration name: (identifier) @name)
         (interface_declaration name: (identifier) @name)
     ]""",
-    "kotlin": "(class_declaration (type_identifier) @name)",
+    "kotlin": "(class_declaration (identifier) @name)",
     "cpp": """[
         (class_specifier name: (type_identifier) @name)
         (struct_specifier name: (type_identifier) @name)
@@ -100,19 +106,12 @@ def detect_language(file_path: Path) -> Optional[str]:
 
 
 def _get_tree_sitter_parser_and_language(lang: str):
-    """Get a tree-sitter parser and language.
-
-    tree_sitter_languages currently triggers a FutureWarning via tree_sitter
-    (Language(path, name) deprecation). This is dependency-level noise, so we
-    suppress it locally around the calls that instantiate Language objects.
-    """
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore",
-            category=FutureWarning,
-            module=r"^tree_sitter(\.|$)",
-        )
-        return get_parser(lang), get_language(lang)
+    """Get a tree-sitter parser and language via individual language packages."""
+    module_name, func_name = LANGUAGE_MODULES[lang]
+    mod = importlib.import_module(module_name)
+    language = Language(getattr(mod, func_name)())
+    parser = Parser(language)
+    return parser, language
 
 
 def _format_base_class(node: ast.expr) -> str:
@@ -289,41 +288,39 @@ async def _show_structure_tree_sitter(path: Path, lang: str) -> str:
     # Find classes
     if lang in CLASS_QUERIES:
         try:
-            query = language.query(CLASS_QUERIES[lang])
-            captures = query.captures(tree.root_node)
-            for node, capture_name in captures:
-                if capture_name == "name":
-                    class_name = node.text.decode("utf-8")
-                    structure["classes"].append(
-                        {
-                            "line": node.start_point[0] + 1,
-                            "name": class_name,
-                            "bases": [],
-                            "methods": [],
-                            "docstring": None,
-                        }
-                    )
+            query = Query(language, CLASS_QUERIES[lang])
+            captures = QueryCursor(query).captures(tree.root_node)
+            for node in captures.get("name", []):
+                class_name = node.text.decode("utf-8") if node.text else ""
+                structure["classes"].append(
+                    {
+                        "line": node.start_point[0] + 1,
+                        "name": class_name,
+                        "bases": [],
+                        "methods": [],
+                        "docstring": None,
+                    }
+                )
         except Exception:
             pass
 
     # Find functions
     if lang in FUNCTION_QUERIES:
         try:
-            query = language.query(FUNCTION_QUERIES[lang])
-            captures = query.captures(tree.root_node)
-            for node, capture_name in captures:
-                if capture_name == "name":
-                    func_name = node.text.decode("utf-8")
-                    line_num = node.start_point[0] + 1
-                    line_content = lines[line_num - 1].strip() if line_num <= len(lines) else ""
-                    structure["functions"].append(
-                        {
-                            "line": line_num,
-                            "name": func_name,
-                            "args": line_content,
-                            "docstring": None,
-                        }
-                    )
+            query = Query(language, FUNCTION_QUERIES[lang])
+            captures = QueryCursor(query).captures(tree.root_node)
+            for node in captures.get("name", []):
+                func_name = node.text.decode("utf-8") if node.text else ""
+                line_num = node.start_point[0] + 1
+                line_content = lines[line_num - 1].strip() if line_num <= len(lines) else ""
+                structure["functions"].append(
+                    {
+                        "line": line_num,
+                        "name": func_name,
+                        "args": line_content,
+                        "docstring": None,
+                    }
+                )
         except Exception:
             pass
 
