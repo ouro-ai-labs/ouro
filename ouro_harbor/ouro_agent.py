@@ -44,19 +44,18 @@ def _resolve_api_key(model_name: str | None) -> str:
 def _resolve_api_base(model_name: str | None) -> str | None:
     """Return a custom API base URL if one is configured via env vars.
 
-    Checks ``OURO_API_BASE`` first, then provider-specific variables like
-    ``OPENAI_API_BASE`` or ``ANTHROPIC_API_BASE``.
+    Checks ``OURO_BASE_URL`` first, then provider-specific variables like
+    ``OPENAI_BASE_URL`` or ``ANTHROPIC_BASE_URL``.
     """
-    generic = os.environ.get("OURO_API_BASE", "")
+    generic = os.environ.get("OURO_BASE_URL", "")
     if generic:
         return generic
 
     if model_name and "/" in model_name:
         provider = model_name.split("/")[0].upper()
-        for suffix in ("_API_BASE", "_BASE_URL"):
-            value = os.environ.get(f"{provider}{suffix}", "")
-            if value:
-                return value
+        value = os.environ.get(f"{provider}_BASE_URL", "")
+        if value:
+            return value
 
     return None
 
