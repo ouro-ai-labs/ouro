@@ -15,10 +15,10 @@ export OURO_API_KEY="${OURO_API_KEY:-}"
 MODEL="anthropic/kimi-k2-5-latest"
 
 # Dataset to evaluate
-DATASET="hello-world@1.0"
+DATASET="terminal-bench-sample@2.0"
 
-# Agent setup timeout in seconds (default: 360, increase for slow networks)
-SETUP_TIMEOUT=600
+# Timeout multiplier (default setup=360s, so 2.0 → 720s). Increase for slow networks.
+TIMEOUT_MULTIPLIER=2.0
 
 # ── Proxy  ─────────────────────────────────────────────────────────
 # Clash/proxy port on localhost. Set to empty to disable.
@@ -41,6 +41,6 @@ fi
 harbor run \
     --agent-import-path ouro_harbor.ouro_agent:OuroAgent \
     --model "$MODEL" \
-    --agent-setup-timeout "$SETUP_TIMEOUT" \
+    --timeout-multiplier "$TIMEOUT_MULTIPLIER" \
     --dataset "$DATASET" \
     "$@"
