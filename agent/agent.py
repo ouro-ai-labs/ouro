@@ -197,8 +197,8 @@ When to use each approach:
             Composed system prompt string.
         """
         if self.role and self.role.system_prompt:
-            # Role-specific: start with role's custom prompt
-            sections = [self.role.system_prompt]
+            # Role-specific: start with role's custom prompt + workflow
+            sections = [self.role.system_prompt, self.PROMPT_WORKFLOW]
 
             # Conditionally include infrastructure sections
             if self.role.agents_md:
@@ -207,9 +207,6 @@ When to use each approach:
             # Include task_management when TodoTool is in the tool set
             if "manage_todo_list" in self.tool_executor.tools:
                 sections.append(self.PROMPT_TASK_MANAGEMENT)
-
-            # Always include workflow (ReAct pattern)
-            sections.append(self.PROMPT_WORKFLOW)
 
             # Include complex task strategy when explore/parallel tools are available
             tools = self.tool_executor.tools
