@@ -1,5 +1,5 @@
 name: coder
-description: Full-featured coding assistant with all tools and verification
+description: Focused coding assistant with read/write/edit/shell/grep tools
 
 system_prompt: |
   <role>
@@ -8,15 +8,19 @@ system_prompt: |
   Use todo lists for multi-step tasks. Verify your work before declaring done.
   </role>
 
-# All tools available
-# tools: null
+tools:
+  - read_file
+  - write_file
+  - smart_edit
+  - shell
+  - shell_task_status
+  - grep_content
+  - manage_todo_list
 
 agents_md: true
 
-# All memory defaults (from Config)
-
 skills:
-  enabled: true
+  enabled: false
 
 verification:
   enabled: true

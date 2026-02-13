@@ -168,9 +168,16 @@ class TestBuiltinRoles:
         role = mgr.get_role("coder")
         assert role is not None
         assert role.system_prompt is not None
-        assert role.tools is None  # All tools
+        assert role.tools is not None
+        assert "read_file" in role.tools
+        assert "write_file" in role.tools
+        assert "smart_edit" in role.tools
+        assert "shell" in role.tools
+        assert "grep_content" in role.tools
+        assert "manage_todo_list" in role.tools
+        assert "web_search" not in role.tools
         assert role.agents_md is True
-        assert role.skills.enabled is True
+        assert role.skills.enabled is False
         assert role.verification.enabled is True
         assert role.verification.max_iterations == 3
 
