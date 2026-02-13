@@ -247,7 +247,7 @@ class ModelManager:
         if not model.model_id:
             return False, "Model ID is missing."
         if (
-            model.provider not in {"ollama", "localhost"}
+            model.provider not in {"ollama", "localhost", "chatgpt"}
             and not _is_local_api_base(model.api_base)
             and not (model.api_key or "").strip()
         ):

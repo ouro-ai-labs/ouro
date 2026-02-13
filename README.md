@@ -44,11 +44,16 @@ models:
   anthropic/claude-sonnet-4:
     api_key: sk-ant-...
 
+  chatgpt/gpt-5.2-codex:
+    timeout: 600
+
   ollama/llama2:
     api_base: http://localhost:11434
 
 default: openai/gpt-4o
 ```
+
+For `chatgpt/*` subscription models, run `ouro --login` (or `/login` in interactive mode) and select provider before use.
 
 See [LiteLLM Providers](https://docs.litellm.ai/docs/providers) for the full list.
 
@@ -75,6 +80,8 @@ ouro --resume a1b2c3d4
 | `--task TEXT` | `-t` | Run a single task and exit |
 | `--model ID` | `-m` | LiteLLM model ID to use |
 | `--resume [ID]` | `-r` | Resume a session (`latest` if no ID given) |
+| `--login` | - | Open OAuth provider selector and login |
+| `--logout` | - | Open OAuth provider selector and logout |
 | `--verbose` | `-v` | Enable verbose logging to `~/.ouro/logs/` |
 
 ## Interactive Commands
@@ -89,6 +96,9 @@ ouro --resume a1b2c3d4
 | `/resume [id]` | List or resume a previous session |
 | `/model` | Pick a model (arrow keys + Enter) |
 | `/model edit` | Open `~/.ouro/models.yaml` in editor (auto-reload on save) |
+| `/login` | Open OAuth provider selector and login |
+| `/logout` | Open OAuth provider selector and logout |
+| `/auth` | Show OAuth auth status |
 | `/theme` | Toggle dark/light theme |
 | `/verbose` | Toggle thinking display |
 | `/compact` | Trigger memory compression and show token savings |

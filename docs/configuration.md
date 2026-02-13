@@ -14,6 +14,9 @@ models:
   openai/gpt-4o:
     api_key: sk-...
 
+  chatgpt/gpt-5.2-codex:
+    timeout: 600
+
   ollama/llama2:
     api_base: http://localhost:11434
 
@@ -31,7 +34,7 @@ The model ID (key under `models`) uses the LiteLLM `provider/model` format. See 
 | `timeout` | No | Request timeout in seconds |
 | `drop_params` | No | Drop unsupported params silently |
 
-*Not required for local models (e.g., Ollama).
+*Not required for local models (e.g., Ollama) or `chatgpt/*` subscription models.
 
 ### Model Management
 
@@ -40,6 +43,17 @@ The model ID (key under `models`) uses the LiteLLM `provider/model` format. See 
 **Interactive**:
 - `/model` -- pick from configured models (arrow keys + Enter)
 - `/model edit` -- open `~/.ouro/models.yaml` in your editor (auto-reload on save)
+
+### ChatGPT / Codex Subscription Login
+
+For `chatgpt/*` models, login with OAuth before first use:
+
+- CLI: `ouro --login` (then pick provider)
+- Interactive: `/login` (then pick provider)
+- Check status: `/auth`
+- Logout: `ouro --logout` or `/logout`
+
+Credentials are stored under `~/.ouro/auth/chatgpt/`.
 
 ## Runtime Settings
 
@@ -120,5 +134,6 @@ models:
 ## Security
 
 - `~/.ouro/models.yaml` contains API keys. Never commit them to version control.
+- ChatGPT OAuth credentials are stored in `~/.ouro/auth/chatgpt/`.
 - Set file permissions to `0600` on Unix: `chmod 600 ~/.ouro/models.yaml`
 - Rotate API keys regularly.

@@ -12,6 +12,13 @@ from agent.skills import SkillsRegistry, render_skills_section
 from config import Config
 from interactive import run_interactive_mode, run_model_setup_mode
 from llm import LiteLLMAdapter, ModelManager
+from llm.chatgpt_auth import (
+    get_all_auth_provider_statuses,
+    get_supported_auth_providers,
+    is_auth_status_logged_in,
+    login_auth_provider,
+    logout_auth_provider,
+)
 from memory import MemoryManager
 from tools.advanced_file_ops import GlobTool, GrepTool
 from tools.explore import ExploreTool
@@ -24,6 +31,7 @@ from tools.web_fetch import WebFetchTool
 from tools.web_search import WebSearchTool
 from utils import setup_logger, terminal_ui
 from utils.runtime import ensure_runtime_dirs
+from utils.tui.oauth_ui import pick_oauth_provider
 
 warnings.filterwarnings("ignore", message="Pydantic serializer warnings.*", category=UserWarning)
 
@@ -128,6 +136,34 @@ async def _resolve_session_id(resume_arg: str) -> str:
     return session_id
 
 
+async def _pick_auth_provider_cli(mode: str) -> str | None:
+    statuses = await get_all_auth_provider_statuses()
+    providers: list[tuple[str, str]] = []
+
+    for provider in get_supported_auth_providers():
+        status = statuses.get(provider)
+        is_logged_in = bool(status and is_auth_status_logged_in(status))
+        label = "logged in" if is_logged_in else "not logged in"
+
+        if mode == "logout" and not is_logged_in:
+            continue
+
+        providers.append((provider, label))
+
+    if not providers:
+        if mode == "logout":
+            terminal_ui.print_info("No OAuth providers logged in. Use --login first.")
+        else:
+            terminal_ui.print_error("No OAuth providers available.", title="Login Error")
+        return None
+
+    title = (
+        "Select OAuth Provider to Login" if mode == "login" else "Select OAuth Provider to Logout"
+    )
+    hint = "Use ↑/↓ and Enter to select, Esc to cancel."
+    return await pick_oauth_provider(providers=providers, title=title, hint=hint)
+
+
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(description="Run an AI agent with tool-calling capabilities")
@@ -163,6 +199,16 @@ def main():
         const="latest",
         help="Resume a previous session (session ID prefix or 'latest')",
     )
+    parser.add_argument(
+        "--login",
+        action="store_true",
+        help="Login to OAuth provider",
+    )
+    parser.add_argument(
+        "--logout",
+        action="store_true",
+        help="Logout from OAuth provider",
+    )
 
     args = parser.parse_args()
 
@@ -172,6 +218,45 @@ def main():
     # Initialize logging only in verbose mode
     if args.verbose:
         setup_logger()
+
+    if args.login and args.logout:
+        terminal_ui.print_error("Use only one of --login or --logout.", title="Invalid Arguments")
+        return
+
+    if args.login:
+        provider = asyncio.run(_pick_auth_provider_cli(mode="login"))
+        if not provider:
+            return
+
+        terminal_ui.print_info(f"Starting {provider} login flow...")
+        try:
+            status = asyncio.run(login_auth_provider(provider))
+        except Exception as e:
+            terminal_ui.print_error(str(e), title="Login Error")
+            return
+
+        terminal_ui.print_success(f"{provider} login completed.")
+        terminal_ui.console.print(f"Auth file: {status.auth_file}")
+        if status.account_id:
+            terminal_ui.console.print(f"Account ID: {status.account_id}")
+        return
+
+    if args.logout:
+        provider = asyncio.run(_pick_auth_provider_cli(mode="logout"))
+        if not provider:
+            return
+
+        try:
+            removed = asyncio.run(logout_auth_provider(provider))
+        except Exception as e:
+            terminal_ui.print_error(str(e), title="Logout Error")
+            return
+
+        if removed:
+            terminal_ui.print_success(f"Logged out from {provider}.")
+        else:
+            terminal_ui.print_info(f"No {provider} login state found.")
+        return
 
     # Validate config
     try:
