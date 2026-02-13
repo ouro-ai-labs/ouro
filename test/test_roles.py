@@ -195,14 +195,22 @@ class TestToolFiltering:
         assert "read_file" in role.tools
         assert "shell" not in role.tools
 
-    def test_todo_tool_always_present(self):
-        """TodoTool is always available regardless of role tool whitelist."""
+    def test_todo_tool_included_when_listed(self):
+        """manage_todo_list in whitelist means TodoTool should be added."""
         role = RoleConfig(
-            name="no_todo_in_list",
-            description="no todo listed",
+            name="with_todo",
+            description="has todo",
+            tools=["read_file", "manage_todo_list"],
+        )
+        assert "manage_todo_list" in role.tools
+
+    def test_todo_tool_excluded_when_not_listed(self):
+        """manage_todo_list not in whitelist means TodoTool excluded."""
+        role = RoleConfig(
+            name="no_todo",
+            description="no todo",
             tools=["read_file"],
         )
-        # manage_todo_list not in role.tools, but TodoTool is still added by BaseAgent
         assert "manage_todo_list" not in role.tools
 
     def test_no_tools_means_all(self):

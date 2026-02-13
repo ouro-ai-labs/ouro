@@ -204,8 +204,9 @@ When to use each approach:
             if self.role.agents_md:
                 sections.append(self.PROMPT_AGENTS_MD)
 
-            # TodoTool is always present, so always include task_management
-            sections.append(self.PROMPT_TASK_MANAGEMENT)
+            # Include task_management when TodoTool is in the tool set
+            if "manage_todo_list" in self.tool_executor.tools:
+                sections.append(self.PROMPT_TASK_MANAGEMENT)
 
             # Always include general guidelines
             sections.append(self.PROMPT_TOOL_GUIDELINES)
