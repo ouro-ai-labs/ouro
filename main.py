@@ -165,10 +165,26 @@ def main():
     parser.add_argument(
         "--role",
         type=str,
-        help="Agent role (e.g., searcher, debugger, coder). Default: general",
+        nargs="?",
+        const="__list__",
+        default=None,
+        help="Agent role (e.g., searcher, debugger, coder). Omit value to list available roles.",
     )
 
     args = parser.parse_args()
+
+    # --role without a value: list available roles and exit
+    if args.role == "__list__":
+        role_manager = RoleManager()
+        terminal_ui.console.print("\n[bold]Available roles:[/bold]\n")
+        for role in role_manager.list_roles():
+            desc = f"  [dim]{role.description}[/dim]" if role.description else ""
+            source = ""
+            if role.source_path:
+                source = f"  [dim italic]({role.source_path})[/dim italic]"
+            terminal_ui.console.print(f"  [bold]{role.name}[/bold]{desc}{source}")
+        terminal_ui.console.print()
+        return
 
     # Initialize runtime directories (create logs dir only in verbose mode)
     ensure_runtime_dirs(create_logs=args.verbose)
