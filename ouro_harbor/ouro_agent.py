@@ -3,11 +3,40 @@
 from __future__ import annotations
 
 import os
+import re
 import shlex
 from pathlib import Path
 
 from harbor.agents.installed.base import BaseInstalledAgent, ExecInput
 from harbor.models.agent.context import AgentContext
+
+_PROXY_VARS = (
+    "http_proxy",
+    "https_proxy",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "all_proxy",
+)
+
+
+def _rewrite_proxy_url(url: str) -> str:
+    """Rewrite 127.0.0.1/localhost to host.docker.internal for Docker access."""
+    return re.sub(
+        r"://(127\.0\.0\.1|localhost):",
+        "://host.docker.internal:",
+        url,
+    )
+
+
+def _proxy_env() -> dict[str, str]:
+    """Return proxy env vars rewritten for use inside a Docker container."""
+    env: dict[str, str] = {}
+    for var in _PROXY_VARS:
+        val = os.environ.get(var)
+        if val:
+            env[var] = _rewrite_proxy_url(val)
+    return env
 
 
 def _build_models_yaml(model_name: str, api_key: str, api_base: str | None) -> str:
@@ -50,19 +79,14 @@ class OuroAgent(BaseInstalledAgent):
         escaped_yaml = shlex.quote(models_yaml)
         escaped_instruction = shlex.quote(instruction)
 
-        env: dict[str, str] = {}
+        env: dict[str, str] = _proxy_env()
         if api_key:
             env["OURO_API_KEY"] = api_key
         if api_base:
             env["OURO_BASE_URL"] = api_base
 
-        # Clear proxy vars that may leak from host into the container
-        _PROXY_VARS = "http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY all_proxy"
-        unset_proxy = f"unset {_PROXY_VARS} 2>/dev/null || true"
-
         # Setup: write models.yaml so ouro can discover the model
         setup_command = (
-            f"{unset_proxy} && "
             "mkdir -p ~/.ouro && "
             f"echo {escaped_yaml} > ~/.ouro/models.yaml && "
             "mkdir -p /logs/agent"
@@ -71,7 +95,6 @@ class OuroAgent(BaseInstalledAgent):
         # Run ouro in single-task mode and tee output for log collection
         escaped_model = shlex.quote(model_name)
         run_command = (
-            f"{unset_proxy} && "
             f"ouro --model {escaped_model} --task {escaped_instruction} "
             f"2>&1 | tee /logs/agent/ouro-output.txt; "
             # Copy session files to logs dir for debugging (best-effort)

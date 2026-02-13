@@ -1,25 +1,59 @@
 #!/bin/bash
 set -euo pipefail
 
-# Clear proxy settings that may leak from the host into the container
-unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY all_proxy no_proxy NO_PROXY 2>/dev/null || true
+# Rewrite proxy settings: replace 127.0.0.1/localhost with host.docker.internal
+# so the container can reach the host's proxy (e.g. Clash on the host).
+# Persist the rewrite in ~/.bashrc so ALL subsequent commands (including
+# Harbor's verifier step) inherit the corrected proxy vars.
+_rewrite_proxy() {
+    local val="$1"
+    echo "$val" | sed -e 's|://127\.0\.0\.1:|://host.docker.internal:|g' \
+                      -e 's|://localhost:|://host.docker.internal:|g'
+}
+
+for var in http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY all_proxy; do
+    if [ -n "${!var:-}" ]; then
+        new_val="$(_rewrite_proxy "${!var}")"
+        export "$var=$new_val"
+        echo "export $var=$new_val" >> ~/.bashrc
+    fi
+done
+
+# Retry helper: retry a command up to N times with a delay
+retry() {
+    local retries=$1; shift
+    local delay=$1; shift
+    local attempt=1
+    while true; do
+        if "$@"; then
+            return 0
+        fi
+        if (( attempt >= retries )); then
+            echo "Command failed after $retries attempts: $*" >&2
+            return 1
+        fi
+        echo "Attempt $attempt failed, retrying in ${delay}s..." >&2
+        sleep "$delay"
+        (( attempt++ ))
+    done
+}
 
 # Install system dependencies only if missing
 if ! command -v curl &>/dev/null || ! command -v git &>/dev/null; then
-    apt-get update
-    apt-get install -y --no-install-recommends curl git
+    retry 3 5 apt-get update
+    retry 3 5 apt-get install -y --no-install-recommends curl git ca-certificates
 fi
 
 # Install uv (Python package manager)
-curl -LsSf https://astral.sh/uv/install.sh | sh
+retry 3 5 bash -c 'curl -LsSf https://astral.sh/uv/install.sh | sh'
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 source "$HOME/.local/bin/env"
 
 # Install ouro (pin to Python 3.12 — tree-sitter-languages lacks 3.14 wheels)
 {% if version %}
-uv tool install --python 3.12 ouro-ai=={{ version }}
+retry 3 5 uv tool install --python 3.12 ouro-ai=={{ version }}
 {% else %}
-uv tool install --python 3.12 ouro-ai
+retry 3 5 uv tool install --python 3.12 ouro-ai
 {% endif %}
 
 echo "INSTALL_SUCCESS"
