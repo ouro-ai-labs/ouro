@@ -14,8 +14,11 @@ export OURO_API_KEY="${OURO_API_KEY:-}"
 # Model to use
 MODEL="anthropic/kimi-k2-5-latest"
 
-# Install from a git branch instead of PyPI (empty = use PyPI release)
+# Install from a git branch/tag/commit instead of PyPI (empty = use PyPI release)
 GIT_REF="multi-role"
+
+# ouro version to install from PyPI (ignored when GIT_REF is set; empty = latest)
+AGENT_VERSION=""
 
 # Agent role (empty = default, requires git_ref for unreleased --role flag)
 ROLE="coder"
@@ -47,6 +50,8 @@ fi
 AK_FLAGS=()
 if [ -n "${GIT_REF:-}" ]; then
     AK_FLAGS+=(--ak "git_ref=${GIT_REF}")
+elif [ -n "${AGENT_VERSION:-}" ]; then
+    AK_FLAGS+=(--ak "version=${AGENT_VERSION}")
 fi
 if [ -n "${ROLE:-}" ]; then
     AK_FLAGS+=(--ak "role=${ROLE}")

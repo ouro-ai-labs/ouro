@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-02-14
+
+### Added
+
+- Harbor installed agent integration for containerized evaluation (e.g. Terminal-Bench 2.0) with Jinja2 install script and auto-generated `models.yaml`
+- `harbor-run.sh` convenience script with proxy/env configuration
+- Python 3.13+ support by migrating from `tree-sitter-languages` to individual language packages with `abi3` wheels
+- 47 unit tests for code structure tool covering all 9 supported languages
+
+### Changed
+
+- Reorder system prompt sections for improved structure (`workflow` and `tool_usage_guidelines` before `agents_md`)
+- Disable long-term memory by default (set `LONG_TERM_MEMORY_ENABLED=true` in `~/.ouro/config` to enable)
+- Remove redundant `<critical_rules>` section from agent system prompt
+- Update to tree-sitter 0.25 API (`Query()` constructor + `QueryCursor.captures()`)
+- Harden `install-ouro.sh.j2` with `pipefail`, increased retry count/delay, and post-install verification
+
+### Fixed
+
+- Harbor Docker proxy support: rewrite `127.0.0.1` → `host.docker.internal` for container networking
+- Add retry logic for network-dependent commands in Harbor install (`apt-get`, `curl`, `uv`)
+- Fix `harbor-run.sh` timeout flag (`--timeout-multiplier`) and default dataset (`terminal-bench-sample@2.0`)
+- Fix Kotlin grammar query patterns (`simple_identifier`/`type_identifier` → `identifier`)
+
 ## [0.2.2] - 2026-02-08
 
 ### Fixed
