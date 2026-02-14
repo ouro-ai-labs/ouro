@@ -19,6 +19,7 @@ OURO_TUI=ptk ouro
 
 - [x] Add `OURO_TUI=ptk` toggle (no behavior changes in default mode).
 - [x] Wrap interactive mode in `prompt_toolkit.patch_stdout()` to prevent prompt corruption.
+- [x] Patch stdout for the model setup session in PTK mode (same benefits, no behavior change).
 - [x] Tune `ttimeoutlen/timeoutlen` in PTK mode for snappier ESC.
 - [x] Add unit tests verifying PTK mode timeout tuning.
 - [x] Reduce repeated completion/suggestion computations (simple caching).

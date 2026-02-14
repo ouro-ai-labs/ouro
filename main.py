@@ -205,7 +205,14 @@ def main():
             return
 
         terminal_ui.print_error(str(e), title="Model Setup Required")
-        ready = asyncio.run(run_model_setup_mode())
+        if os.environ.get("OURO_TUI") == "ptk":
+            from prompt_toolkit.patch_stdout import patch_stdout
+
+            with patch_stdout(raw=True):
+                terminal_ui.print_info("PTK-tuned interactive mode enabled (OURO_TUI=ptk).")
+                ready = asyncio.run(run_model_setup_mode())
+        else:
+            ready = asyncio.run(run_model_setup_mode())
         if not ready:
             return
 
