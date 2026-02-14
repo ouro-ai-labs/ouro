@@ -60,7 +60,18 @@ def _build_models_yaml(model_name: str, api_key: str, api_base: str | None) -> s
 
 
 class OuroAgent(BaseInstalledAgent):
-    """Harbor integration for the ouro AI agent."""
+    """Harbor integration for the ouro AI agent.
+
+    Supported kwargs (passed via harbor agent config):
+        git_ref: Install from a git branch/tag/commit instead of PyPI.
+                 e.g. ``git_ref: "multi-role"`` installs from that branch.
+        role:    Agent role to use (e.g. ``role: "coder"``).
+                 Requires a version that supports ``--role``.
+    """
+
+    def __init__(self, *args, **kwargs):
+        self._extra_kwargs = dict(kwargs)
+        super().__init__(*args, **kwargs)
 
     @staticmethod
     def name() -> str:
@@ -69,6 +80,14 @@ class OuroAgent(BaseInstalledAgent):
     @property
     def _install_agent_template_path(self) -> Path:
         return Path(__file__).parent / "install-ouro.sh.j2"
+
+    @property
+    def _template_variables(self) -> dict[str, str]:
+        variables = super()._template_variables
+        git_ref = self._extra_kwargs.get("git_ref")
+        if git_ref:
+            variables["git_ref"] = git_ref
+        return variables
 
     def create_run_agent_commands(self, instruction: str) -> list[ExecInput]:
         model_name: str = self.model_name or "anthropic/claude-sonnet-4-5-20250929"
@@ -94,8 +113,10 @@ class OuroAgent(BaseInstalledAgent):
 
         # Run ouro in single-task mode and tee output for log collection
         escaped_model = shlex.quote(model_name)
+        role = self._extra_kwargs.get("role")
+        role_flag = f" --role {shlex.quote(role)}" if role else ""
         run_command = (
-            f"ouro --model {escaped_model} --task {escaped_instruction} "
+            f"ouro --model {escaped_model}{role_flag} --task {escaped_instruction} "
             f"2>&1 | tee /logs/agent/ouro-output.txt; "
             # Copy session files to logs dir for debugging (best-effort)
             "cp -r ~/.ouro/sessions /logs/agent/sessions 2>/dev/null || true"

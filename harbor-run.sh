@@ -14,6 +14,12 @@ export OURO_API_KEY="${OURO_API_KEY:-}"
 # Model to use
 MODEL="anthropic/kimi-k2-5-latest"
 
+# Install from a git branch instead of PyPI (empty = use PyPI release)
+GIT_REF="multi-role"
+
+# Agent role (empty = default, requires git_ref for unreleased --role flag)
+ROLE="coder"
+
 # Dataset to evaluate
 DATASET="terminal-bench-sample@2.0"
 
@@ -37,10 +43,20 @@ if [ -z "$OURO_API_KEY" ]; then
     exit 1
 fi
 
+# ── Build agent kwargs ───────────────────────────────────────────────────────
+AK_FLAGS=()
+if [ -n "${GIT_REF:-}" ]; then
+    AK_FLAGS+=(--ak "git_ref=${GIT_REF}")
+fi
+if [ -n "${ROLE:-}" ]; then
+    AK_FLAGS+=(--ak "role=${ROLE}")
+fi
+
 # ── Run ──────────────────────────────────────────────────────────────────────
 harbor run \
     --agent-import-path ouro_harbor.ouro_agent:OuroAgent \
     --model "$MODEL" \
     --timeout-multiplier "$TIMEOUT_MULTIPLIER" \
     --dataset "$DATASET" \
+    "${AK_FLAGS[@]}" \
     "$@"
