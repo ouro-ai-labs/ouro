@@ -24,7 +24,7 @@ OURO_TUI=ptk ouro
 - [x] Add unit tests verifying PTK mode timeout tuning.
 - [x] Reduce repeated completion/suggestion computations (simple caching).
 - [x] Remove redundant completion refresh triggers (avoid triple `start_completion()` on `/`).
-- [x] Avoid duplicate completion tasks on insertions (let prompt_toolkit `complete_while_typing` handle inserts; only force refresh on deletions).
+- [x] Avoid duplicate completion tasks by disabling prompt_toolkit `complete_while_typing` and explicitly triggering slash completion only on insert/delete.
 - [ ] (Optional) Evaluate disabling Codex-style forced `start_completion()` refresh in PTK mode (requires manual acceptance testing on multiple terminals).
 - [x] Cache prompt styling per theme to avoid rebuilding styles each prompt.
 - [x] Avoid rebuilding default command help map on every completion.
