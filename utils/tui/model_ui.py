@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import Protocol, Sequence
 
 import aiofiles.os
-from prompt_toolkit.application import Application
+from prompt_toolkit.application import Application, run_in_terminal
+from prompt_toolkit.application.current import get_app_or_none
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import HSplit, Layout, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
@@ -180,6 +181,12 @@ async def pick_model_id(model_manager: _ModelManager, title: str) -> str | None:
         full_screen=False,
         mouse_support=False,
     )
+    # PTK2 runs a full-screen prompt_toolkit app already. In nested contexts,
+    # run this picker in terminal mode with its own thread-backed event loop.
+    current_app = get_app_or_none()
+    if current_app is not None and current_app.is_running:
+        return await run_in_terminal(lambda: app.run(in_thread=True), in_executor=False)
+
     return await app.run_async()
 
 

@@ -58,6 +58,9 @@ See [LiteLLM Providers](https://docs.litellm.ai/docs/providers) for the full lis
 # Interactive mode
 ouro
 
+# Experimental PTK2 single-renderer mode
+OURO_TUI=ptk2 ouro
+
 # Single task (returns raw result)
 ouro --task "Calculate 123 * 456"
 
