@@ -45,7 +45,16 @@ if ! command -v curl &>/dev/null || ! command -v git &>/dev/null; then
 fi
 
 # Install uv (Python package manager)
-retry 3 5 bash -c 'curl -LsSf https://astral.sh/uv/install.sh | sh'
+# Download and execute separately so retry detects curl failures correctly
+# (piping curl|sh without pipefail silently swallows curl errors)
+retry 5 10 bash -c 'set -euo pipefail; curl -LsSf https://astral.sh/uv/install.sh | sh'
+
+# Verify uv was actually installed before proceeding
+if [ ! -f "$HOME/.local/bin/uv" ]; then
+    echo "ERROR: uv binary not found after install attempt" >&2
+    exit 1
+fi
+
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 source "$HOME/.local/bin/env"
 
