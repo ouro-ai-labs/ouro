@@ -32,6 +32,19 @@ From source (without install):
 python main.py --task "Calculate 1+1"
 ```
 
+## ChatGPT / Codex Login
+
+```bash
+# Login (select provider from menu)
+ouro --login
+
+# Logout (select provider from menu)
+ouro --logout
+
+# If browser does not open automatically, use this URL manually:
+# https://auth.openai.com/codex/device
+```
+
 ## Interactive Mode
 
 Start without `--task` to enter interactive mode:
@@ -49,6 +62,8 @@ Type your request and press Enter twice to submit. The agent will think, use too
 /stats                   Show token usage and cost
 /model                   Pick a different model
 /model edit              Edit ~/.ouro/models.yaml in your editor
+/login                   Login to OAuth provider (menu)
+/logout                  Logout from OAuth provider (menu)
 /theme                   Toggle dark/light theme
 /verbose                 Toggle thinking display
 /compact                 Toggle compact output

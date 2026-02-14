@@ -14,6 +14,9 @@ models:
   openai/gpt-4o:
     api_key: sk-...
 
+  chatgpt/gpt-5.3-codex:
+    timeout: 600
+
   ollama/llama2:
     api_base: http://localhost:11434
 
@@ -31,7 +34,7 @@ The model ID (key under `models`) uses the LiteLLM `provider/model` format. See 
 | `timeout` | No | Request timeout in seconds |
 | `drop_params` | No | Drop unsupported params silently |
 
-*Not required for local models (e.g., Ollama).
+*Not required for local models (e.g., Ollama) or `chatgpt/*` subscription models.
 
 ### Model Management
 
@@ -40,6 +43,22 @@ The model ID (key under `models`) uses the LiteLLM `provider/model` format. See 
 **Interactive**:
 - `/model` -- pick from configured models (arrow keys + Enter)
 - `/model edit` -- open `~/.ouro/models.yaml` in your editor (auto-reload on save)
+
+### ChatGPT / Codex Subscription Login
+
+For `chatgpt/*` models, login with OAuth before first use:
+
+- CLI: `ouro --login` (then pick provider)
+- Interactive: `/login` (then pick provider)
+- Logout: `ouro --logout` or `/logout`
+- After login, use `/model` to pick one of the added `chatgpt/*` models.
+- The added set comes from ouro's bundled OAuth catalog (synced from pi-ai `openai-codex` model list, including GPT-5.3 Codex variants).
+
+The device-login page is opened in browser on a best-effort basis when fresh authorization is likely needed. If your existing token/refresh state is still valid, login usually completes without a new browser step. If your environment blocks browser launch, open `https://auth.openai.com/codex/device` manually and enter the code shown in terminal.
+
+Credentials are stored under `~/.ouro/auth/chatgpt/`.
+
+Maintainer note: refresh the bundled OAuth model catalog with `python scripts/update_oauth_model_catalog.py`.
 
 ## Runtime Settings
 
@@ -120,5 +139,6 @@ models:
 ## Security
 
 - `~/.ouro/models.yaml` contains API keys. Never commit them to version control.
+- ChatGPT OAuth credentials are stored in `~/.ouro/auth/chatgpt/`.
 - Set file permissions to `0600` on Unix: `chmod 600 ~/.ouro/models.yaml`
 - Rotate API keys regularly.

@@ -9,6 +9,14 @@ from rich.table import Table
 from agent.skills import SkillsRegistry, render_skills_section
 from config import Config
 from llm import ModelManager
+from llm.chatgpt_auth import (
+    get_all_auth_provider_statuses,
+    get_supported_auth_providers,
+    is_auth_status_logged_in,
+    login_auth_provider,
+    logout_auth_provider,
+)
+from llm.oauth_model_sync import remove_oauth_models, sync_oauth_models
 from memory import MemoryManager
 from utils import get_log_file_path, terminal_ui
 from utils.runtime import get_history_file
@@ -20,6 +28,7 @@ from utils.tui.model_ui import (
     parse_kv_args,
     pick_model_id,
 )
+from utils.tui.oauth_ui import pick_oauth_provider
 from utils.tui.skills_ui import SkillsAction, pick_skills_action
 from utils.tui.status_bar import StatusBar
 from utils.tui.theme import Theme, set_theme
@@ -69,6 +78,8 @@ class InteractiveSession:
                         )
                     },
                 ),
+                CommandSpec("login", "Login to OAuth provider"),
+                CommandSpec("logout", "Logout from OAuth provider"),
                 CommandSpec("exit", "Exit interactive mode"),
             ]
         )
@@ -360,6 +371,12 @@ class InteractiveSession:
         elif command == "/model":
             await self._handle_model_command(user_input)
 
+        elif command == "/login":
+            await self._handle_login_command(command_parts)
+
+        elif command == "/logout":
+            await self._handle_logout_command(command_parts)
+
         elif command == "/skills":
             await self._handle_skills_menu()
 
@@ -572,6 +589,107 @@ class InteractiveSession:
         terminal_ui.console.print(
             f"[{colors.text_muted}]Use /model to pick, or /model edit to configure.[/{colors.text_muted}]\n"
         )
+
+    async def _pick_auth_provider(self, mode: str) -> str | None:
+        statuses = await get_all_auth_provider_statuses()
+        providers: list[tuple[str, str]] = []
+
+        for provider in get_supported_auth_providers():
+            status = statuses.get(provider)
+            is_logged_in = bool(status and is_auth_status_logged_in(status))
+            label = "logged in" if is_logged_in else "not logged in"
+
+            if mode == "logout" and not is_logged_in:
+                continue
+
+            providers.append((provider, label))
+
+        if not providers:
+            if mode == "logout":
+                terminal_ui.print_info("No OAuth providers logged in. Use /login first.")
+            else:
+                terminal_ui.print_error("No OAuth providers available.")
+            return None
+
+        title = (
+            "Select OAuth Provider to Login"
+            if mode == "login"
+            else "Select OAuth Provider to Logout"
+        )
+        hint = "Use ↑/↓ and Enter to select, Esc to cancel."
+        return await pick_oauth_provider(providers=providers, title=title, hint=hint)
+
+    async def _handle_login_command(self, command_parts: list[str]) -> None:
+        if len(command_parts) != 1:
+            terminal_ui.print_error("Usage: /login")
+            return
+
+        provider = await self._pick_auth_provider(mode="login")
+        if not provider:
+            return
+
+        terminal_ui.print_info(f"Starting {provider} login flow... (Ctrl+C to cancel)")
+        try:
+            self.current_task = asyncio.create_task(login_auth_provider(provider))
+            status = await self.current_task
+        except asyncio.CancelledError:
+            terminal_ui.print_warning("Login cancelled.")
+            return
+        except Exception as e:
+            terminal_ui.print_error(str(e), title="Login Error")
+            return
+        finally:
+            self.current_task = None
+
+        added = sync_oauth_models(self.model_manager, provider)
+
+        terminal_ui.print_success(f"{provider} login completed.")
+        terminal_ui.console.print(f"Auth file: {status.auth_file}")
+        if status.account_id:
+            terminal_ui.console.print(f"Account ID: {status.account_id}")
+        if added:
+            terminal_ui.console.print(
+                f"Added {len(added)} {provider} models to `{self.model_manager.config_path}`."
+            )
+        terminal_ui.print_info("Run /model to pick the active model.")
+
+    async def _handle_logout_command(self, command_parts: list[str]) -> None:
+        if len(command_parts) != 1:
+            terminal_ui.print_error("Usage: /logout")
+            return
+
+        provider = await self._pick_auth_provider(mode="logout")
+        if not provider:
+            return
+
+        try:
+            self.current_task = asyncio.create_task(logout_auth_provider(provider))
+            removed = await self.current_task
+        except asyncio.CancelledError:
+            terminal_ui.print_warning("Logout cancelled.")
+            return
+        except Exception as e:
+            terminal_ui.print_error(str(e), title="Logout Error")
+            return
+        finally:
+            self.current_task = None
+
+        removed_models = remove_oauth_models(self.model_manager, provider)
+
+        if removed:
+            terminal_ui.print_success(f"Logged out from {provider}.")
+        else:
+            terminal_ui.print_info(f"No {provider} login state found.")
+
+        if removed_models:
+            terminal_ui.console.print(
+                f"Removed {len(removed_models)} managed {provider} models from `{self.model_manager.config_path}`."
+            )
+
+        current_after = self.model_manager.get_current_model()
+        if current_after:
+            self.agent.switch_model(current_after.model_id)
+            self._update_status_bar()
 
     async def run(self) -> None:
         """Run the interactive session loop."""
