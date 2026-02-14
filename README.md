@@ -85,6 +85,7 @@ ouro --resume a1b2c3d4
 | `--resume [ID]` | `-r` | Resume a session (`latest` if no ID given) |
 | `--login` | - | Open OAuth provider selector and login |
 | `--logout` | - | Open OAuth provider selector and logout |
+| `--verify` | | Enable self-verification (Ralph Loop) in `--task` mode |
 | `--verbose` | `-v` | Enable verbose logging to `~/.ouro/logs/` |
 
 ## Interactive Commands

@@ -213,9 +213,8 @@ async def test_ralph_loop_injects_feedback_into_messages(mock_agent):
     assert "Missing X" in messages[0].content
 
 
-@pytest.mark.asyncio
-async def test_run_dispatches_to_ralph_loop():
-    """LoopAgent.run() always uses _ralph_loop."""
+def _make_loop_agent():
+    """Create a minimal LoopAgent with mocked dependencies."""
     from agent.agent import LoopAgent
 
     agent = object.__new__(LoopAgent)
@@ -227,16 +226,48 @@ async def test_run_dispatches_to_ralph_loop():
     agent.memory.get_stats = MagicMock(return_value={})
     agent.tool_executor = MagicMock()
     agent.tool_executor.get_tool_schemas = MagicMock(return_value=[])
-
     agent._ralph_loop = AsyncMock(return_value="ralph result")
+    agent._react_loop = AsyncMock(return_value="react result")
     agent._print_memory_stats = MagicMock()
+    return agent
+
+
+@pytest.mark.asyncio
+async def test_run_defaults_to_react_loop():
+    """LoopAgent.run() defaults to _react_loop (verify=False)."""
+    agent = _make_loop_agent()
+
+    result = await agent.run("test task")
+
+    assert result == "react result"
+    agent._react_loop.assert_awaited_once()
+    agent._ralph_loop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_run_with_verify_dispatches_to_ralph_loop():
+    """LoopAgent.run(verify=True) uses _ralph_loop."""
+    agent = _make_loop_agent()
 
     with patch("agent.agent.Config") as mock_config:
         mock_config.RALPH_LOOP_MAX_ITERATIONS = 3
-        result = await agent.run("test task")
+        result = await agent.run("test task", verify=True)
 
     assert result == "ralph result"
     agent._ralph_loop.assert_awaited_once()
+    agent._react_loop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_run_with_verify_false_dispatches_to_react_loop():
+    """LoopAgent.run(verify=False) uses _react_loop."""
+    agent = _make_loop_agent()
+
+    result = await agent.run("test task", verify=False)
+
+    assert result == "react result"
+    agent._react_loop.assert_awaited_once()
+    agent._ralph_loop.assert_not_awaited()
 
 
 @pytest.mark.asyncio
