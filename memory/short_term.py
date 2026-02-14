@@ -9,14 +9,9 @@ from llm.base import LLMMessage
 class ShortTermMemory:
     """Manages recent messages in a fixed-size sliding window."""
 
-    def __init__(self, max_size: int = 20):
-        """Initialize short-term memory.
-
-        Args:
-            max_size: Maximum number of messages to keep
-        """
-        self.max_size = max_size
-        self.messages = deque(maxlen=max_size)
+    def __init__(self):
+        """Initialize short-term memory."""
+        self.messages: deque[LLMMessage] = deque()
 
     def add_message(self, message: LLMMessage) -> None:
         """Add a message to short-term memory.
@@ -59,14 +54,6 @@ class ShortTermMemory:
             List of removed messages
         """
         return [self.messages.popleft() for _ in range(min(count, len(self.messages)))]
-
-    def is_full(self) -> bool:
-        """Check if short-term memory is at capacity.
-
-        Returns:
-            True if at max capacity
-        """
-        return len(self.messages) >= self.max_size
 
     def count(self) -> int:
         """Get current message count.

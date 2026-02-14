@@ -215,7 +215,7 @@ async def test_ralph_loop_injects_feedback_into_messages(mock_agent):
 
 @pytest.mark.asyncio
 async def test_run_dispatches_to_ralph_loop():
-    """LoopAgent.run() always uses _ralph_loop."""
+    """LoopAgent.run(verify=True) uses _ralph_loop."""
     from agent.agent import LoopAgent
 
     agent = object.__new__(LoopAgent)
@@ -233,7 +233,7 @@ async def test_run_dispatches_to_ralph_loop():
 
     with patch("agent.agent.Config") as mock_config:
         mock_config.RALPH_LOOP_MAX_ITERATIONS = 3
-        result = await agent.run("test task")
+        result = await agent.run("test task", verify=True)
 
     assert result == "ralph result"
     agent._ralph_loop.assert_awaited_once()

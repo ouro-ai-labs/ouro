@@ -210,6 +210,11 @@ def main():
         action="store_true",
         help="Logout from OAuth provider",
     )
+    parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="Enable Ralph Loop verification (re-check task completion, only with --task)",
+    )
 
     args = parser.parse_args()
 
@@ -348,7 +353,7 @@ def main():
         terminal_ui.console = Console(quiet=True)
 
         # Run agent
-        result = await agent.run(task)
+        result = await agent.run(task, verify=args.verify)
 
         print(result)
 

@@ -18,7 +18,7 @@ class TestToolCallResultIntegration:
     async def test_tool_pairs_survive_compression_cycle(self, set_memory_config, mock_llm):
         """Test that tool pairs remain matched through compression cycles."""
         set_memory_config(
-            MEMORY_SHORT_TERM_SIZE=6,
+            MEMORY_COMPRESSION_THRESHOLD=200000,
             MEMORY_SHORT_TERM_MIN_SIZE=2,
         )
         manager = MemoryManager(mock_llm)
@@ -65,7 +65,7 @@ class TestToolCallResultIntegration:
     async def test_tool_pairs_with_multiple_compressions(self, set_memory_config, mock_llm):
         """Test tool pairs remain matched through multiple compression cycles."""
         set_memory_config(
-            MEMORY_SHORT_TERM_SIZE=4,
+            MEMORY_COMPRESSION_THRESHOLD=200000,
             MEMORY_SHORT_TERM_MIN_SIZE=2,
         )
         manager = MemoryManager(mock_llm)
@@ -108,7 +108,7 @@ class TestToolCallResultIntegration:
 
     async def test_interleaved_tool_calls(self, set_memory_config, mock_llm):
         """Test tool pairs when tool calls are interleaved."""
-        set_memory_config(MEMORY_SHORT_TERM_SIZE=10)
+        set_memory_config(MEMORY_COMPRESSION_THRESHOLD=200000)
         manager = MemoryManager(mock_llm)
 
         # Add interleaved tool calls (assistant makes multiple tool calls at once)
@@ -142,7 +142,7 @@ class TestToolCallResultIntegration:
 
     async def test_orphaned_tool_use_detection(self, set_memory_config, mock_llm):
         """Test detection of orphaned tool_use (no matching result)."""
-        set_memory_config(MEMORY_SHORT_TERM_SIZE=5)
+        set_memory_config(MEMORY_COMPRESSION_THRESHOLD=200000)
         manager = MemoryManager(mock_llm)
 
         # Add tool_use without result
@@ -181,7 +181,7 @@ class TestToolCallResultIntegration:
 
     async def test_orphaned_tool_result_detection(self, set_memory_config, mock_llm):
         """Test detection of orphaned tool_result (no matching use)."""
-        set_memory_config(MEMORY_SHORT_TERM_SIZE=5)
+        set_memory_config(MEMORY_COMPRESSION_THRESHOLD=200000)
         manager = MemoryManager(mock_llm)
 
         # Add tool_result without use (this shouldn't happen but let's test it)
@@ -242,7 +242,6 @@ class TestCompressionIntegration:
     async def test_full_conversation_lifecycle(self, set_memory_config, mock_llm):
         """Test a complete conversation lifecycle with multiple compressions."""
         set_memory_config(
-            MEMORY_SHORT_TERM_SIZE=8,
             MEMORY_COMPRESSION_THRESHOLD=200,
         )
         manager = MemoryManager(mock_llm)
@@ -267,7 +266,7 @@ class TestCompressionIntegration:
     async def test_mixed_content_conversation(self, set_memory_config, mock_llm):
         """Test conversation with mixed text and tool content."""
         set_memory_config(
-            MEMORY_SHORT_TERM_SIZE=6,
+            MEMORY_COMPRESSION_THRESHOLD=200000,
             MEMORY_SHORT_TERM_MIN_SIZE=2,
         )
         manager = MemoryManager(mock_llm)
@@ -306,7 +305,7 @@ class TestCompressionIntegration:
     async def test_system_message_persistence(self, set_memory_config, mock_llm):
         """Test that system messages persist through compressions."""
         set_memory_config(
-            MEMORY_SHORT_TERM_SIZE=5,
+            MEMORY_COMPRESSION_THRESHOLD=200000,
             MEMORY_PRESERVE_SYSTEM_PROMPTS=True,
         )
         manager = MemoryManager(mock_llm)
@@ -332,7 +331,7 @@ class TestEdgeCaseIntegration:
     ):
         """Test compression when all content is protected."""
         set_memory_config(
-            MEMORY_SHORT_TERM_SIZE=10,  # Large enough to avoid auto-compression
+            MEMORY_COMPRESSION_THRESHOLD=200000,
             MEMORY_SHORT_TERM_MIN_SIZE=0,
         )
         manager = MemoryManager(mock_llm)
@@ -358,7 +357,6 @@ class TestEdgeCaseIntegration:
     async def test_rapid_compression_cycles(self, set_memory_config, mock_llm):
         """Test many rapid compression cycles."""
         set_memory_config(
-            MEMORY_SHORT_TERM_SIZE=2,
             MEMORY_COMPRESSION_THRESHOLD=50,
         )
         manager = MemoryManager(mock_llm)
@@ -377,7 +375,7 @@ class TestEdgeCaseIntegration:
 
     async def test_alternating_compression_strategies(self, set_memory_config, mock_llm):
         """Test using different compression strategies on same manager."""
-        set_memory_config(MEMORY_SHORT_TERM_SIZE=5)
+        set_memory_config(MEMORY_COMPRESSION_THRESHOLD=200000)
         manager = MemoryManager(mock_llm)
 
         # Add messages and compress with sliding window
@@ -417,7 +415,7 @@ class TestEdgeCaseIntegration:
 
     async def test_empty_content_blocks(self, set_memory_config, mock_llm):
         """Test handling of empty content blocks."""
-        set_memory_config(MEMORY_SHORT_TERM_SIZE=5)
+        set_memory_config(MEMORY_COMPRESSION_THRESHOLD=200000)
         manager = MemoryManager(mock_llm)
 
         # Add message with empty content blocks
@@ -440,7 +438,6 @@ class TestEdgeCaseIntegration:
     async def test_very_long_single_message(self, set_memory_config, mock_llm):
         """Test handling of a very long single message."""
         set_memory_config(
-            MEMORY_SHORT_TERM_SIZE=5,
             MEMORY_COMPRESSION_THRESHOLD=100,
         )
         manager = MemoryManager(mock_llm)
@@ -458,7 +455,7 @@ class TestMemoryReset:
 
     async def test_reset_after_compression(self, set_memory_config, mock_llm, simple_messages):
         """Test reset after compression has occurred."""
-        set_memory_config(MEMORY_SHORT_TERM_SIZE=3)
+        set_memory_config(MEMORY_COMPRESSION_THRESHOLD=200000)
         manager = MemoryManager(mock_llm)
 
         # Add messages and compress
@@ -476,8 +473,7 @@ class TestMemoryReset:
     async def test_reuse_after_reset(self, set_memory_config, mock_llm):
         """Test that manager can be reused after reset."""
         set_memory_config(
-            MEMORY_SHORT_TERM_SIZE=10,  # Large enough to avoid compression
-            MEMORY_COMPRESSION_THRESHOLD=100000,
+            MEMORY_COMPRESSION_THRESHOLD=200000,
         )
         manager = MemoryManager(mock_llm)
 
