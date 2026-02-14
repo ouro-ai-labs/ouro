@@ -188,6 +188,8 @@ class InputHandler:
     _suggest_cache_text: str | None
     _suggest_cache_results: list[tuple[str, str]]
 
+    _last_completion_sync_text: str | None
+
     def __init__(
         self,
         history_file: Optional[str] = None,
@@ -207,6 +209,7 @@ class InputHandler:
 
         self._suggest_cache_text = None
         self._suggest_cache_results = []
+        self._last_completion_sync_text = None
 
         display_texts: dict[str, str] | None = None
         if command_registry is not None:
@@ -264,28 +267,23 @@ class InputHandler:
             self.session.app.ttimeoutlen = 0.05
             self.session.app.timeoutlen = 0.2
 
-        def _on_text_insert(_buffer) -> None:
-            # Best-effort: show completion menu right after typing "/" at the beginning.
-            buf = self.session.default_buffer
-            if buf.text == "/" and buf.cursor_position == 1:
-                buf.start_completion(
-                    select_first=False,
-                    complete_event=CompleteEvent(text_inserted=True),
-                )
-
-        self.session.default_buffer.on_text_insert += _on_text_insert
-
         def _on_text_changed(_buffer) -> None:
             # Codex-style: when the input starts with "/", keep the completion menu in sync
-            # with every keystroke. (Some terminals don't refresh completion state reliably
-            # unless we explicitly trigger it.)
+            # with every keystroke.
+            #
+            # We also guard against duplicate calls: prompt_toolkit can trigger multiple
+            # callbacks per key press, and each `start_completion()` schedules async work.
             buf = self.session.default_buffer
             if buf.text.startswith("/"):
+                if buf.text == self._last_completion_sync_text:
+                    return
+                self._last_completion_sync_text = buf.text
                 buf.start_completion(
                     select_first=False,
                     complete_event=CompleteEvent(text_inserted=True),
                 )
             else:
+                self._last_completion_sync_text = None
                 buf.cancel_completion()
 
         self.session.default_buffer.on_text_changed += _on_text_changed
@@ -345,12 +343,12 @@ class InputHandler:
 
         @kb.add("/", eager=True)
         def slash_command(event):
-            """Insert '/' and, when starting a command, show suggestions immediately."""
-            buffer = event.current_buffer
-            at_start = buffer.text == "" and buffer.cursor_position == 0
-            buffer.insert_text("/")
-            if at_start:
-                buffer.start_completion(select_first=False)
+            """Insert '/'.
+
+            Completion triggering is handled by our on-text-changed handler.
+            (Doing it here as well causes redundant completion refreshes.)
+            """
+            event.current_buffer.insert_text("/")
 
         @kb.add(Keys.ControlL)
         def clear_screen(event):
