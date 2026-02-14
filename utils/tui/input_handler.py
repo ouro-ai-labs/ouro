@@ -13,6 +13,20 @@ from prompt_toolkit.styles import Style
 from utils.tui.command_registry import CommandRegistry
 from utils.tui.theme import Theme
 
+_DEFAULT_HELP_TEXTS: dict[str, str] = {
+    "help": "Show available commands",
+    "reset": "Clear conversation memory",
+    "stats": "Show token/memory stats",
+    "resume": "List and resume a previous session",
+    "theme": "Switch color theme",
+    "verbose": "Toggle verbose output",
+    "compact": "Compress conversation memory",
+    "model": "Manage models",
+    "model edit": "Edit `.ouro/models.yaml` (auto-reload on save)",
+    "exit": "Exit interactive mode",
+    "quit": "Same as /exit",
+}
+
 
 def _normalize_command_tree(
     commands: list[str] | None,
@@ -159,19 +173,6 @@ class CommandCompleter(Completer):
         Returns:
             Help text
         """
-        help_texts = {
-            "help": "Show available commands",
-            "reset": "Clear conversation memory",
-            "stats": "Show token/memory stats",
-            "resume": "List and resume a previous session",
-            "theme": "Switch color theme",
-            "verbose": "Toggle verbose output",
-            "compact": "Compress conversation memory",
-            "model": "Manage models",
-            "model edit": "Edit `.ouro/models.yaml` (auto-reload on save)",
-            "exit": "Exit interactive mode",
-            "quit": "Same as /exit",
-        }
         if cmd in self.help_texts:
             return self.help_texts[cmd]
         if " " in cmd:
@@ -179,7 +180,7 @@ class CommandCompleter(Completer):
             sub_help = self.command_subcommands.get(base, {}).get(rest)
             if sub_help:
                 return sub_help
-        return help_texts.get(cmd, "")
+        return _DEFAULT_HELP_TEXTS.get(cmd, "")
 
 
 class InputHandler:
