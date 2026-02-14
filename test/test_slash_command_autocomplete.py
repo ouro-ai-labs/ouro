@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 from prompt_toolkit.document import Document
 
-from utils.tui.input_handler import CommandCompleter, InputHandler
+from utils.tui.input_handler import CommandCompleter, InputHandler, _best_contrast_text
 
 
 def _meta_text(completion) -> str:
@@ -106,3 +106,11 @@ def test_subcommand_completion_and_suggestions() -> None:
     completions = list(completer.get_completions(doc, None))
     assert [c.text for c in completions] == ["edit"]
     assert _meta_text(completions[0]) == "Open config"
+
+
+def test_best_contrast_text_prefers_white_on_blue() -> None:
+    assert _best_contrast_text("#0969DA") == "#FFFFFF"
+
+
+def test_best_contrast_text_prefers_black_on_bright_cyan() -> None:
+    assert _best_contrast_text("#00D9FF") == "#000000"

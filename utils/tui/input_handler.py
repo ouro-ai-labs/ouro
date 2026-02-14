@@ -17,6 +17,38 @@ from utils.tui.slash_autocomplete import SlashAutocompleteEngine, SlashSuggestio
 from utils.tui.theme import Theme
 
 
+def _relative_luminance(color: str) -> float | None:
+    """Return WCAG relative luminance for #RRGGBB colors."""
+    if not (len(color) == 7 and color.startswith("#")):
+        return None
+
+    try:
+        r = int(color[1:3], 16) / 255.0
+        g = int(color[3:5], 16) / 255.0
+        b = int(color[5:7], 16) / 255.0
+    except ValueError:
+        return None
+
+    def _linear(channel: float) -> float:
+        return channel / 12.92 if channel <= 0.03928 else ((channel + 0.055) / 1.055) ** 2.4
+
+    rl = _linear(r)
+    gl = _linear(g)
+    bl = _linear(b)
+    return 0.2126 * rl + 0.7152 * gl + 0.0722 * bl
+
+
+def _best_contrast_text(background: str) -> str:
+    """Pick black/white text with best contrast for a background color."""
+    luminance = _relative_luminance(background)
+    if luminance is None:
+        return "#FFFFFF"
+
+    contrast_white = (1.0 + 0.05) / (luminance + 0.05)
+    contrast_black = (luminance + 0.05) / 0.05
+    return "#FFFFFF" if contrast_white >= contrast_black else "#000000"
+
+
 def _normalize_command_tree(
     commands: list[str] | None,
     command_subcommands: dict[str, dict[str, str]] | None,
@@ -202,14 +234,19 @@ class InputHandler:
         self._on_show_stats: Optional[Callable[[], None]] = None
 
         def bottom_toolbar() -> str | list[tuple[str, str]]:
-            text = self.session.default_buffer.text
-            suggestions = self._get_command_suggestions(text)
+            buffer = self.session.default_buffer
+
+            # Avoid duplicate visual noise when the popup completion menu is visible.
+            if buffer.complete_state is not None and buffer.complete_state.completions:
+                return ""
+
+            suggestions = self._get_command_suggestions(buffer.text)
             if not suggestions:
                 return ""
 
             fragments: list[tuple[str, str]] = []
             fragments.append(("class:toolbar.hint", "Commands: "))
-            for i, (display, help_text) in enumerate(suggestions[:6]):
+            for i, (display, help_text) in enumerate(suggestions[:5]):
                 if i:
                     fragments.append(("class:toolbar.hint", "  "))
                 fragments.append(("class:toolbar.cmd", display))
@@ -331,21 +368,26 @@ class InputHandler:
             Style instance
         """
         colors = Theme.get_colors()
-        return Style.from_dict(
+        current_fg = _best_contrast_text(colors.primary)
+
+        # Start from shared theme defaults so prompt_toolkit styling stays consistent.
+        style_dict = Theme.get_prompt_toolkit_style().copy()
+        style_dict.update(
             {
                 "prompt": f"{colors.user_input} bold",
                 "": colors.text_primary,
                 "completion-menu": f"bg:{colors.bg_secondary} {colors.text_primary}",
                 "completion-menu.completion": f"bg:{colors.bg_secondary} {colors.text_primary}",
-                "completion-menu.completion.current": f"bg:{colors.primary} #000000",
-                "completion-menu.meta.completion": f"bg:{colors.bg_secondary} {colors.text_muted}",
-                "completion-menu.meta.completion.current": f"bg:{colors.primary} #000000",
+                "completion-menu.completion.current": f"bg:{colors.primary} {current_fg} bold",
+                "completion-menu.meta.completion": f"bg:{colors.bg_secondary} {colors.text_secondary}",
+                "completion-menu.meta.completion.current": f"bg:{colors.primary} {current_fg}",
                 "toolbar.hint": colors.text_muted,
                 "toolbar.cmd": f"{colors.primary} bold",
                 "scrollbar.background": colors.bg_secondary,
                 "scrollbar.button": colors.text_muted,
             }
         )
+        return Style.from_dict(style_dict)
 
     async def prompt_async(self, prompt_text: str = "> ") -> str:
         """Get input from user asynchronously.
