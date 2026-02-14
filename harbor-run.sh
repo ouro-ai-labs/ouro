@@ -20,6 +20,9 @@ DATASET="terminal-bench-sample@2.0"
 # ouro version to install in container (empty = latest from PyPI)
 AGENT_VERSION="0.2.3"
 
+# ouro git branch to install from (overrides AGENT_VERSION if set)
+AGENT_BRANCH=""
+
 # Timeout multiplier (default setup=360s, so 2.0 → 720s). Increase for slow networks.
 TIMEOUT_MULTIPLIER=2.0
 
@@ -41,9 +44,11 @@ if [ -z "$OURO_API_KEY" ]; then
 fi
 
 # ── Run ──────────────────────────────────────────────────────────────────────
-VERSION_FLAG=()
-if [ -n "$AGENT_VERSION" ]; then
-    VERSION_FLAG=(--agent-kwarg "version=$AGENT_VERSION")
+AGENT_KWARGS=()
+if [ -n "$AGENT_BRANCH" ]; then
+    AGENT_KWARGS+=(--agent-kwarg "branch=$AGENT_BRANCH")
+elif [ -n "$AGENT_VERSION" ]; then
+    AGENT_KWARGS+=(--agent-kwarg "version=$AGENT_VERSION")
 fi
 
 harbor run \
@@ -51,5 +56,5 @@ harbor run \
     --model "$MODEL" \
     --timeout-multiplier "$TIMEOUT_MULTIPLIER" \
     --dataset "$DATASET" \
-    "${VERSION_FLAG[@]}" \
+    "${AGENT_KWARGS[@]}" \
     "$@"

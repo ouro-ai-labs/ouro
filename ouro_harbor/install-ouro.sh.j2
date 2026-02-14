@@ -59,7 +59,9 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 source "$HOME/.local/bin/env"
 
 # Install ouro (pin to Python 3.12 — tree-sitter-languages lacks 3.14 wheels)
-{% if version %}
+{% if branch %}
+retry 3 5 uv tool install --python 3.12 "ouro-ai @ git+https://github.com/ouro-ai-labs/ouro.git@{{ branch }}"
+{% elif version %}
 retry 3 5 uv tool install --python 3.12 ouro-ai=={{ version }}
 {% else %}
 retry 3 5 uv tool install --python 3.12 ouro-ai
