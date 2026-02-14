@@ -48,7 +48,7 @@ def test_command_completer_caches_results_for_same_input() -> None:
 
 def test_input_handler_completes_while_typing() -> None:
     handler = InputHandler(history_file=None, commands=["help", "reset"])
-    assert handler.session.complete_while_typing is True
+    assert handler.session.complete_while_typing is False
 
 
 def test_input_handler_style_is_cached_per_theme() -> None:

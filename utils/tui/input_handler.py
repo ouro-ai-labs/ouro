@@ -267,7 +267,10 @@ class InputHandler:
             history=history,
             completer=self.completer,
             key_bindings=self.key_bindings,
-            complete_while_typing=True,
+            # We explicitly call `Buffer.start_completion()` on slash input changes.
+            # Disabling prompt_toolkit's implicit "complete while typing" avoids
+            # redundant background completion tasks.
+            complete_while_typing=False,
             enable_history_search=True,
             bottom_toolbar=bottom_toolbar,
         )
@@ -278,24 +281,32 @@ class InputHandler:
             self.session.app.ttimeoutlen = 0.05
             self.session.app.timeoutlen = 0.2
 
+        def _on_text_insert(_buffer) -> None:
+            # Show/update slash completions on insertions.
+            buf = self.session.default_buffer
+            if not buf.text.startswith("/"):
+                return
+
+            if buf.text == self._last_completion_sync_text:
+                return
+            self._last_completion_sync_text = buf.text
+            buf.start_completion(
+                select_first=False,
+                complete_event=CompleteEvent(text_inserted=True),
+            )
+
+        self.session.default_buffer.on_text_insert += _on_text_insert
+
         def _on_text_changed(_buffer) -> None:
-            # When the input starts with "/", keep completions in sync.
-            #
-            # prompt_toolkit already triggers completion automatically on *insertions*
-            # when `complete_while_typing=True` (via `on_text_insert`). However, deletions
-            # (e.g. backspace) do not trigger completion by default, so we explicitly
-            # refresh in those cases.
-            #
-            # We also guard against duplicate calls: each `start_completion()` schedules
-            # async work.
+            # Deletions/backspaces don't fire on_text_insert, so refresh completions here.
             buf = self.session.default_buffer
             new_text = buf.text
             prev_text = self._prev_buffer_text
             self._prev_buffer_text = new_text
 
             if new_text.startswith("/"):
-                is_insertion = len(new_text) > len(prev_text)
-                if is_insertion:
+                is_deletion = len(new_text) < len(prev_text)
+                if not is_deletion:
                     return
 
                 if new_text == self._last_completion_sync_text:
@@ -305,9 +316,10 @@ class InputHandler:
                     select_first=False,
                     complete_event=CompleteEvent(text_inserted=True),
                 )
-            else:
-                self._last_completion_sync_text = None
-                buf.cancel_completion()
+                return
+
+            self._last_completion_sync_text = None
+            buf.cancel_completion()
 
         self.session.default_buffer.on_text_changed += _on_text_changed
 
