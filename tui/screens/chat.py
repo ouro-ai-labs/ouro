@@ -180,11 +180,17 @@ class ChatScreen(Screen):
             pass
 
     def _add_welcome_message(self) -> None:
-        """Add initial welcome message."""
+        """Add initial welcome message with ASCII banner and random tagline."""
+        import random
+
+        from utils.terminal_ui import OURO_LOGO, TAGLINES
+
+        tagline = random.choice(TAGLINES)
         panel = self.query_one(MessagePanel)
         panel.add_assistant_message(
             content=(
-                "Welcome to **ouro**. Type your message below to get started.\n\n"
+                f"```\n{OURO_LOGO.strip()}\n```\n"
+                f"*{tagline}*\n\n"
                 "Tips: `@` for files, `/` for commands, `F1` for help."
             )
         )
