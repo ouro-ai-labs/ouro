@@ -3,14 +3,50 @@
 from typing import Callable, List, Optional
 
 from prompt_toolkit import PromptSession
+from prompt_toolkit.buffer import CompletionState
 from prompt_toolkit.completion import CompleteEvent, Completer, Completion
+from prompt_toolkit.document import Document
 from prompt_toolkit.history import FileHistory, InMemoryHistory
 from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.key_binding.key_processor import KeyPressEvent
 from prompt_toolkit.keys import Keys
 from prompt_toolkit.styles import Style
 
 from utils.tui.command_registry import CommandRegistry
+from utils.tui.slash_autocomplete import SlashAutocompleteEngine, SlashSuggestion
 from utils.tui.theme import Theme
+
+
+def _relative_luminance(color: str) -> float | None:
+    """Return WCAG relative luminance for #RRGGBB colors."""
+    if not (len(color) == 7 and color.startswith("#")):
+        return None
+
+    try:
+        r = int(color[1:3], 16) / 255.0
+        g = int(color[3:5], 16) / 255.0
+        b = int(color[5:7], 16) / 255.0
+    except ValueError:
+        return None
+
+    def _linear(channel: float) -> float:
+        return channel / 12.92 if channel <= 0.03928 else ((channel + 0.055) / 1.055) ** 2.4
+
+    rl = _linear(r)
+    gl = _linear(g)
+    bl = _linear(b)
+    return 0.2126 * rl + 0.7152 * gl + 0.0722 * bl
+
+
+def _best_contrast_text(background: str) -> str:
+    """Pick black/white text with best contrast for a background color."""
+    luminance = _relative_luminance(background)
+    if luminance is None:
+        return "#FFFFFF"
+
+    contrast_white = (1.0 + 0.05) / (luminance + 0.05)
+    contrast_black = (luminance + 0.05) / 0.05
+    return "#FFFFFF" if contrast_white >= contrast_black else "#000000"
 
 
 def _normalize_command_tree(
@@ -45,7 +81,7 @@ def _normalize_command_tree(
 
 
 class CommandCompleter(Completer):
-    """Auto-completer for slash commands and file paths."""
+    """Auto-completer for slash commands."""
 
     def __init__(
         self,
@@ -78,60 +114,8 @@ class CommandCompleter(Completer):
             commands or default_commands,
             command_subcommands,
         )
-        self.help_texts = help_texts or {}
-        self.display_texts = display_texts or {}
 
-    def get_completions(self, document, complete_event):
-        """Get completions for the current input.
-
-        Args:
-            document: Current document
-            complete_event: Completion event
-
-        Yields:
-            Completion objects
-        """
-        text = document.text_before_cursor
-
-        # Complete commands starting with /
-        if text.startswith("/"):
-            cmd_text = text[1:]  # Remove leading /
-            if " " in cmd_text:
-                base, _, rest = cmd_text.partition(" ")
-                if base in self.command_subcommands and " " not in rest:
-                    matching = [
-                        sub for sub in self.command_subcommands[base] if sub.startswith(rest)
-                    ]
-                    for sub in matching:
-                        key = f"{base} {sub}".strip()
-                        display = self.display_texts.get(key, f"/{base} {sub}")
-                        yield Completion(
-                            sub,
-                            start_position=-len(rest),
-                            display=display,
-                            display_meta=self._get_command_help(key),
-                        )
-                return
-
-            matching_commands = [cmd for cmd in self.commands if cmd.startswith(cmd_text)]
-            for cmd in matching_commands:
-                yield Completion(
-                    cmd,
-                    start_position=-len(cmd_text),
-                    display=self.display_texts.get(cmd, f"/{cmd}"),
-                    display_meta=self._get_command_help(cmd),
-                )
-
-    def _get_command_help(self, cmd: str) -> str:
-        """Get help text for a command.
-
-        Args:
-            cmd: Command name
-
-        Returns:
-            Help text
-        """
-        help_texts = {
+        default_help_texts = {
             "help": "Show available commands",
             "reset": "Clear conversation memory",
             "stats": "Show token/memory stats",
@@ -144,14 +128,66 @@ class CommandCompleter(Completer):
             "exit": "Exit interactive mode",
             "quit": "Same as /exit",
         }
-        if cmd in self.help_texts:
-            return self.help_texts[cmd]
-        if " " in cmd:
-            base, _, rest = cmd.partition(" ")
-            sub_help = self.command_subcommands.get(base, {}).get(rest)
-            if sub_help:
-                return sub_help
-        return help_texts.get(cmd, "")
+
+        merged_help_texts = {**default_help_texts, **(help_texts or {})}
+        for base, subs in self.command_subcommands.items():
+            for sub, sub_help in subs.items():
+                if sub_help:
+                    merged_help_texts[f"{base} {sub}"] = sub_help
+
+        self.help_texts = merged_help_texts
+        self.display_texts = display_texts or {}
+        self.engine = SlashAutocompleteEngine(
+            self.commands,
+            self.command_subcommands,
+            help_texts=self.help_texts,
+            display_texts=self.display_texts,
+        )
+
+    def get_completions(
+        self,
+        document: Document,
+        complete_event: CompleteEvent | None,
+    ):
+        """Get completions for the current input.
+
+        Args:
+            document: Current document
+            complete_event: Completion event
+
+        Yields:
+            Completion objects
+        """
+        suggestions = self.get_suggestions(document.text_before_cursor)
+        for suggestion in suggestions:
+            yield self._to_completion(suggestion)
+
+    def get_suggestions(self, text_before_cursor: str) -> list[SlashSuggestion]:
+        """Return ordered slash suggestions for UI rendering and enter resolution."""
+        return self.engine.suggest(text_before_cursor)
+
+    def get_enter_completion(
+        self,
+        document: Document,
+        complete_state: CompletionState | None,
+    ) -> Completion | None:
+        """Resolve completion to apply when Enter is pressed in slash context."""
+        suggestions = self.get_suggestions(document.text_before_cursor)
+        if not suggestions:
+            return None
+
+        if complete_state is not None and complete_state.current_completion is not None:
+            return complete_state.current_completion
+
+        return self._to_completion(suggestions[0])
+
+    def _to_completion(self, suggestion: SlashSuggestion) -> Completion:
+        return Completion(
+            suggestion.insert_text,
+            start_position=-len(suggestion.replace_text),
+            display=suggestion.display,
+            display_meta=suggestion.help_text,
+        )
 
 
 class InputHandler:
@@ -197,15 +233,20 @@ class InputHandler:
         self._on_toggle_thinking: Optional[Callable[[], None]] = None
         self._on_show_stats: Optional[Callable[[], None]] = None
 
-        def bottom_toolbar():
-            text = self.session.default_buffer.text
-            suggestions = self._get_command_suggestions(text)
+        def bottom_toolbar() -> str | list[tuple[str, str]]:
+            buffer = self.session.default_buffer
+
+            # Avoid duplicate visual noise when the popup completion menu is visible.
+            if buffer.complete_state is not None and buffer.complete_state.completions:
+                return ""
+
+            suggestions = self._get_command_suggestions(buffer.text)
             if not suggestions:
                 return ""
 
             fragments: list[tuple[str, str]] = []
             fragments.append(("class:toolbar.hint", "Commands: "))
-            for i, (display, help_text) in enumerate(suggestions[:6]):
+            for i, (display, help_text) in enumerate(suggestions[:5]):
                 if i:
                     fragments.append(("class:toolbar.hint", "  "))
                 fragments.append(("class:toolbar.cmd", display))
@@ -224,7 +265,7 @@ class InputHandler:
             bottom_toolbar=bottom_toolbar,
         )
 
-        def _on_text_insert(_buffer) -> None:
+        def _on_text_insert(_buffer: object) -> None:
             # Best-effort: show completion menu right after typing "/" at the beginning.
             buf = self.session.default_buffer
             if buf.text == "/" and buf.cursor_position == 1:
@@ -235,7 +276,7 @@ class InputHandler:
 
         self.session.default_buffer.on_text_insert += _on_text_insert
 
-        def _on_text_changed(_buffer) -> None:
+        def _on_text_changed(_buffer: object) -> None:
             # Codex-style: when the input starts with "/", keep the completion menu in sync
             # with every keystroke. (Some terminals don't refresh completion state reliably
             # unless we explicitly trigger it.)
@@ -251,33 +292,9 @@ class InputHandler:
         self.session.default_buffer.on_text_changed += _on_text_changed
 
     def _get_command_suggestions(self, text: str) -> list[tuple[str, str]]:
-        if not text.startswith("/"):
-            return []
-        cmd_text = text[1:]
-        if " " in cmd_text:
-            base, _, rest = cmd_text.partition(" ")
-            if base in self.completer.command_subcommands and " " not in rest:
-                matches = [
-                    f"{base} {sub}"
-                    for sub in self.completer.command_subcommands[base]
-                    if sub.startswith(rest)
-                ]
-                return [
-                    (
-                        self.completer.display_texts.get(cmd, f"/{cmd}"),
-                        self.completer._get_command_help(cmd),
-                    )
-                    for cmd in matches
-                ]
-            return []
-
-        matches = [cmd for cmd in self.completer.commands if cmd.startswith(cmd_text)]
         return [
-            (
-                self.completer.display_texts.get(cmd, f"/{cmd}"),
-                self.completer._get_command_help(cmd),
-            )
-            for cmd in matches
+            (suggestion.display, suggestion.help_text)
+            for suggestion in self.completer.get_suggestions(text)
         ]
 
     def _create_key_bindings(self) -> KeyBindings:
@@ -289,7 +306,7 @@ class InputHandler:
         kb = KeyBindings()
 
         @kb.add("/", eager=True)
-        def slash_command(event):
+        def slash_command(event: KeyPressEvent) -> None:
             """Insert '/' and, when starting a command, show suggestions immediately."""
             buffer = event.current_buffer
             at_start = buffer.text == "" and buffer.cursor_position == 0
@@ -297,21 +314,30 @@ class InputHandler:
             if at_start:
                 buffer.start_completion(select_first=False)
 
+        @kb.add("enter", eager=True)
+        def accept_or_submit_slash(event: KeyPressEvent) -> None:
+            """Codex-style Enter: accept best slash completion, then submit."""
+            buffer = event.current_buffer
+            completion = self.completer.get_enter_completion(buffer.document, buffer.complete_state)
+            if completion is not None:
+                buffer.apply_completion(completion)
+            buffer.validate_and_handle()
+
         @kb.add(Keys.ControlL)
-        def clear_screen(event):
+        def clear_screen(event: KeyPressEvent) -> None:
             """Clear the screen."""
             event.app.renderer.clear()
             if self._on_clear_screen:
                 self._on_clear_screen()
 
         @kb.add(Keys.ControlT)
-        def toggle_thinking(event):
+        def toggle_thinking(event: KeyPressEvent) -> None:
             """Toggle thinking display."""
             if self._on_toggle_thinking:
                 self._on_toggle_thinking()
 
         @kb.add(Keys.ControlS)
-        def show_stats(event):
+        def show_stats(event: KeyPressEvent) -> None:
             """Show quick stats."""
             if self._on_show_stats:
                 self._on_show_stats()
@@ -342,21 +368,26 @@ class InputHandler:
             Style instance
         """
         colors = Theme.get_colors()
-        return Style.from_dict(
+        current_fg = _best_contrast_text(colors.primary)
+
+        # Start from shared theme defaults so prompt_toolkit styling stays consistent.
+        style_dict = Theme.get_prompt_toolkit_style().copy()
+        style_dict.update(
             {
                 "prompt": f"{colors.user_input} bold",
                 "": colors.text_primary,
                 "completion-menu": f"bg:{colors.bg_secondary} {colors.text_primary}",
                 "completion-menu.completion": f"bg:{colors.bg_secondary} {colors.text_primary}",
-                "completion-menu.completion.current": f"bg:{colors.primary} #000000",
-                "completion-menu.meta.completion": f"bg:{colors.bg_secondary} {colors.text_muted}",
-                "completion-menu.meta.completion.current": f"bg:{colors.primary} #000000",
+                "completion-menu.completion.current": f"bg:{colors.primary} {current_fg} bold",
+                "completion-menu.meta.completion": f"bg:{colors.bg_secondary} {colors.text_secondary}",
+                "completion-menu.meta.completion.current": f"bg:{colors.primary} {current_fg}",
                 "toolbar.hint": colors.text_muted,
                 "toolbar.cmd": f"{colors.primary} bold",
                 "scrollbar.background": colors.bg_secondary,
                 "scrollbar.button": colors.text_muted,
             }
         )
+        return Style.from_dict(style_dict)
 
     async def prompt_async(self, prompt_text: str = "> ") -> str:
         """Get input from user asynchronously.
