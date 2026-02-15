@@ -1,4 +1,4 @@
-"""Header widget displaying aloop branding and session info."""
+"""Header widget displaying ouro branding and session info."""
 
 from textual.app import ComposeResult
 from textual.reactive import reactive
@@ -67,7 +67,7 @@ class Header(Widget):
         self.mode = mode
 
     def compose(self) -> ComposeResult:
-        yield Static("\u25c9 aloop", classes="header-logo")
+        yield Static("\u25c9 ouro", classes="header-logo")
         yield Static("\u2502", classes="header-sep")
         yield Static(self._short_model(), id="header-model", classes="header-model")
         yield Static(f"[{self.mode}]", id="header-mode", classes="header-mode")

@@ -78,8 +78,8 @@ class InputArea(Widget):
         ("/stats", "Show memory statistics"),
         ("/history", "List saved sessions"),
         ("/dump-memory", "Dump session to JSON file"),
-        ("/exit", "Exit aloop"),
-        ("/quit", "Exit aloop"),
+        ("/exit", "Exit ouro"),
+        ("/quit", "Exit ouro"),
     ]
 
     show_completions: reactive[bool] = reactive(False)

@@ -251,7 +251,7 @@ class AssistantMessage(Widget):
         self._tool_blocks: Dict[str, ToolCallBlock] = {}
 
     def compose(self) -> ComposeResult:
-        yield Static("\u25c9 aloop", classes="assistant-label")
+        yield Static("\u25c9 ouro", classes="assistant-label")
 
         # Thinking block (collapsed by default)
         if self.thinking:

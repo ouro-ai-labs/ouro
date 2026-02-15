@@ -65,14 +65,14 @@ class HelpScreen(ModalScreen[None]):
 
     def compose(self) -> ComposeResult:
         with Container(id="help-container"):
-            yield Static("\u25c9 aloop Help", classes="help-title")
+            yield Static("\u25c9 ouro Help", classes="help-title")
 
             # Keyboard shortcuts section
             yield Static("Keyboard Shortcuts", classes="help-section-title")
 
             shortcuts = [
                 ("Enter", "Send message"),
-                ("Ctrl+D", "Exit aloop"),
+                ("Ctrl+D", "Exit ouro"),
                 ("Ctrl+L", "Clear screen"),
                 ("Escape", "Cancel / Close"),
                 ("F1 / ?", "Show this help"),
@@ -98,7 +98,7 @@ class HelpScreen(ModalScreen[None]):
                 ("/resume <id>", "Resume a saved session"),
                 ("/login [provider]", "Login to OAuth provider"),
                 ("/logout [provider]", "Logout from OAuth provider"),
-                ("/exit", "Exit aloop"),
+                ("/exit", "Exit ouro"),
             ]
 
             for cmd, desc in commands:

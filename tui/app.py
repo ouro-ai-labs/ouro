@@ -1,4 +1,4 @@
-"""Main TUI application for aloop."""
+"""Main TUI application for ouro."""
 
 from typing import TYPE_CHECKING
 
@@ -10,10 +10,10 @@ if TYPE_CHECKING:
     from agent.base import BaseAgent
 
 
-class AloopTUI(App):
-    """AgenticLoop Terminal User Interface application."""
+class OuroTUI(App):
+    """ouro Terminal User Interface application."""
 
-    TITLE = "aloop"
+    TITLE = "ouro"
     CSS_PATH = "styles.tcss"
 
     # Disable mouse capture to allow terminal native text selection
@@ -68,5 +68,5 @@ async def run_tui_mode(agent: "BaseAgent") -> None:
     model_info = agent.get_current_model_info()
     model = model_info["model_id"] if model_info else "unknown"
 
-    app = AloopTUI(agent=agent, mode="react", model=model)
+    app = OuroTUI(agent=agent, mode="react", model=model)
     await app.run_async()

@@ -1,4 +1,4 @@
-"""Main chat screen for aloop TUI."""
+"""Main chat screen for ouro TUI."""
 
 import asyncio
 from typing import TYPE_CHECKING, Any, List
@@ -184,7 +184,7 @@ class ChatScreen(Screen):
         panel = self.query_one(MessagePanel)
         panel.add_assistant_message(
             content=(
-                "Welcome to **aloop**. Type your message below to get started.\n\n"
+                "Welcome to **ouro**. Type your message below to get started.\n\n"
                 "Tips: `@` for files, `/` for commands, `F1` for help."
             )
         )

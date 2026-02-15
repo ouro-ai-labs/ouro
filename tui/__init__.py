@@ -1,5 +1,5 @@
-"""AgenticLoop TUI - Modern terminal user interface."""
+"""ouro TUI - Modern terminal user interface."""
 
-from .app import AloopTUI
+from .app import OuroTUI
 
-__all__ = ["AloopTUI"]
+__all__ = ["OuroTUI"]
