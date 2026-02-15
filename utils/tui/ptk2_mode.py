@@ -128,6 +128,34 @@ def drop_visible_prefix_preserving_sgr(text: str, visible_chars: int) -> str:
     return text[i:]
 
 
+def split_visible_prefix_preserving_sgr(text: str, visible_chars: int) -> tuple[str, str]:
+    """Split text into (prefix, rest) where prefix contains N visible characters.
+
+    SGR escapes don't count towards visible characters and are kept intact.
+    """
+    if visible_chars <= 0 or not text:
+        return "", text
+
+    i = 0
+    remaining = visible_chars
+    n = len(text)
+
+    while i < n and remaining > 0:
+        if text.startswith(_SGR_START, i):
+            end = text.find("m", i + 2)
+            if end == -1:
+                i += 1
+                remaining -= 1
+                continue
+            i = end + 1
+            continue
+
+        i += 1
+        remaining -= 1
+
+    return text[:i], text[i:]
+
+
 def next_follow_tail_state(current_follow_tail: bool, scroll_delta: int, at_bottom: bool) -> bool:
     """Compute whether output app should keep following tail after a scroll event."""
     if scroll_delta < 0:
@@ -154,25 +182,6 @@ class _OutputStream(io.TextIOBase):
 
     def flush(self) -> None:  # pragma: no cover - no-op by design
         return None
-
-
-class _PTK2AsyncSpinner:
-    """Non-live spinner shim for PTK2 output capture."""
-
-    def __init__(self, console: Console, message: str = "Processing...") -> None:
-        self.console = console
-        self.message = message
-
-    async def __aenter__(self) -> _PTK2AsyncSpinner:
-        if not self.console.quiet:
-            terminal_ui.print_thinking(self.message)
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:  # noqa: ANN001
-        return None
-
-    def update_message(self, message: str) -> None:
-        self.message = message
 
 
 class _OutputAnsiControl(FormattedTextControl):
@@ -237,9 +246,25 @@ class PTK2Driver:
             self._flush_interval_s = max(0.0, float(flush_ms) / 1000.0)
         except ValueError:
             self._flush_interval_s = 0.008
+        # Optional: limit how many visible characters we append per flush tick.
+        # Setting this too low can cause many full-layout redraws and hurt perf.
+        max_flush_chars = os.environ.get("PTK2_FLUSH_MAX_CHARS", "0")
+        try:
+            raw_max = int(max_flush_chars)
+            self._flush_max_visible_chars = max(256, raw_max) if raw_max > 0 else None
+        except ValueError:
+            self._flush_max_visible_chars = None
         self._pending_raw = ""
+        self._pending_norm = ""
         self._flush_handle: asyncio.Handle | None = None
         self._last_flush_ts = 0.0
+
+        # Thinking panel (animated) used as a replacement for Rich Live spinners.
+        self._thinking_active = False
+        self._thinking_message = ""
+        self._thinking_frame = 0
+        self._thinking_tick: asyncio.Handle | None = None
+        self._thinking_frames = ["|", "/", "-", "\\"]
         self._capture_path = os.environ.get("PTK2_CAPTURE_PATH")
         self._capture_fp: IO[str] | None = None
         self._debug_path = os.environ.get("PTK2_DEBUG_PATH")
@@ -342,8 +367,19 @@ class PTK2Driver:
             filter=self._completion_visible,
         )
 
+        thinking_box = ConditionalContainer(
+            content=Window(
+                height=3,
+                content=FormattedTextControl(self._render_thinking_panel),
+                style="class:thinking.panel",
+                dont_extend_height=True,
+            ),
+            filter=Condition(lambda: self._thinking_active),
+        )
+
         root = HSplit(
             [
+                thinking_box,
                 self.output_window,
                 Window(height=1, char="─", style="class:divider"),
                 input_row,
@@ -424,6 +460,10 @@ class PTK2Driver:
                 "divider": colors.text_muted,
                 "toolbar.hint": colors.text_secondary,
                 "toolbar.cmd": f"{colors.primary} bold",
+                "thinking.panel": f"bg:{colors.bg_secondary} {colors.text_primary}",
+                "thinking.border": colors.text_muted,
+                "thinking.title": f"{colors.secondary} bold",
+                "thinking.body": colors.text_secondary,
             }
         )
         return Style.from_dict(style_dict)
@@ -455,6 +495,58 @@ class PTK2Driver:
             idx = 0
         text = f"({idx + 1}/{len(state.completions)})"
         return [("class:completion.count", text)]
+
+    def _render_thinking_panel(self):
+        if not self._thinking_active:
+            return [("", "")]
+        cols = 80
+        with contextlib.suppress(Exception):
+            cols = get_app().output.get_size().columns
+        cols = max(20, cols)
+
+        title = " Thinking "
+        frame = self._thinking_frames[self._thinking_frame % len(self._thinking_frames)]
+        msg = (self._thinking_message or "Processing...").strip()
+        inner_w = max(0, cols - 4)
+        body = f"{frame} {msg}"
+        body = body[:inner_w].ljust(inner_w)
+
+        top = f"+{title}{'-' * max(0, cols - len(title) - 2)}+"
+        mid = f"| {body} |"
+        bot = f"+{'-' * (cols - 2)}+"
+
+        return [
+            ("class:thinking.border", top + "\n"),
+            ("class:thinking.body", mid + "\n"),
+            ("class:thinking.border", bot),
+        ]
+
+    def _start_thinking(self, message: str) -> None:
+        self._thinking_active = True
+        self._thinking_message = message
+        if self._loop is None:
+            self._invalidate()
+            return
+        if self._thinking_tick is None or self._thinking_tick.cancelled():
+            self._thinking_tick = self._loop.call_later(0.10, self._thinking_step)
+        self._invalidate()
+
+    def _stop_thinking(self) -> None:
+        self._thinking_active = False
+        self._thinking_message = ""
+        if self._thinking_tick is not None:
+            with contextlib.suppress(Exception):
+                self._thinking_tick.cancel()
+        self._thinking_tick = None
+        self._invalidate()
+
+    def _thinking_step(self) -> None:
+        self._thinking_tick = None
+        if not self._thinking_active or self._loop is None:
+            return
+        self._thinking_frame = (self._thinking_frame + 1) % len(self._thinking_frames)
+        self._invalidate()
+        self._thinking_tick = self._loop.call_later(0.10, self._thinking_step)
 
     def _wire_slash_completion_sync(self) -> None:
         """Keep slash completion state in sync while typing/deleting."""
@@ -598,7 +690,7 @@ class PTK2Driver:
     def _flush_pending(self) -> None:
         # This runs in the PTK event loop thread.
         self._flush_handle = None
-        if not self._pending_raw and not self._raw_ansi_carry:
+        if not self._pending_raw and not self._raw_ansi_carry and not self._pending_norm:
             return
         self._last_flush_ts = time.monotonic()
 
@@ -611,27 +703,37 @@ class PTK2Driver:
             self._raw_ansi_carry = carry
 
         normalized = normalize_output_chunk(raw)
-        if not normalized:
+        to_flush = self._pending_norm + normalized
+        if not to_flush:
+            return
+        if self._flush_max_visible_chars is None:
+            chunk, rest = to_flush, ""
+        else:
+            chunk, rest = split_visible_prefix_preserving_sgr(
+                to_flush, self._flush_max_visible_chars
+            )
+        self._pending_norm = rest
+        if not chunk:
             return
 
         if self._capture_path and self._capture_fp is not None:
             with contextlib.suppress(Exception):
-                self._capture_fp.write(strip_ansi(normalized))
+                self._capture_fp.write(strip_ansi(chunk))
                 self._capture_fp.flush()
 
-        combined = self._truncate_output(self._output_text + normalized)
+        combined = self._truncate_output(self._output_text + chunk)
         self._set_output_text(
             combined,
             follow_tail=not self._manual_scroll_mode,
             preserve_scroll=self.output_window.vertical_scroll,
         )
         self._debug(
-            f"flush len={len(normalized)} total={len(self._output_text)} "
+            f"flush len={len(chunk)} total={len(self._output_text)} "
             f"manual={self._manual_scroll_mode} vscroll={self.output_window.vertical_scroll} "
             f"max_scroll={self._max_output_scroll()}"
         )
         # If more output arrived while we were flushing, schedule the next flush.
-        if self._pending_raw or self._raw_ansi_carry:
+        if self._pending_raw or self._raw_ansi_carry or self._pending_norm:
             self._schedule_flush()
 
     def _on_stream_text(self, text: str) -> None:
@@ -648,6 +750,25 @@ class PTK2Driver:
             self.app.invalidate()
 
     def _install_session_hooks(self) -> None:
+        driver = self
+
+        class _DriverAsyncSpinner:
+            def __init__(self, console: Console, message: str = "Processing...") -> None:
+                self.console = console
+                self.message = message
+
+            async def __aenter__(self):  # noqa: ANN001
+                driver._start_thinking(self.message)
+                return self
+
+            async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:  # noqa: ANN001
+                driver._stop_thinking()
+                return None
+
+            def update_message(self, message: str) -> None:
+                self.message = message
+                driver._start_thinking(message)
+
         def _status_update_proxy(*args, **kwargs) -> None:
             self._orig_status_update(*args, **kwargs)
             self._invalidate()
@@ -658,7 +779,7 @@ class PTK2Driver:
         self.session.status_bar.update = _status_update_proxy  # type: ignore[method-assign]
         self.session.status_bar.show = _status_show_proxy  # type: ignore[method-assign]
         self.session.input_handler.prompt_async = self._prompt_async  # type: ignore[assignment]
-        agent_base_module.AsyncSpinner = _PTK2AsyncSpinner
+        agent_base_module.AsyncSpinner = _DriverAsyncSpinner
 
     def _restore_session_hooks(self) -> None:
         self.session.status_bar.update = self._orig_status_update  # type: ignore[method-assign]
