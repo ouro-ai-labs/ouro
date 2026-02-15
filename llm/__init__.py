@@ -24,6 +24,7 @@ from .message_types import (
     ToolResult,
 )
 from .model_manager import ModelManager, ModelProfile
+from .reasoning import REASONING_EFFORT_CHOICES, display_reasoning_effort, normalize_reasoning_effort
 
 __all__ = [
     # Core types
@@ -39,6 +40,10 @@ __all__ = [
     # Model Manager
     "ModelManager",
     "ModelProfile",
+    # Reasoning
+    "REASONING_EFFORT_CHOICES",
+    "normalize_reasoning_effort",
+    "display_reasoning_effort",
     # Utilities
     "extract_text",
     "extract_text_from_message",

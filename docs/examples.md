@@ -24,6 +24,9 @@ ouro --task "Write a Python script to calculate fibonacci numbers and save it to
 
 # Specify model
 ouro --task "Summarize this README" --model openai/gpt-4o
+
+# Set reasoning effort (LiteLLM/OpenAI-style). Use `off` as alias for `none`.
+ouro --task "Solve this logic puzzle" --reasoning-effort high
 ```
 
 From source (without install):
@@ -66,8 +69,10 @@ Type your request and press Enter twice to submit. The agent will think, use too
 /logout                  Logout from OAuth provider (menu)
 /theme                   Toggle dark/light theme
 /verbose                 Toggle thinking display
-/compact                 Toggle compact output
-/clear                   Clear conversation and start fresh
+/reasoning               Open reasoning menu
+/reasoning high          Set reasoning effort for subsequent turns
+/compact                 Compress conversation memory
+/reset                   Clear conversation and start fresh
 /resume                  List recent sessions
 /resume a1b2c3d4         Resume session by ID prefix
 /exit                    Exit

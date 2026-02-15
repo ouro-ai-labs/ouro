@@ -29,9 +29,12 @@ from utils.tui.model_ui import (
     pick_model_id,
 )
 from utils.tui.oauth_ui import pick_oauth_provider
+from utils.tui.reasoning_ui import pick_reasoning_effort
 from utils.tui.skills_ui import SkillsAction, pick_skills_action
 from utils.tui.status_bar import StatusBar
 from utils.tui.theme import Theme, set_theme
+
+from llm.reasoning import REASONING_EFFORT_CHOICES
 
 
 class InteractiveSession:
@@ -66,6 +69,11 @@ class InteractiveSession:
                 ),
                 CommandSpec("theme", "Toggle between dark and light theme"),
                 CommandSpec("verbose", "Toggle verbose thinking display"),
+                CommandSpec(
+                    "reasoning",
+                    "Set run-scoped reasoning effort (LiteLLM) (opens menu if no args)",
+                    args_hint="[level]",
+                ),
                 CommandSpec("compact", "Compress conversation memory"),
                 CommandSpec("skills", "Manage skills (list/install/uninstall)"),
                 CommandSpec(
@@ -364,6 +372,37 @@ class InteractiveSession:
 
         elif command == "/verbose":
             self._toggle_verbose()
+
+        elif command == "/reasoning":
+            # Usage:
+            # - /reasoning               -> open menu
+            # - /reasoning <level>       -> set directly
+            level = command_parts[1] if len(command_parts) >= 2 else None
+            if len(command_parts) > 2:
+                terminal_ui.print_error("Usage: /reasoning [level]")
+                terminal_ui.print_info(
+                    "Allowed: default, off, minimal, low, medium, high, xhigh (also accepts: none)"
+                )
+                return True
+
+            if level is None:
+                picked = await pick_reasoning_effort(current=self.agent.get_reasoning_effort())
+                if picked is None:
+                    return True
+                level = picked
+
+            try:
+                self.agent.set_reasoning_effort(level)
+            except ValueError as e:
+                terminal_ui.print_error(str(e), title="Invalid reasoning_effort")
+                terminal_ui.print_info(
+                    "Allowed: default, off, minimal, low, medium, high, xhigh (also accepts: none)"
+                )
+                return True
+
+            terminal_ui.print_success(
+                f"reasoning_effort set to {self.agent.get_reasoning_effort()}"
+            )
 
         elif command == "/compact":
             await self._compact_memory()
