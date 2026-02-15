@@ -178,7 +178,19 @@ class InputArea(Widget):
             self.post_message(self.Submitted(value))
 
     def on_key(self, event) -> None:
-        """Handle key events for history navigation."""
+        """Handle key events for history navigation and tab completion."""
+        if event.key == "tab":
+            if self.show_completions:
+                # Accept highlighted completion
+                completion_list = self.query_one("#completion-list", OptionList)
+                idx = completion_list.highlighted
+                if idx is not None:
+                    option = completion_list.get_option_at_index(idx)
+                    if option and option.id:
+                        self._apply_completion(option.id)
+                event.prevent_default()
+                event.stop()
+            return
         if event.key == "up":
             if self.show_completions:
                 # Let OptionList handle navigation
