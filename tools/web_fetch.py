@@ -132,6 +132,8 @@ class WebFetchError(Exception):
 class WebFetchTool(BaseTool):
     """Fetch content from URLs and convert to various formats."""
 
+    readonly = True
+
     @property
     def name(self) -> str:
         return "web_fetch"

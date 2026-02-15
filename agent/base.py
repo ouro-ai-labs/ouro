@@ -1,9 +1,10 @@
 """Base agent class for all agent types."""
 
+import asyncio
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, List, Optional
 
-from llm import LLMMessage, LLMResponse, StopReason, ToolResult
+from llm import LLMMessage, LLMResponse, StopReason, ToolCall, ToolResult
 from memory import MemoryManager
 from tools.base import BaseTool
 from tools.todo import TodoTool
@@ -215,24 +216,15 @@ class BaseAgent(ABC):
                     final_answer = self._extract_text(response)
                     return final_answer if final_answer else "No response generated."
 
-                # Execute each tool call
-                tool_results = []
-                for tc in tool_calls:
-                    terminal_ui.print_tool_call(tc.name, tc.arguments)
+                # Decide parallel vs sequential execution
+                all_readonly = len(tool_calls) > 1 and all(
+                    self.tool_executor.is_tool_readonly(tc.name) for tc in tool_calls
+                )
 
-                    # Execute tool with spinner
-                    async with AsyncSpinner(terminal_ui.console, f"Executing {tc.name}..."):
-                        result = await self.tool_executor.execute_tool_call(tc.name, tc.arguments)
-                    # Tool already handles size limits, no additional processing needed
-
-                    terminal_ui.print_tool_result(result)
-
-                    # Log result (truncated)
-                    logger.debug(f"Tool result: {result[:200]}{'...' if len(result) > 200 else ''}")
-
-                    tool_results.append(
-                        ToolResult(tool_call_id=tc.id, content=result, name=tc.name)
-                    )
+                if all_readonly:
+                    tool_results = await self._execute_tools_parallel(tool_calls)
+                else:
+                    tool_results = await self._execute_tools_sequential(tool_calls)
 
                 # Format tool results and add to context
                 # format_tool_results now returns a list of tool messages (OpenAI format)
@@ -249,6 +241,51 @@ class BaseAgent(ABC):
                         await self.memory.add_message(result_messages)
                     else:
                         messages.append(result_messages)
+
+    async def _execute_tools_sequential(self, tool_calls: List[ToolCall]) -> List[ToolResult]:
+        """Execute tool calls one at a time (default path)."""
+        tool_results: List[ToolResult] = []
+        for tc in tool_calls:
+            terminal_ui.print_tool_call(tc.name, tc.arguments)
+
+            async with AsyncSpinner(terminal_ui.console, f"Executing {tc.name}..."):
+                result = await self.tool_executor.execute_tool_call(tc.name, tc.arguments)
+
+            terminal_ui.print_tool_result(result)
+            logger.debug(f"Tool result: {result[:200]}{'...' if len(result) > 200 else ''}")
+
+            tool_results.append(ToolResult(tool_call_id=tc.id, content=result, name=tc.name))
+        return tool_results
+
+    async def _execute_tools_parallel(self, tool_calls: List[ToolCall]) -> List[ToolResult]:
+        """Execute readonly tool calls concurrently."""
+        results: List[str] = [None] * len(tool_calls)  # type: ignore[list-item]
+
+        # Print all tool calls upfront
+        for tc in tool_calls:
+            terminal_ui.print_tool_call(tc.name, tc.arguments)
+
+        async def _run(index: int, tc: ToolCall) -> None:
+            results[index] = await self.tool_executor.execute_tool_call(tc.name, tc.arguments)
+
+        tool_names = ", ".join(tc.name for tc in tool_calls)
+        async with (
+            AsyncSpinner(
+                terminal_ui.console,
+                f"Executing {len(tool_calls)} tools in parallel ({tool_names})...",
+            ),
+            asyncio.TaskGroup() as tg,
+        ):
+            for i, tc in enumerate(tool_calls):
+                tg.create_task(_run(i, tc))
+
+        # Print results in order after all complete
+        tool_results: List[ToolResult] = []
+        for i, tc in enumerate(tool_calls):
+            terminal_ui.print_tool_result(results[i])
+            logger.debug(f"Tool result: {results[i][:200]}{'...' if len(results[i]) > 200 else ''}")
+            tool_results.append(ToolResult(tool_call_id=tc.id, content=results[i], name=tc.name))
+        return tool_results
 
     def switch_model(self, model_id: str) -> bool:
         """Switch to a different model.

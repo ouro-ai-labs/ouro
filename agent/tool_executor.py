@@ -41,6 +41,11 @@ class ToolExecutor:
         except Exception as e:
             return f"Error executing {tool_name}: {str(e)}"
 
+    def is_tool_readonly(self, tool_name: str) -> bool:
+        """Check if a tool is readonly (safe for parallel execution)."""
+        tool = self.tools.get(tool_name)
+        return tool.readonly if tool else False
+
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
         """Get Anthropic-formatted schemas for all tools."""
         return [tool.to_anthropic_schema() for tool in self.tools.values()]

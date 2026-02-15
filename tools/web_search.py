@@ -20,6 +20,8 @@ def _sync_search(query: str, max_results: int = 5) -> List[Dict[str, str]]:
 class WebSearchTool(BaseTool):
     """Simple web search using DuckDuckGo (no API key needed)."""
 
+    readonly = True
+
     @property
     def name(self) -> str:
         return "web_search"

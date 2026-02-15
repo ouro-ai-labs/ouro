@@ -16,6 +16,8 @@ from tools.base import BaseTool
 class GlobTool(BaseTool):
     """Fast file pattern matching tool."""
 
+    readonly = True
+
     @property
     def name(self) -> str:
         return "glob_files"
@@ -69,6 +71,8 @@ Returns sorted list of matching file paths."""
 
 class GrepTool(BaseTool):
     """Search file contents using regex patterns."""
+
+    readonly = True
 
     def __init__(self):
         """Initialize GrepTool, checking for ripgrep availability."""
