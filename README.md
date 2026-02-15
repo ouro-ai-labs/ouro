@@ -86,8 +86,39 @@ ouro --resume a1b2c3d4
 | `--login` | - | Open OAuth provider selector and login |
 | `--logout` | - | Open OAuth provider selector and logout |
 | `--verify` | | Enable self-verification (Ralph Loop) in `--task` mode |
+| `--reasoning-effort LEVEL` | - | Set run-scoped reasoning effort (`default|none|minimal|low|medium|high|xhigh|off`) |
 | `--verbose` | `-v` | Enable verbose logging to `~/.ouro/logs/` |
 
+## Interactive Commands
+
+### Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/help` | Show help |
+| `/reset` | Clear conversation and start fresh |
+| `/stats` | Show memory and token usage statistics |
+| `/resume [id]` | List or resume a previous session |
+| `/model` | Pick a model (arrow keys + Enter) |
+| `/model edit` | Open `~/.ouro/models.yaml` in editor (auto-reload on save) |
+| `/login` | Open OAuth provider selector and login |
+| `/logout` | Open OAuth provider selector and logout |
+| `/theme` | Toggle dark/light theme |
+| `/verbose` | Toggle thinking display |
+| `/reasoning` | Open reasoning menu |
+| `/compact` | Trigger memory compression and show token savings |
+| `/exit` | Exit (also `/quit`) |
+
+### Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `/` | Command autocomplete |
+| `Ctrl+C` | Graceful interrupt (cancels current operation, rolls back incomplete memory) |
+| `Ctrl+L` | Clear screen |
+| `Ctrl+T` | Toggle thinking display |
+| `Ctrl+S` | Show quick stats |
+| Up/Down | Navigate command history |
 ## Features
 
 - **Unified agent loop**: Think-Act-Observe cycle — planning, sub-agents, and tool use all happen in one loop, chosen autonomously by the agent

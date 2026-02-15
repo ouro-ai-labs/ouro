@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, List, Optional
 
 from llm import LLMMessage, LLMResponse, StopReason, ToolCall, ToolResult
+from llm.reasoning import display_reasoning_effort, normalize_reasoning_effort
 from memory import MemoryManager
 from tools.base import BaseTool
 from tools.todo import TodoTool
@@ -58,6 +59,22 @@ class BaseAgent(ABC):
         self.memory = MemoryManager(llm)
         self.memory.set_todo_context_provider(self._get_todo_context)
 
+        # Run-scoped reasoning control. None means "omit reasoning_effort" (provider defaults).
+        self._reasoning_effort: Optional[str] = None
+
+    def set_reasoning_effort(self, value: Optional[str]) -> None:
+        """Set run-scoped reasoning effort for primary task calls.
+
+        Args:
+            value: One of {"default","off","none","minimal","low","medium","high","xhigh"} (case-insensitive),
+                   or None to reset to default (omit).
+        """
+        self._reasoning_effort = normalize_reasoning_effort(value)
+
+    def get_reasoning_effort(self) -> str:
+        """Get the reasoning effort string for display."""
+        return display_reasoning_effort(getattr(self, "_reasoning_effort", None))
+
     async def load_session(self, session_id: str) -> None:
         """Load a saved session into the agent's memory.
 
@@ -100,6 +117,9 @@ class BaseAgent(ABC):
         Returns:
             LLMResponse object
         """
+        effort = getattr(self, "_reasoning_effort", None)
+        if effort is not None and "reasoning_effort" not in kwargs:
+            kwargs = {**kwargs, "reasoning_effort": effort}
         async with AsyncSpinner(terminal_ui.console, spinner_message):
             return await self.llm.call_async(
                 messages=messages, tools=tools, max_tokens=4096, **kwargs
