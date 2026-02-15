@@ -1,8 +1,11 @@
 """Interactive multi-turn conversation mode for the agent."""
 
 import asyncio
+import contextlib
+import os
 import shlex
 import signal
+import time
 
 from rich.table import Table
 
@@ -363,6 +366,20 @@ class InteractiveSession:
         elif command == "/skills":
             await self._handle_skills_menu()
 
+        elif command == "/__bench_redraw":
+            # Internal-only command used by benchmark scripts. Keep it gated to
+            # avoid surfacing it in normal usage.
+            if os.environ.get("OURO_INTERNAL_BENCH") != "1":
+                colors = Theme.get_colors()
+                terminal_ui.console.print(
+                    f"[bold {colors.error}]Unknown command: {command}[/bold {colors.error}]"
+                )
+                terminal_ui.console.print(
+                    f"[{colors.text_muted}]Type /help to see available commands[/{colors.text_muted}]\n"
+                )
+                return True
+            await self._bench_redraw(command_parts[1:])
+
         else:
             colors = Theme.get_colors()
             terminal_ui.console.print(
@@ -374,6 +391,66 @@ class InteractiveSession:
             return True
 
         return True
+
+    async def _bench_redraw(self, tokens: list[str]) -> None:
+        """Synthetic high-frequency output generator for redraw/perf tests.
+
+        This is designed to stress the render loop without requiring network calls.
+
+        Usage:
+            /__bench_redraw chunks=800 chunk_size=220 delay_ms=0
+        """
+        kv, _rest = parse_kv_args(tokens)
+
+        def _get_int(key: str, default: int) -> int:
+            try:
+                return int(kv.get(key, str(default)))
+            except ValueError:
+                return default
+
+        def _get_float(key: str, default: float) -> float:
+            try:
+                return float(kv.get(key, str(default)))
+            except ValueError:
+                return default
+
+        chunks = max(1, min(50_000, _get_int("chunks", 800)))
+        chunk_size = max(40, min(2000, _get_int("chunk_size", 220)))
+        delay_ms = max(0.0, min(50.0, _get_float("delay_ms", 0.0)))
+
+        out = terminal_ui.console.file
+        start = time.monotonic()
+        out.write(
+            f"\nREDRAW_BENCH start chunks={chunks} chunk_size={chunk_size} delay_ms={delay_ms:g}\n"
+        )
+        with contextlib.suppress(Exception):
+            out.flush()
+        try:
+            i = -1
+            for i in range(chunks):
+                # Alternate colors to stress SGR parsing paths.
+                sgr = (
+                    "\x1b[38;2;0;217;255m" if i % 2 == 0 else "\x1b[38;2;167;139;250m"
+                )
+                payload = ("0123456789abcdef" * ((chunk_size // 16) + 1))[:chunk_size]
+                out.write(f"{sgr}{i:05d} {payload}\x1b[0m\n")
+                if delay_ms:
+                    await asyncio.sleep(delay_ms / 1000.0)
+                elif (i % 50) == 0:
+                    # Yield occasionally even when delay is 0, so the UI loop can
+                    # process input and redraw.
+                    await asyncio.sleep(0)
+        except asyncio.CancelledError:
+            out.write(f"REDRAW_BENCH_CANCELLED at={i}/{chunks}\n")
+            raise
+
+        dur = time.monotonic() - start
+        out.write(
+            f"REDRAW_BENCH_DONE chunks={chunks} chunk_size={chunk_size} "
+            f"delay_ms={delay_ms:g} wall_s={dur:.3f}\n"
+        )
+        with contextlib.suppress(Exception):
+            out.flush()
 
     async def _handle_skills_menu(self) -> None:
         action = await pick_skills_action()
