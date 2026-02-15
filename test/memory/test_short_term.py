@@ -371,3 +371,69 @@ class TestShortTermMemoryBehavior:
 
         stm.add_message(LLMMessage(role="user", content="5"))
         assert stm.count() == 1
+
+
+class TestShortTermMemoryRemoveLast:
+    """Test remove_last functionality."""
+
+    def test_remove_last_single_message(self):
+        """Test removing the last message."""
+        stm = ShortTermMemory(max_size=5)
+        msg1 = LLMMessage(role="user", content="First")
+        msg2 = LLMMessage(role="user", content="Second")
+
+        stm.add_message(msg1)
+        stm.add_message(msg2)
+
+        stm.remove_last(1)
+
+        assert stm.count() == 1
+        assert stm.get_messages() == [msg1]
+
+    def test_remove_last_multiple_messages(self):
+        """Test removing multiple messages from the end."""
+        stm = ShortTermMemory(max_size=5)
+        msg1 = LLMMessage(role="user", content="First")
+        msg2 = LLMMessage(role="assistant", content="Second")
+        msg3 = LLMMessage(role="user", content="Third")
+
+        stm.add_message(msg1)
+        stm.add_message(msg2)
+        stm.add_message(msg3)
+
+        stm.remove_last(2)
+
+        assert stm.count() == 1
+        assert stm.get_messages() == [msg1]
+
+    def test_remove_last_more_than_available(self):
+        """Test removing more messages than available."""
+        stm = ShortTermMemory(max_size=5)
+        msg1 = LLMMessage(role="user", content="First")
+        msg2 = LLMMessage(role="user", content="Second")
+
+        stm.add_message(msg1)
+        stm.add_message(msg2)
+
+        stm.remove_last(5)
+
+        assert stm.count() == 0
+
+    def test_remove_last_from_empty(self):
+        """Test removing from empty memory (should not crash)."""
+        stm = ShortTermMemory(max_size=5)
+
+        stm.remove_last(1)
+
+        assert stm.count() == 0
+
+    def test_remove_last_zero_count(self):
+        """Test removing zero messages."""
+        stm = ShortTermMemory(max_size=5)
+        msg = LLMMessage(role="user", content="Message")
+
+        stm.add_message(msg)
+        stm.remove_last(0)
+
+        assert stm.count() == 1
+        assert stm.get_messages() == [msg]

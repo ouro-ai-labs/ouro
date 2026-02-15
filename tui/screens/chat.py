@@ -330,8 +330,7 @@ class ChatScreen(Screen):
             panel = self.query_one(MessagePanel)
             total = stats.get("total_input_tokens", 0) + stats.get("total_output_tokens", 0)
 
-            panel.add_assistant_message(
-                content=f"""**Memory Statistics**
+            panel.add_assistant_message(content=f"""**Memory Statistics**
 
 | Metric | Value |
 |--------|------:|
@@ -341,72 +340,25 @@ class ChatScreen(Screen):
 | Context | {stats.get('current_tokens', 0):,} |
 | Compressions | {stats.get('compression_count', 0)} |
 | Cost | ${stats.get('total_cost', 0):.4f} |
-"""
-            )
+""")
         except Exception as e:
             self.query_one(MessagePanel).add_assistant_message(content=f"Error: {e}")
 
     def _handle_history_command(self) -> None:
         """Handle /history command."""
-        try:
-            from memory.store import MemoryStore
-
-            store = MemoryStore(db_path="data/memory.db")
-            sessions = store.list_sessions(limit=10)
-            panel = self.query_one(MessagePanel)
-
-            if not sessions:
-                panel.add_assistant_message(content="No saved sessions.")
-                return
-
-            lines = ["**Sessions**\n", "| ID | Created | Msgs |", "|:---|:--------|-----:|"]
-            for s in sessions:
-                lines.append(
-                    f"| `{s['id']}` | {s['created_at'][:16]} | {s['message_count']} |"
-                )
-            panel.add_assistant_message(content="\n".join(lines))
-        except Exception as e:
-            self.query_one(MessagePanel).add_assistant_message(content=f"Error: {e}")
+        panel = self.query_one(MessagePanel)
+        panel.add_assistant_message(
+            content="History browsing is not yet supported in TUI mode. "
+            "Use the classic interactive mode with `/history`."
+        )
 
     def _handle_dump_memory_command(self, args: List[str]) -> None:
         """Handle /dump-memory command."""
         panel = self.query_one(MessagePanel)
-        if not args:
-            panel.add_assistant_message(content="Usage: `/dump-memory <session_id>`")
-            return
-
-        try:
-            import json
-            from datetime import datetime
-            from pathlib import Path
-
-            from memory.store import MemoryStore
-
-            store = MemoryStore(db_path="data/memory.db")
-            data = store.load_session(args[0])
-            if not data:
-                panel.add_assistant_message(content=f"Session `{args[0]}` not found.")
-                return
-
-            output_dir = Path("dumps")
-            output_dir.mkdir(exist_ok=True)
-            filename = f"dump_{args[0][:8]}_{datetime.now():%Y%m%d_%H%M%S}.json"
-            path = output_dir / filename
-
-            with open(path, "w") as f:
-                json.dump(
-                    {
-                        "session_id": args[0],
-                        "stats": data["stats"],
-                        "messages": [m.to_dict() for m in data["messages"]],
-                    },
-                    f,
-                    indent=2,
-                    default=str,
-                )
-            panel.add_assistant_message(content=f"Saved to `{path}`")
-        except Exception as e:
-            panel.add_assistant_message(content=f"Error: {e}")
+        panel.add_assistant_message(
+            content="Memory dump is not yet supported in TUI mode. "
+            "Use the classic interactive mode with `/dump-memory`."
+        )
 
     def action_show_help(self) -> None:
         self.app.push_screen(HelpScreen())

@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import litellm
 
@@ -28,7 +28,7 @@ litellm_logger.setLevel(logging.WARNING)  # Only show warnings and errors
 litellm_logger.propagate = False  # Don't propagate to root logger
 
 
-class LiteLLMLLM:
+class LiteLLMAdapter:
     """LiteLLM adapter supporting 100+ LLM providers."""
 
     def __init__(self, model: str, **kwargs):
@@ -65,33 +65,24 @@ class LiteLLMLLM:
         logger.info(f"Initialized LiteLLM adapter for provider: {self.provider}, model: {model}")
 
     @with_retry()
-    def _make_api_call(self, **call_params):
-        """Internal method to make API call with retry logic."""
-        return litellm.completion(**call_params)
+    async def _make_api_call_async(self, **call_params):
+        """Internal async API call with retry logic."""
+        acompletion = getattr(litellm, "acompletion", None)
+        if acompletion is None:
+            raise RuntimeError("LiteLLM async completion is unavailable.")
+        return await acompletion(**call_params)
 
-    def call(
+    def _build_call_params(
         self,
         messages: List[LLMMessage],
-        tools: Optional[List[Dict[str, Any]]] = None,
-        max_tokens: int = 4096,
+        tools: Optional[List[Dict[str, Any]]],
+        max_tokens: int,
         **kwargs,
-    ) -> LLMResponse:
-        """Call LLM via LiteLLM with automatic retry.
-
-        Args:
-            messages: List of conversation messages
-            tools: Optional list of tool schemas (Anthropic format)
-            max_tokens: Maximum tokens to generate
-            **kwargs: Additional parameters
-
-        Returns:
-            LLMResponse with unified format
-        """
-        # Convert LLMMessage to LiteLLM format (OpenAI-compatible)
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        """Prepare LiteLLM call parameters and converted messages."""
         litellm_messages = self._convert_messages(messages)
 
-        # Prepare API call parameters
-        call_params = {
+        call_params: Dict[str, Any] = {
             "model": self.model,
             "messages": litellm_messages,
             "max_tokens": max_tokens,
@@ -113,13 +104,28 @@ class LiteLLMLLM:
         # Add any additional parameters
         call_params.update(kwargs)
 
-        # Make API call with retry logic
-        logger.debug(
-            f"Calling LiteLLM with model: {self.model}, messages: {len(litellm_messages)}, tools: {len(tools) if tools else 0}"
-        )
-        response = self._make_api_call(**call_params)
+        return litellm_messages, call_params
 
-        # Log token usage
+    async def call_async(
+        self,
+        messages: List[LLMMessage],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        max_tokens: int = 4096,
+        **kwargs,
+    ) -> LLMResponse:
+        """Async LLM call via LiteLLM with automatic retry."""
+        litellm_messages, call_params = self._build_call_params(
+            messages=messages,
+            tools=tools,
+            max_tokens=max_tokens,
+            **kwargs,
+        )
+
+        logger.debug(
+            f"Calling LiteLLM async with model: {self.model}, messages: {len(litellm_messages)}, tools: {len(tools) if tools else 0}"
+        )
+        response = await self._make_api_call_async(**call_params)
+
         if hasattr(response, "usage") and response.usage:
             usage = response.usage
             logger.debug(
@@ -128,7 +134,6 @@ class LiteLLMLLM:
                 f"Total={usage.get('total_tokens', 0)}"
             )
 
-        # Convert to unified format
         return self._convert_response(response)
 
     def _convert_messages(self, messages: List[LLMMessage]) -> List[Dict]:
@@ -214,17 +219,15 @@ class LiteLLMLLM:
         Returns:
             List of tool messages in OpenAI format, or empty list if not tool results
         """
-        tool_messages = []
-        for block in content:
-            if isinstance(block, dict) and block.get("type") == "tool_result":
-                tool_messages.append(
-                    {
-                        "role": "tool",
-                        "content": block.get("content", ""),
-                        "tool_call_id": block.get("tool_use_id", ""),
-                    }
-                )
-        return tool_messages
+        return [
+            {
+                "role": "tool",
+                "content": block.get("content", ""),
+                "tool_call_id": block.get("tool_use_id", ""),
+            }
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "tool_result"
+        ]
 
     def _clean_message(self, message) -> None:
         """Clean up unnecessary fields from message to reduce memory usage.
@@ -249,19 +252,17 @@ class LiteLLMLLM:
 
     def _convert_tools(self, tools: List[Dict[str, Any]]) -> List[Dict]:
         """Convert Anthropic tool format to OpenAI format."""
-        openai_tools = []
-        for tool in tools:
-            openai_tools.append(
-                {
-                    "type": "function",
-                    "function": {
-                        "name": tool["name"],
-                        "description": tool["description"],
-                        "parameters": tool["input_schema"],
-                    },
-                }
-            )
-        return openai_tools
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": tool["name"],
+                    "description": tool["description"],
+                    "parameters": tool["input_schema"],
+                },
+            }
+            for tool in tools
+        ]
 
     def _convert_response(self, response) -> LLMResponse:
         """Convert LiteLLM response to LLMResponse with normalized content.
@@ -426,17 +427,15 @@ class LiteLLMLLM:
         Returns:
             List of LLMMessages with role="tool"
         """
-        messages = []
-        for result in results:
-            messages.append(
-                LLMMessage(
-                    role="tool",
-                    content=result.content,
-                    tool_call_id=result.tool_call_id,
-                    name=result.name if hasattr(result, "name") else None,
-                )
+        return [
+            LLMMessage(
+                role="tool",
+                content=result.content,
+                tool_call_id=result.tool_call_id,
+                name=result.name if hasattr(result, "name") else None,
             )
-        return messages
+            for result in results
+        ]
 
     @property
     def supports_tools(self) -> bool:

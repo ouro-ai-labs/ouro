@@ -161,18 +161,16 @@ def convert_tool_results_to_messages(
     Returns:
         List of LLMMessages in OpenAI tool format
     """
-    messages = []
-    for result in results:
-        if result.get("type") == "tool_result":
-            messages.append(
-                LLMMessage(
-                    role="tool",
-                    content=result.get("content", ""),
-                    tool_call_id=result.get("tool_use_id", ""),
-                    name=result.get("name"),
-                )
-            )
-    return messages
+    return [
+        LLMMessage(
+            role="tool",
+            content=result.get("content", ""),
+            tool_call_id=result.get("tool_use_id", ""),
+            name=result.get("name"),
+        )
+        for result in results
+        if result.get("type") == "tool_result"
+    ]
 
 
 def format_tool_results_for_api(

@@ -1,4 +1,4 @@
-"""Example usage of WebFetchTool with ReAct Agent."""
+"""Example usage of WebFetchTool with LoopAgent."""
 
 import asyncio
 import os
@@ -6,9 +6,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agent.react_agent import ReActAgent
-from config import Config
-from llm import LiteLLMLLM
+from agent.agent import LoopAgent
+from llm import LiteLLMAdapter, ModelManager
 from tools.web_fetch import WebFetchTool
 
 
@@ -18,22 +17,21 @@ async def main():
     print("WebFetchTool Example")
     print("=" * 60)
 
-    try:
-        Config.validate()
-    except ValueError as exc:
-        print(f"Error: {exc}")
-        print("Please set your API key in the .env file")
+    mm = ModelManager()
+    profile = mm.get_current_model()
+    if not profile:
+        print("No models configured. Edit .ouro/models.yaml and set `default`.")
         return
 
-    llm = LiteLLMLLM(
-        model=Config.LITELLM_MODEL,
-        api_base=Config.LITELLM_API_BASE,
-        retry_config=Config.get_retry_config(),
-        drop_params=Config.LITELLM_DROP_PARAMS,
-        timeout=Config.LITELLM_TIMEOUT,
+    llm = LiteLLMAdapter(
+        model=profile.model_id,
+        api_key=profile.api_key,
+        api_base=profile.api_base,
+        drop_params=profile.drop_params,
+        timeout=profile.timeout,
     )
 
-    agent = ReActAgent(
+    agent = LoopAgent(
         llm=llm,
         tools=[WebFetchTool()],
         max_iterations=8,
@@ -41,7 +39,7 @@ async def main():
 
     print("\n--- Example 1: Fetch web page (raw tool output) ---")
     result1 = await agent.run(
-        "Use the web_fetch tool to fetch https://github.com/luohaha/agentic-loop in markdown format with a 20s timeout. "
+        "Use the web_fetch tool to fetch https://github.com/ouro-ai-labs/ouro in markdown format with a 20s timeout. "
         "Return the raw tool output JSON without extra commentary."
     )
     print(f"\nResult:\n{result1}")

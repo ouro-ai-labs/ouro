@@ -7,24 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from agent.react_agent import ReActAgent
-from config import Config
-from llm import LiteLLMLLM
+from agent.agent import LoopAgent
+from llm import LiteLLMAdapter, ModelManager
 from tools.file_ops import FileReadTool, FileWriteTool
 from tools.smart_edit import SmartEditTool
-
-
-def _has_api_key_for_model(model: str) -> bool:
-    provider = model.split("/")[0] if model else ""
-    if provider == "anthropic":
-        return bool(os.getenv("ANTHROPIC_API_KEY"))
-    if provider == "openai":
-        return bool(os.getenv("OPENAI_API_KEY"))
-    if provider in {"gemini", "google"}:
-        return bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
-    if provider == "ollama":
-        return bool(os.getenv("OLLAMA_HOST"))
-    return False
 
 
 @pytest.mark.integration
@@ -32,8 +18,20 @@ def test_smart_edit_in_agent():
     """Test that SmartEditTool works when used by an agent."""
     if os.getenv("RUN_INTEGRATION_TESTS") != "1":
         pytest.skip("Set RUN_INTEGRATION_TESTS=1 to run live LLM integration tests")
-    if not _has_api_key_for_model(Config.LITELLM_MODEL):
-        pytest.skip(f"Missing API key (or server) for model: {Config.LITELLM_MODEL}")
+
+    mm = ModelManager()
+    profile = mm.get_current_model()
+    if not profile:
+        pytest.skip("No models configured. Edit .ouro/models.yaml and set `default`.")
+
+    is_valid, error_msg = mm.validate_model(profile)
+    if not is_valid:
+        pytest.skip(error_msg)
+
+    if profile.provider == "ollama" and not profile.api_base:
+        pytest.skip(
+            "Ollama model requires api_base in .ouro/models.yaml (e.g. http://localhost:11434)"
+        )
 
     # Create a temporary test file
     with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".py") as f:
@@ -47,12 +45,12 @@ def test_smart_edit_in_agent():
 
     try:
         # Create minimal agent with just SmartEditTool
-        llm = LiteLLMLLM(
-            model=Config.LITELLM_MODEL,
-            api_base=Config.LITELLM_API_BASE,
-            drop_params=Config.LITELLM_DROP_PARAMS,
-            timeout=Config.LITELLM_TIMEOUT,
-            retry_config=Config.get_retry_config(),
+        llm = LiteLLMAdapter(
+            model=profile.model_id,
+            api_key=profile.api_key,
+            api_base=profile.api_base,
+            drop_params=profile.drop_params,
+            timeout=profile.timeout,
         )
 
         tools = [
@@ -61,7 +59,7 @@ def test_smart_edit_in_agent():
             SmartEditTool(),
         ]
 
-        agent = ReActAgent(llm=llm, tools=tools, max_iterations=5)
+        agent = LoopAgent(llm=llm, tools=tools, max_iterations=5)
 
         # Task: use smart_edit to add a comment
         task = f"""Use the smart_edit tool to add a comment '# computed sum' after 'result = x + y' in {temp_path}.

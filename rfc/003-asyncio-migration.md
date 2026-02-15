@@ -2,11 +2,11 @@
 
 - **Status**: Draft
 - **Created**: 2026-01-24
-- **Author**: AgenticLoop Team
+- **Author**: ouro Team
 
 ## Abstract
 
-This RFC proposes an incremental migration of AgenticLoop to an **asyncio-first** runtime. The goal is to make the agent loop, tool execution, LLM calls, and persistence **non-blocking**, enabling safe concurrency, cancellation, and predictable timeouts — while **preserving existing user-visible behavior**.
+This RFC proposes an incremental migration of ouro to an **asyncio-first** runtime. The goal is to make the agent loop, tool execution, LLM calls, and persistence **non-blocking**, enabling safe concurrency, cancellation, and predictable timeouts — while **preserving existing user-visible behavior**.
 
 ## Reader Guide
 
@@ -54,7 +54,7 @@ Current execution paths contain multiple blocking operations (HTTP, subprocess, 
 This RFC targets the runtime path that executes agent loops and tools:
 
 - **Entrypoints**: `main.py`, `cli.py`, `interactive.py`
-- **Agent runtime**: `agent/base.py`, `agent/react_agent.py`, `agent/plan_execute_agent.py`, `agent/tool_executor.py`
+- **Agent runtime**: `agent/base.py`, `agent/agent.py`, `agent/plan_execute_agent.py`, `agent/tool_executor.py`
 - **LLM layer**: `llm/litellm_adapter.py`, `llm/retry.py`
 - **Memory/persistence**: `memory/manager.py`, `memory/store.py`
 - **Tools**: `tools/*` (prioritized conversions, not all at once)
@@ -78,21 +78,21 @@ This RFC intentionally aligns with patterns proven in production agent runtimes:
 **Shared design theme**
 - Keep orchestration and tool side effects behind clear boundaries, and prefer deterministic, structured progress reporting over free-form prints.
 
-Implication for AgenticLoop:
+Implication for ouro:
 - Keep orchestration async-first and structured.
 - Prefer producing deterministic, structured progress (even if initially only used internally by the CLI/TUI).
 - Prefer explicit lifecycle management for long-lived resources (LLM sessions, DB connections, subprocess handles).
 
 ## Phases at a Glance
 
-| Phase | Primary change | Key acceptance |
-|------:|----------------|----------------|
-| 0 | RFC + repo rules | Docs point to RFC |
-| 1 | Single loop ownership | No `asyncio.run()` in library code |
-| 2 | Async agent loop + async tool executor boundary | ReAct works end-to-end; tool order unchanged |
-| 3 | Async LLM + async retry backoff | Retries don’t block; cancellation stops backoff |
-| 4 | Convert high-impact blocking tools | HTTP/subprocess/DB no longer depend on `to_thread` |
-| 5 | Optional constrained tool parallelism | Faster when safe; still deterministic outputs |
+| Phase | Status | Primary change | Key acceptance |
+|------:|--------|----------------|----------------|
+| 0 | Done | RFC + repo rules | Docs point to RFC |
+| 1 | Done | Single loop ownership | No `asyncio.run()` in library code |
+| 2 | Done | Async agent loop + async tool executor boundary | ReAct works end-to-end; tool order unchanged |
+| 3 | Done | Async LLM + async retry backoff | Retries don’t block; cancellation stops backoff |
+| 4 | Done | Convert high-impact blocking tools | HTTP/subprocess/DB no longer depend on `to_thread` |
+| 5 | Deferred (Optional) | Constrained tool parallelism | Faster when safe; still deterministic outputs |
 
 ## Design Overview
 
@@ -117,21 +117,19 @@ This is a large mechanical change but keeps code paths singular (no parallel syn
 Tool execution becomes awaitable at the executor layer.
 
 Migration invariant (Phase 2–4 compatibility):
-- Tools may remain synchronous during early phases, but any blocking work must run behind an **async boundary** in the runtime (e.g., the tool executor uses `await asyncio.to_thread(...)`).
-- To avoid API bloat, tools should converge on a single name (`execute`) that is **awaitable**. During migration, the executor may accept either:
-  - `execute(...) -> str` (sync), or
-  - `async def execute(...) -> str` (async), detected by “is this awaitable?” rather than by a second method name.
+- Tool interfaces converge on a single **async** entrypoint: `async def execute(...) -> str`.
+- The tool executor assumes async execution (no sync fallbacks / `to_thread` in runtime paths).
 - New/modified tools should prefer native async libraries for I/O-heavy work (HTTP, subprocess, DB) so timeouts and cancellation can be enforced reliably.
 
 Notes:
 - `asyncio.to_thread(...)` isolates blocking work but does **not** forcibly stop the underlying work on cancellation; it only cancels the await. For side-effecting operations, native async implementations (or explicit process cancellation) are preferred.
 
-### 3.1) LLM calls: awaitable interface without duplication
+### 3.1) LLM calls: async-only interface
 
-The LLM adapter should follow the same principle as tools: prefer a single method name that becomes awaitable.
+The LLM adapter exposes a single async entrypoint.
 
-- The agent runtime should treat `llm.call(...)` as awaitable. During migration it may accept either a sync or async implementation, based on “is the returned value awaitable?”.
-- If the underlying provider library is synchronous, the async boundary belongs in the runtime/LLM adapter (not sprinkled across agent code).
+- The agent runtime calls `await llm.call_async(...)` (no sync fallbacks).
+- If the underlying provider library is synchronous, the async boundary belongs in the adapter (not in agent code).
 
 ### 4) Concurrency semantics (safe by default)
 
@@ -188,6 +186,9 @@ Recommended primitives (Python 3.12+):
 - No `asyncio.run()` outside entrypoints.
 - CLI still works; plan/execute exploration and step batching still run.
 
+**Status**
+- Completed.
+
 ### Phase 2 — Async core loop + tool executor (PR 3–4)
 
 - Convert `BaseAgent._react_loop` to async.
@@ -198,6 +199,9 @@ Recommended primitives (Python 3.12+):
 - ReAct agent completes tasks end-to-end under `asyncio.run()` from the entrypoint.
 - Tool calls behave the same (order, outputs).
 
+**Status**
+- Completed.
+
 ### Phase 3 — Async LLM + retry backoff (PR 5)
 
 - Add async LLM call path (depending on LiteLLM support) and update the agent to await it.
@@ -205,6 +209,9 @@ Recommended primitives (Python 3.12+):
 
 **Acceptance**
 - Retries no longer block the loop; cancellation interrupts backoff.
+
+**Status**
+- Completed.
 
 ### Phase 4 — Convert high-impact blocking tools (PR 6+)
 
@@ -216,7 +223,17 @@ Prioritize by impact:
 **Acceptance**
 - These tools no longer require `to_thread` and respect timeouts/cancellation.
 
-### Phase 5 — Optional constrained parallel tool calls (PR N)
+**Status**
+- Completed.
+
+### Post-Phase-4 Follow-ups (Recommended)
+
+These are reliability/consistency improvements now that async migration is complete:
+
+- **Unify tool timeouts** at the executor layer (with per-tool overrides) to simplify tool code and ensure consistent cancellation behavior.
+- **Serialize memory persistence writes** (e.g., `asyncio.Lock` or a single writer task) to avoid concurrent write hazards when steps run in parallel. (Implemented: `MemoryStore` write lock)
+
+### Phase 5 — Optional constrained parallel tool calls (Deferred)
 
 - Introduce tool concurrency metadata (read-only / writes-paths / external side effects).
 - Allow parallel execution when safe, with a global concurrency cap.

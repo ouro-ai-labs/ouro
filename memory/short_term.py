@@ -58,10 +58,7 @@ class ShortTermMemory:
         Returns:
             List of removed messages
         """
-        removed = []
-        for _ in range(min(count, len(self.messages))):
-            removed.append(self.messages.popleft())
-        return removed
+        return [self.messages.popleft() for _ in range(min(count, len(self.messages)))]
 
     def is_full(self) -> bool:
         """Check if short-term memory is at capacity.
@@ -78,3 +75,14 @@ class ShortTermMemory:
             Number of messages in short-term memory
         """
         return len(self.messages)
+
+    def remove_last(self, count: int = 1) -> None:
+        """Remove the last N messages (newest) from memory.
+
+        This is useful for rolling back incomplete exchanges (e.g., after interruption).
+
+        Args:
+            count: Number of messages to remove from the end (default: 1)
+        """
+        for _ in range(min(count, len(self.messages))):
+            self.messages.pop()

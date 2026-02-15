@@ -1,6 +1,6 @@
 # Tests
 
-This directory contains test files for the AgenticLoop project.
+This directory contains test files for the ouro project.
 
 ## Test Files
 
@@ -43,5 +43,5 @@ python3 -m pytest test/
 ## Notes
 
 - Live LLM integration tests are skipped by default (set `RUN_INTEGRATION_TESTS=1` to enable).
-- Set up your `.env` file before running tests that require API access
+- Set up your `.ouro/models.yaml` file before running tests that require API access
 - Memory tests use a mock LLM and don't require API keys

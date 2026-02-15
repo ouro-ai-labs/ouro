@@ -2,7 +2,7 @@
 
 - **Status**: Implemented
 - **Created**: 2025-01-24
-- **Author**: AgenticLoop Team
+- **Author**: ouro Team
 
 ## Abstract
 

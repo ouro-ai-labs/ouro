@@ -3,16 +3,34 @@
 This tool provides advanced editing features beyond the basic EditTool:
 - Fuzzy matching: Handles whitespace and indentation differences
 - Diff preview: Shows before/after comparison
-- Auto backup: Creates .bak files before editing
+- Auto backup: Creates .bak files before editing (disabled by default in git repos)
 - Rollback: Can revert changes if editing fails
 """
 
-import shutil
+import subprocess
 from difflib import SequenceMatcher, unified_diff
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+import aiofiles
+import aiofiles.os
+
 from tools.base import BaseTool
+
+
+def _is_git_repo(path: Path) -> bool:
+    """Check if the given path is inside a git repository."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=path.parent if path.is_file() else path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return result.returncode == 0 and result.stdout.strip() == "true"
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return False
 
 
 class SmartEditTool(BaseTool):
@@ -29,12 +47,10 @@ class SmartEditTool(BaseTool):
     def description(self) -> str:
         return """Intelligent code editing tool with fuzzy matching and preview.
 
-This is the RECOMMENDED tool for editing code (prefer over edit_file).
-
 Features:
 - Fuzzy matching: Automatically handles whitespace/indentation differences
 - Diff preview: Shows exactly what will change
-- Auto backup: Creates .bak files before editing (can be disabled)
+- Auto backup: Creates .bak files before editing (disabled in git repos)
 - Rollback: Automatically reverts if editing fails
 
 Modes:
@@ -72,7 +88,7 @@ Examples:
 IMPORTANT:
 - Always use fuzzy_match=True (default) for code to handle formatting
 - Set dry_run=True first to preview changes
-- Backup is enabled by default for safety"""
+- Backup is disabled by default in git repos (use create_backup=True to force)"""
 
     @property
     def parameters(self) -> Dict[str, Any]:
@@ -116,7 +132,7 @@ IMPORTANT:
             },
             "create_backup": {
                 "type": "boolean",
-                "description": "Create .bak backup file (default: true)",
+                "description": "Create .bak backup file (default: false in git repos, true otherwise)",
             },
             "show_diff": {
                 "type": "boolean",
@@ -124,7 +140,7 @@ IMPORTANT:
             },
         }
 
-    def execute(
+    async def execute(
         self,
         file_path: str,
         mode: str,
@@ -137,7 +153,7 @@ IMPORTANT:
         end_line: int = 0,
         fuzzy_match: bool = True,
         dry_run: bool = False,
-        create_backup: bool = True,
+        create_backup: Optional[bool] = None,
         show_diff: bool = True,
         **kwargs,
     ) -> str:
@@ -146,15 +162,20 @@ IMPORTANT:
             path = Path(file_path)
 
             # Validation
-            if not path.exists():
+            if not await aiofiles.os.path.exists(str(path)):
                 return f"Error: File does not exist: {file_path}"
 
+            # Determine create_backup default: False in git repos, True otherwise
+            if create_backup is None:
+                create_backup = not _is_git_repo(path)
+
             # Read original content
-            original_content = path.read_text(encoding="utf-8")
+            async with aiofiles.open(path, encoding="utf-8") as f:
+                original_content = await f.read()
 
             # Execute the appropriate edit mode
             if mode == "diff_replace":
-                result = self._diff_replace(
+                result = await self._diff_replace(
                     path,
                     original_content,
                     old_code,
@@ -165,7 +186,7 @@ IMPORTANT:
                     show_diff,
                 )
             elif mode == "smart_insert":
-                result = self._smart_insert(
+                result = await self._smart_insert(
                     path,
                     original_content,
                     anchor,
@@ -176,7 +197,7 @@ IMPORTANT:
                     show_diff,
                 )
             elif mode == "block_edit":
-                result = self._block_edit(
+                result = await self._block_edit(
                     path,
                     original_content,
                     start_line,
@@ -194,7 +215,7 @@ IMPORTANT:
         except Exception as e:
             return f"Error executing smart_edit: {str(e)}"
 
-    def _diff_replace(
+    async def _diff_replace(
         self,
         path: Path,
         original_content: str,
@@ -249,25 +270,27 @@ IMPORTANT:
             return "\n".join(output_parts)
 
         # Create backup if requested
+        backup_path = None
         if create_backup:
-            backup_path = self._create_backup(path)
+            backup_path = await self._create_backup(path)
             output_parts.append(f"Created backup: {backup_path}")
 
         # Apply changes
         try:
-            path.write_text(new_content, encoding="utf-8")
-            output_parts.append(f"✓ Successfully edited {path}")
+            async with aiofiles.open(path, "w", encoding="utf-8") as f:
+                await f.write(new_content)
+            output_parts.append(f"Successfully edited {path}")
             return "\n".join(output_parts)
         except Exception as e:
             # Rollback if writing failed
-            if create_backup and backup_path.exists():
-                shutil.copy2(backup_path, path)
-                output_parts.append(f"✗ Edit failed, restored from backup: {e}")
+            if create_backup and backup_path and await aiofiles.os.path.exists(str(backup_path)):
+                await self._copy_file(backup_path, path)
+                output_parts.append(f"Edit failed, restored from backup: {e}")
             else:
-                output_parts.append(f"✗ Edit failed: {e}")
+                output_parts.append(f"Edit failed: {e}")
             return "\n".join(output_parts)
 
-    def _smart_insert(
+    async def _smart_insert(
         self,
         path: Path,
         original_content: str,
@@ -319,15 +342,17 @@ IMPORTANT:
             return "\n".join(output_parts)
 
         # Create backup and apply
+        backup_path = None
         if create_backup:
-            backup_path = self._create_backup(path)
+            backup_path = await self._create_backup(path)
             output_parts.append(f"Created backup: {backup_path}")
 
-        path.write_text(new_content, encoding="utf-8")
-        output_parts.append(f"✓ Successfully inserted code {position} anchor in {path}")
+        async with aiofiles.open(path, "w", encoding="utf-8") as f:
+            await f.write(new_content)
+        output_parts.append(f"Successfully inserted code {position} anchor in {path}")
         return "\n".join(output_parts)
 
-    def _block_edit(
+    async def _block_edit(
         self,
         path: Path,
         original_content: str,
@@ -368,12 +393,14 @@ IMPORTANT:
             return "\n".join(output_parts)
 
         # Create backup and apply
+        backup_path = None
         if create_backup:
-            backup_path = self._create_backup(path)
+            backup_path = await self._create_backup(path)
             output_parts.append(f"Created backup: {backup_path}")
 
-        path.write_text(new_content, encoding="utf-8")
-        output_parts.append(f"✓ Successfully edited lines {start_line}-{end_line} in {path}")
+        async with aiofiles.open(path, "w", encoding="utf-8") as f:
+            await f.write(new_content)
+        output_parts.append(f"Successfully edited lines {start_line}-{end_line} in {path}")
         return "\n".join(output_parts)
 
     def _fuzzy_find(self, target: str, text: str) -> Optional[Tuple[int, int, float]]:
@@ -446,8 +473,17 @@ IMPORTANT:
 
         return "".join(diff_lines)
 
-    def _create_backup(self, path: Path) -> Path:
+    async def _create_backup(self, path: Path) -> Path:
         """Create a backup file with .bak extension."""
         backup_path = path.with_suffix(path.suffix + ".bak")
-        shutil.copy2(path, backup_path)
+        await self._copy_file(path, backup_path)
         return backup_path
+
+    async def _copy_file(self, source: Path, destination: Path) -> None:
+        """Copy a file using async IO."""
+        async with aiofiles.open(source, "rb") as src, aiofiles.open(destination, "wb") as dst:
+            while True:
+                chunk = await src.read(1024 * 1024)
+                if not chunk:
+                    break
+                await dst.write(chunk)

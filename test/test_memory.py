@@ -4,6 +4,7 @@ This example shows how memory automatically compresses conversations
 to reduce token usage and costs.
 """
 
+import asyncio
 import os
 import sys
 
@@ -22,8 +23,8 @@ class MockLLM:
         self.provider_name = "mock"
         self.model = "mock-model"
 
-    def call(self, messages, tools=None, max_tokens=4096, **kwargs):
-        """Mock LLM call that returns a summary."""
+    async def call_async(self, messages, tools=None, max_tokens=4096, **kwargs):
+        """Mock async LLM call that returns a summary."""
 
         # Return a mock summary
         class MockResponse:
@@ -36,7 +37,7 @@ class MockLLM:
         return response.content
 
 
-def main():
+async def main():
     """Demonstrate memory management."""
     print("=" * 60)
     print("Memory Management System Demo")
@@ -57,18 +58,18 @@ def main():
 
     # Add system message
     print("\n1. Adding system message...")
-    memory.add_message(LLMMessage(role="system", content="You are a helpful assistant."))
+    await memory.add_message(LLMMessage(role="system", content="You are a helpful assistant."))
 
     # Simulate a conversation
     print("\n2. Simulating conversation with 15 messages...")
     for i in range(15):
         # User message
         user_msg = f"This is user message {i+1}. " + "Some content. " * 20
-        memory.add_message(LLMMessage(role="user", content=user_msg))
+        await memory.add_message(LLMMessage(role="user", content=user_msg))
 
         # Assistant message
         assistant_msg = f"This is assistant response {i+1}. " + "More content. " * 20
-        memory.add_message(LLMMessage(role="assistant", content=assistant_msg))
+        await memory.add_message(LLMMessage(role="assistant", content=assistant_msg))
 
         # Show compression events
         if memory.was_compressed_last_iteration:
@@ -106,4 +107,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

@@ -1,184 +1,104 @@
-# Packaging and Distribution Guide
+# Packaging and Distribution
 
-This guide explains how to package and distribute AgenticLoop.
+## Local Development
 
-## 📦 Quick Start - Local Installation
-
-### Install for Development
-
-Prerequisites: Python 3.12+ and `uv` (https://github.com/astral-sh/uv).
+Prerequisites: Python 3.12+ and [uv](https://github.com/astral-sh/uv).
 
 ```bash
-# Bootstrap dev environment (creates .venv, installs deps)
 ./scripts/bootstrap.sh
+source .venv/bin/activate
+ouro --help
 ```
 
-Note: development workflow requires `uv` (https://github.com/astral-sh/uv).
-
-Now you can use it (after activating `.venv` or via `./.venv/bin/aloop`):
-```bash
-aloop --help
-aloop
-```
-
-## 🚀 Publishing to PyPI
-
-### 1. Build the Package
+## Building
 
 ```bash
 ./scripts/dev.sh build
 ```
 
-This creates distribution files in `dist/`:
-- `agentic_loop-0.1.0-py3-none-any.whl` (wheel)
-- `agentic_loop-0.1.0.tar.gz` (source distribution)
+Creates `dist/ouro_ai-*.whl` and `dist/ouro_ai-*.tar.gz`.
 
-### 2. Test Locally
-
+Test locally:
 ```bash
-# Install from wheel
-pip install dist/agentic_loop-0.1.0-py3-none-any.whl
-
-# Test it
-aloop
+pip install dist/ouro_ai-*.whl
+ouro --task "Calculate 1+1"
 ```
 
-### 3. Publish to Test PyPI (Recommended First)
+## Publishing to PyPI
+
+### Automated (recommended)
+
+Pushing a `v*` tag triggers the GitHub Actions release workflow, which runs the
+full test suite, builds the package, publishes to PyPI via Trusted Publisher, and
+creates a GitHub Release.
 
 ```bash
-# Create account at https://test.pypi.org/
-# Get API token from account settings
+git tag v0.2.0
+git push --tags
+```
 
-# Upload to test PyPI
+### Manual — Test PyPI (recommended first)
+
+```bash
 ./scripts/dev.sh publish --test
-
-# Install from test PyPI
-pip install --index-url https://test.pypi.org/simple/ AgenticLoop
+pip install --index-url https://test.pypi.org/simple/ ouro
 ```
 
-### 4. Publish to Production PyPI
+### Manual — Production PyPI
 
 ```bash
-# Create account at https://pypi.org/
-# Get API token
-
-# Upload
 ./scripts/dev.sh publish
-
-# Now anyone can install
-pip install AgenticLoop
 ```
 
-## 🐳 Docker Distribution
+`publish` is interactive by default and refuses to run without a TTY unless you pass `--yes`.
 
-### Build Docker Image
+## Docker
+
+### Build
 
 ```bash
-docker build -t AgenticLoop:latest .
+docker build -t ouro:latest .
 ```
 
-### Run with Docker
+### Run
+
+Mount `.ouro/` to provide model configuration:
 
 ```bash
 # Interactive mode
 docker run -it --rm \
-  -e ANTHROPIC_API_KEY=your_key \
-  -v $(pwd)/data:/app/data \
-  AgenticLoop --mode react
+  -v $(pwd)/.ouro:/app/.ouro \
+  ouro
 
 # Single task
 docker run --rm \
-  -e ANTHROPIC_API_KEY=your_key \
-  AgenticLoop --mode react --task "Analyze this code"
+  -v $(pwd)/.ouro:/app/.ouro \
+  ouro --task "Calculate 1+1"
 ```
 
-### Publish Docker Image
+### Publish
 
 ```bash
-# Tag for Docker Hub
-docker tag AgenticLoop:latest yourusername/AgenticLoop:0.1.0
-docker tag AgenticLoop:latest yourusername/AgenticLoop:latest
-
-# Push
-docker push yourusername/AgenticLoop:0.1.0
-docker push yourusername/AgenticLoop:latest
+docker tag ouro:latest yourusername/ouro:0.1.0
+docker tag ouro:latest yourusername/ouro:latest
+docker push yourusername/ouro:0.1.0
+docker push yourusername/ouro:latest
 ```
 
-## 📱 Standalone Executable (Optional)
+## Release Checklist
 
-For users without Python, create a standalone executable:
+1. Update version in `pyproject.toml`
+2. Update `CHANGELOG.md` (move items from `[Unreleased]` to the new version)
+3. Run checks: `./scripts/dev.sh check`
+4. Open a PR, get it merged to `main`
+5. Tag the release: `git tag v0.x.0 && git push --tags`
+6. GitHub Actions automatically: tests -> build -> publish to PyPI -> create GitHub Release
+7. Verify the release on [pypi.org](https://pypi.org/project/ouro-ai/) and GitHub Releases
 
-### Using PyInstaller
+## Distribution Summary
 
-```bash
-# Install PyInstaller
-pip install pyinstaller
-
-# Create executable
-pyinstaller --onefile \
-  --name AgenticLoop \
-  --add-data ".env.example:." \
-  --hidden-import anthropic \
-  --hidden-import openai \
-  --hidden-import google.genai \
-  main.py
-
-# Executable will be in dist/AgenticLoop
-```
-
-**Note**: The executable will be ~50-100MB and platform-specific.
-
-## 📋 Release Checklist
-
-Before publishing a new version:
-
-- [ ] Update version in `pyproject.toml`
-- [ ] Update CHANGELOG.md
-- [ ] Run tests: `pytest`
-- [ ] Build package: `./scripts/dev.sh build`
-- [ ] Test locally: `pip install dist/*.whl`
-- [ ] Create git tag: `git tag v0.1.0 && git push --tags`
-- [ ] Publish to PyPI: `./scripts/dev.sh publish`
-- [ ] Create GitHub release with changelog
-
-## 🔧 Troubleshooting
-
-### Import Errors After Installation
-
-If you get import errors, make sure all packages are included in `pyproject.toml`:
-```toml
-[tool.setuptools]
-packages = ["agent", "llm", "memory", "tools", "utils"]
-```
-
-### Missing Files
-
-Add them to `MANIFEST.in`:
-```
-include important_file.txt
-recursive-include data *.json
-```
-
-### Version Conflicts
-
-Use constraints file:
-```bash
-pip install AgenticLoop -c constraints.txt
-```
-
-## 📚 Distribution Methods Summary
-
-| Method | Command | Use Case |
-|--------|---------|----------|
-| **Local Dev** | `./scripts/bootstrap.sh` | Development, testing |
-| **PyPI** | `pip install AgenticLoop` | Public distribution |
-| **Docker** | `docker run AgenticLoop --mode react --task "..."` | Containerized deployment |
-| **Executable** | `./AgenticLoop` | Non-Python users |
-| **GitHub** | `pip install git+https://github.com/user/repo` | Direct from source |
-
-## 🎯 Recommended Workflow
-
-1. **Development**: Use `./scripts/bootstrap.sh`
-2. **Testing**: Build and test with `./scripts/dev.sh build`
-3. **Distribution**: Publish to PyPI
-4. **Users**: Install with `pip install AgenticLoop`
+| Method | Command |
+|--------|---------|
+| Local dev | `./scripts/bootstrap.sh` |
+| Docker | `docker run ouro --task "..."` |
+| From source | `pip install git+https://github.com/ouro-ai-labs/ouro.git` |

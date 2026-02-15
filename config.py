@@ -3,9 +3,66 @@
 import os
 import random
 
-from dotenv import load_dotenv
+# Define path constants directly to avoid circular imports with utils
+# (utils.terminal_ui imports Config, and utils.runtime is in the utils package)
+_RUNTIME_DIR = os.path.join(os.path.expanduser("~"), ".ouro")
+_CONFIG_FILE = os.path.join(_RUNTIME_DIR, "config")
 
-load_dotenv()
+# Default configuration template
+_DEFAULT_CONFIG = """\
+# ouro Configuration
+#
+# NOTE: Model configuration lives in `~/.ouro/models.yaml`.
+# This file controls non-model runtime settings only.
+
+TOOL_TIMEOUT=600
+MAX_ITERATIONS=1000
+
+# Ralph Loop (outer verification loop — re-checks task completion)
+# RALPH_LOOP_MAX_ITERATIONS=3
+"""
+
+
+def _load_config(path: str) -> dict[str, str]:
+    """Parse a KEY=VALUE config file, skipping comments and blank lines."""
+    cfg: dict[str, str] = {}
+    if not os.path.isfile(path):
+        return cfg
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            # Strip inline comments (# ...) from the value
+            if "#" in value:
+                value = value[: value.index("#")]
+            cfg[key.strip()] = value.strip()
+    return cfg
+
+
+def _ensure_config():
+    """Ensure ~/.ouro/config exists, create with defaults if not."""
+    if not os.path.exists(_CONFIG_FILE):
+        os.makedirs(_RUNTIME_DIR, exist_ok=True)
+        with open(_CONFIG_FILE, "w", encoding="utf-8") as f:
+            f.write(_DEFAULT_CONFIG)
+
+
+# Ensure config exists and load it
+_ensure_config()
+_cfg = _load_config(_CONFIG_FILE)
+
+
+def get_raw_config() -> dict[str, str]:
+    """Get the raw config dictionary.
+
+    Returns:
+        Dictionary of config key-value pairs
+    """
+    return _cfg.copy()
 
 
 class Config:
@@ -14,43 +71,52 @@ class Config:
     All configuration is centralized here. Access config values directly via Config.XXX.
     """
 
-    # LiteLLM Model Configuration
-    # Format: provider/model_name (e.g. "anthropic/claude-3-5-sonnet-20241022")
-    LITELLM_MODEL = os.getenv("LITELLM_MODEL", "anthropic/claude-3-5-sonnet-20241022")
-
-    # Common provider API keys (optional depending on provider)
-    ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-
-    # Optional LiteLLM Configuration
-    LITELLM_API_BASE = os.getenv("LITELLM_API_BASE")
-    LITELLM_DROP_PARAMS = os.getenv("LITELLM_DROP_PARAMS", "true").lower() == "true"
-    LITELLM_TIMEOUT = int(os.getenv("LITELLM_TIMEOUT", "600"))
+    # Model configuration is handled by `~/.ouro/models.yaml` via ModelManager.
+    # `~/.ouro/config` controls non-model runtime settings only.
+    TOOL_TIMEOUT = float(_cfg.get("TOOL_TIMEOUT", "600"))
 
     # Agent Configuration
-    MAX_ITERATIONS = int(os.getenv("MAX_ITERATIONS", "1000"))
+    MAX_ITERATIONS = int(_cfg.get("MAX_ITERATIONS", "1000"))
+
+    # Ralph Loop (outer verification loop)
+    RALPH_LOOP_MAX_ITERATIONS = int(_cfg.get("RALPH_LOOP_MAX_ITERATIONS", "3"))
 
     # Retry Configuration
-    RETRY_MAX_ATTEMPTS = int(os.getenv("RETRY_MAX_ATTEMPTS", "3"))
-    RETRY_INITIAL_DELAY = float(os.getenv("RETRY_INITIAL_DELAY", "1.0"))
-    RETRY_MAX_DELAY = float(os.getenv("RETRY_MAX_DELAY", "60.0"))
+    RETRY_MAX_ATTEMPTS = int(_cfg.get("RETRY_MAX_ATTEMPTS", "3"))
+    RETRY_INITIAL_DELAY = float(_cfg.get("RETRY_INITIAL_DELAY", "1.0"))
+    RETRY_MAX_DELAY = float(_cfg.get("RETRY_MAX_DELAY", "60.0"))
     RETRY_EXPONENTIAL_BASE = 2.0
     RETRY_JITTER = True
 
     # Memory Management Configuration
-    MEMORY_ENABLED = os.getenv("MEMORY_ENABLED", "true").lower() == "true"
-    MEMORY_COMPRESSION_THRESHOLD = int(os.getenv("MEMORY_COMPRESSION_THRESHOLD", "60000"))
-    MEMORY_SHORT_TERM_SIZE = int(os.getenv("MEMORY_SHORT_TERM_SIZE", "100"))
-    MEMORY_SHORT_TERM_MIN_SIZE = int(os.getenv("MEMORY_SHORT_TERM_MIN_SIZE", "6"))
-    MEMORY_COMPRESSION_RATIO = float(os.getenv("MEMORY_COMPRESSION_RATIO", "0.3"))
+    MEMORY_ENABLED = _cfg.get("MEMORY_ENABLED", "true").lower() == "true"
+    MEMORY_COMPRESSION_THRESHOLD = int(_cfg.get("MEMORY_COMPRESSION_THRESHOLD", "60000"))
+    MEMORY_SHORT_TERM_SIZE = int(_cfg.get("MEMORY_SHORT_TERM_SIZE", "100"))
+    MEMORY_SHORT_TERM_MIN_SIZE = int(_cfg.get("MEMORY_SHORT_TERM_MIN_SIZE", "6"))
+    MEMORY_COMPRESSION_RATIO = float(_cfg.get("MEMORY_COMPRESSION_RATIO", "0.3"))
     MEMORY_PRESERVE_SYSTEM_PROMPTS = True
 
+    # Long-term Memory
+    LONG_TERM_MEMORY_ENABLED = _cfg.get("LONG_TERM_MEMORY_ENABLED", "false").lower() == "true"
+    LONG_TERM_MEMORY_CONSOLIDATION_THRESHOLD = int(
+        _cfg.get("LONG_TERM_MEMORY_CONSOLIDATION_THRESHOLD", "5000")
+    )
+
     # Logging Configuration
-    LOG_DIR = os.getenv("LOG_DIR", "logs")
-    LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG").upper()
-    LOG_TO_FILE = os.getenv("LOG_TO_FILE", "true").lower() == "true"
-    LOG_TO_CONSOLE = os.getenv("LOG_TO_CONSOLE", "false").lower() == "true"
+    # Note: Logging is now controlled via --verbose flag
+    # LOG_DIR is now ~/.ouro/logs/ (see utils.runtime)
+    LOG_LEVEL = _cfg.get("LOG_LEVEL", "DEBUG").upper()
+
+    # TUI Configuration
+    TUI_THEME = _cfg.get("TUI_THEME", "dark")  # "dark" or "light"
+    TUI_SHOW_THINKING = _cfg.get("TUI_SHOW_THINKING", "true").lower() == "true"
+    TUI_THINKING_MAX_PREVIEW = int(_cfg.get("TUI_THINKING_MAX_PREVIEW", "300"))
+    TUI_STATUS_BAR = _cfg.get("TUI_STATUS_BAR", "true").lower() == "true"
+    TUI_COMPACT_MODE = _cfg.get("TUI_COMPACT_MODE", "false").lower() == "true"
+
+    # Email Notification Configuration (Resend)
+    RESEND_API_KEY = _cfg.get("RESEND_API_KEY") or ""
+    NOTIFY_EMAIL_FROM = _cfg.get("NOTIFY_EMAIL_FROM") or ""
 
     @classmethod
     def get_retry_delay(cls, attempt: int) -> float:
@@ -81,17 +147,6 @@ class Config:
         Raises:
             ValueError: If required configuration is missing
         """
-        if not cls.LITELLM_MODEL:
-            raise ValueError(
-                "LITELLM_MODEL not set. Please set it in your .env file.\n"
-                "Example: LITELLM_MODEL=anthropic/claude-3-5-sonnet-20241022"
-            )
-
-        # Validate common providers (LiteLLM supports many; only enforce the ones we document).
-        provider = cls.LITELLM_MODEL.split("/", 1)[0].lower() if "/" in cls.LITELLM_MODEL else ""
-        if provider == "anthropic" and not cls.ANTHROPIC_API_KEY:
-            raise ValueError("ANTHROPIC_API_KEY not set. Please set it in your .env file.")
-        if provider == "openai" and not cls.OPENAI_API_KEY:
-            raise ValueError("OPENAI_API_KEY not set. Please set it in your .env file.")
-        if provider == "gemini" and not cls.GEMINI_API_KEY:
-            raise ValueError("GEMINI_API_KEY not set. Please set it in your .env file.")
+        # Model configuration is handled by `~/.ouro/models.yaml` via ModelManager.
+        # `~/.ouro/config` is used for non-model runtime settings only.
+        return

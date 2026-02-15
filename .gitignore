@@ -48,6 +48,9 @@ coverage.xml
 *.cover
 *.py.cover
 .hypothesis/
+
+# Model configuration (contains API keys)
+.ouro/models.yaml
 .pytest_cache/
 cover/
 
@@ -147,12 +150,12 @@ venv.bak/
 
 # Runtime data (SQLite memory DB, etc.)
 data/
+.ouro/
 
 # Claude Code local rules/state (project-local)
 .claude/
 
-# Tool caches
-.AgenticLoop/
+# Tool caches (legacy; now under .ouro/cache)
 
 # Spyder project settings
 .spyderproject

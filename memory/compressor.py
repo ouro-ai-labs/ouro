@@ -12,16 +12,19 @@ from .types import CompressedMemory, CompressionStrategy
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from llm import LiteLLMLLM
+    from llm import LiteLLMAdapter
 
 
 class WorkingMemoryCompressor:
     """Compresses conversation history using LLM summarization."""
 
     # Tools that should NEVER be compressed - their state must be preserved
-    PROTECTED_TOOLS = {
-        "manage_todo_list",  # Todo list state is critical for tracking progress
-    }
+    # Note: manage_todo_list is NOT protected because its state is managed externally
+    # by TodoList object. Instead, we inject current todo state into the summary.
+    PROTECTED_TOOLS: set[str] = set()
+
+    # Prefix for summary messages to identify them
+    SUMMARY_PREFIX = "[Previous conversation summary]\n"
 
     COMPRESSION_PROMPT = """You are a memory compression system. Summarize the following conversation messages while preserving:
 1. Key decisions and outcomes
@@ -36,7 +39,7 @@ Original messages ({count} messages, ~{tokens} tokens):
 
     Provide a concise but comprehensive summary that captures the essential information. Be specific and include concrete details. Target length: {target_tokens} tokens."""
 
-    def __init__(self, llm: "LiteLLMLLM"):
+    def __init__(self, llm: "LiteLLMAdapter"):
         """Initialize compressor.
 
         Args:
@@ -44,11 +47,12 @@ Original messages ({count} messages, ~{tokens} tokens):
         """
         self.llm = llm
 
-    def compress(
+    async def compress(
         self,
         messages: List[LLMMessage],
         strategy: str = CompressionStrategy.SLIDING_WINDOW,
         target_tokens: Optional[int] = None,
+        todo_context: Optional[str] = None,
     ) -> CompressedMemory:
         """Compress messages using specified strategy.
 
@@ -56,12 +60,13 @@ Original messages ({count} messages, ~{tokens} tokens):
             messages: List of messages to compress
             strategy: Compression strategy to use
             target_tokens: Target token count for compressed output
+            todo_context: Optional current todo list state to inject into summary
 
         Returns:
             CompressedMemory object
         """
         if not messages:
-            return CompressedMemory(summary="", preserved_messages=[])
+            return CompressedMemory(messages=[])
 
         if target_tokens is None:
             # Calculate target based on config compression ratio
@@ -70,25 +75,30 @@ Original messages ({count} messages, ~{tokens} tokens):
 
         # Select and apply compression strategy
         if strategy == CompressionStrategy.SLIDING_WINDOW:
-            return self._compress_sliding_window(messages, target_tokens)
+            return await self._compress_sliding_window(messages, target_tokens, todo_context)
         elif strategy == CompressionStrategy.SELECTIVE:
-            return self._compress_selective(messages, target_tokens)
+            return await self._compress_selective(messages, target_tokens, todo_context)
         elif strategy == CompressionStrategy.DELETION:
             return self._compress_deletion(messages)
         else:
             logger.warning(f"Unknown strategy {strategy}, using sliding window")
-            return self._compress_sliding_window(messages, target_tokens)
+            return await self._compress_sliding_window(messages, target_tokens, todo_context)
 
-    def _compress_sliding_window(
-        self, messages: List[LLMMessage], target_tokens: int
+    async def _compress_sliding_window(
+        self,
+        messages: List[LLMMessage],
+        target_tokens: int,
+        todo_context: Optional[str] = None,
     ) -> CompressedMemory:
         """Compress using sliding window strategy.
 
-        Summarizes all messages into a single summary.
+        Summarizes all messages into a single summary. If todo_context is provided,
+        it will be appended to the summary to preserve current task state.
 
         Args:
             messages: Messages to compress
             target_tokens: Target token count
+            todo_context: Optional current todo list state to inject
 
         Returns:
             CompressedMemory object
@@ -105,23 +115,34 @@ Original messages ({count} messages, ~{tokens} tokens):
             target_tokens=target_tokens,
         )
 
+        # Extract system messages to preserve them
+        system_msgs = [m for m in messages if m.role == "system"]
+
         # Call LLM to generate summary
         try:
-            from llm import LLMMessage
-
             prompt = LLMMessage(role="user", content=prompt_text)
-            response = self.llm.call(messages=[prompt], max_tokens=target_tokens * 2)
-            summary = self.llm.extract_text(response)
+            response = await self.llm.call_async(messages=[prompt], max_tokens=target_tokens * 2)
+            summary_text = self.llm.extract_text(response)
+
+            # Append todo context if available
+            if todo_context:
+                summary_text = f"{summary_text}\n\n[Current Tasks]\n{todo_context}"
+
+            # Convert summary to a user message
+            summary_message = LLMMessage(
+                role="user",
+                content=f"{self.SUMMARY_PREFIX}{summary_text}",
+            )
+
+            # System messages first, then summary
+            result_messages = system_msgs + [summary_message]
 
             # Calculate compression metrics
-            compressed_tokens = self._estimate_tokens(
-                [LLMMessage(role="assistant", content=summary)]
-            )
+            compressed_tokens = self._estimate_tokens(result_messages)
             compression_ratio = compressed_tokens / original_tokens if original_tokens > 0 else 0
 
             return CompressedMemory(
-                summary=summary,
-                preserved_messages=[],
+                messages=result_messages,
                 original_message_count=len(messages),
                 compressed_tokens=compressed_tokens,
                 original_tokens=original_tokens,
@@ -130,28 +151,35 @@ Original messages ({count} messages, ~{tokens} tokens):
             )
         except Exception as e:
             logger.error(f"Error during compression: {e}")
-            # Fallback: just keep first and last message
+            # Fallback: keep system messages + first and last non-system message
+            non_system = [m for m in messages if m.role != "system"]
+            fallback_other = [non_system[0], non_system[-1]] if len(non_system) > 1 else non_system
+            fallback_messages = system_msgs + fallback_other
             return CompressedMemory(
-                summary="[Compression failed, preserving key messages]",
-                preserved_messages=[messages[0], messages[-1]] if len(messages) > 1 else messages,
+                messages=fallback_messages,
                 original_message_count=len(messages),
-                compressed_tokens=self._estimate_tokens(messages[:1] + messages[-1:]),
+                compressed_tokens=self._estimate_tokens(fallback_messages),
                 original_tokens=original_tokens,
                 compression_ratio=0.5,
                 metadata={"strategy": "sliding_window", "error": str(e)},
             )
 
-    def _compress_selective(
-        self, messages: List[LLMMessage], target_tokens: int
+    async def _compress_selective(
+        self,
+        messages: List[LLMMessage],
+        target_tokens: int,
+        todo_context: Optional[str] = None,
     ) -> CompressedMemory:
         """Compress using selective preservation strategy.
 
         Preserves important messages (tool calls, system prompts) and
-        summarizes the rest.
+        summarizes the rest. If todo_context is provided, it will be
+        appended to the summary to preserve current task state.
 
         Args:
             messages: Messages to compress
             target_tokens: Target token count
+            todo_context: Optional current todo list state to inject
 
         Returns:
             CompressedMemory object
@@ -160,12 +188,15 @@ Original messages ({count} messages, ~{tokens} tokens):
         preserved, to_compress = self._separate_messages(messages)
 
         if not to_compress:
-            # Nothing to compress
+            # Nothing to compress, just return preserved messages
+            # Ensure system messages are first
+            system_msgs = [m for m in preserved if m.role == "system"]
+            other_msgs = [m for m in preserved if m.role != "system"]
+            result_messages = system_msgs + other_msgs
             return CompressedMemory(
-                summary="",
-                preserved_messages=preserved,
+                messages=result_messages,
                 original_message_count=len(messages),
-                compressed_tokens=self._estimate_tokens(preserved),
+                compressed_tokens=self._estimate_tokens(result_messages),
                 original_tokens=self._estimate_tokens(messages),
                 compression_ratio=1.0,
                 metadata={"strategy": "selective"},
@@ -187,23 +218,34 @@ Original messages ({count} messages, ~{tokens} tokens):
             )
 
             try:
-                from llm import LLMMessage
-
                 prompt = LLMMessage(role="user", content=prompt_text)
-                response = self.llm.call(messages=[prompt], max_tokens=available_for_summary * 2)
-                summary = self.llm.extract_text(response)
-
-                summary_tokens = self._estimate_tokens(
-                    [LLMMessage(role="assistant", content=summary)]
+                response = await self.llm.call_async(
+                    messages=[prompt], max_tokens=available_for_summary * 2
                 )
+                summary_text = self.llm.extract_text(response)
+
+                # Append todo context if available
+                if todo_context:
+                    summary_text = f"{summary_text}\n\n[Current Tasks]\n{todo_context}"
+
+                # Convert summary to user message
+                summary_message = LLMMessage(
+                    role="user",
+                    content=f"{self.SUMMARY_PREFIX}{summary_text}",
+                )
+                # Ensure system messages come first, then summary, then other preserved
+                system_msgs = [m for m in preserved if m.role == "system"]
+                other_msgs = [m for m in preserved if m.role != "system"]
+                result_messages = system_msgs + [summary_message] + other_msgs
+
+                summary_tokens = self._estimate_tokens([summary_message])
                 compressed_tokens = preserved_tokens + summary_tokens
                 compression_ratio = (
                     compressed_tokens / original_tokens if original_tokens > 0 else 0
                 )
 
                 return CompressedMemory(
-                    summary=summary,
-                    preserved_messages=preserved,
+                    messages=result_messages,
                     original_message_count=len(messages),
                     compressed_tokens=compressed_tokens,
                     original_tokens=original_tokens,
@@ -213,10 +255,13 @@ Original messages ({count} messages, ~{tokens} tokens):
             except Exception as e:
                 logger.error(f"Error during selective compression: {e}")
 
-        # Fallback: just preserve the important messages
+        # Fallback: just preserve the important messages (no summary)
+        # Ensure system messages are first
+        system_msgs = [m for m in preserved if m.role == "system"]
+        other_msgs = [m for m in preserved if m.role != "system"]
+        result_messages = system_msgs + other_msgs
         return CompressedMemory(
-            summary="",
-            preserved_messages=preserved,
+            messages=result_messages,
             original_message_count=len(messages),
             compressed_tokens=preserved_tokens,
             original_tokens=original_tokens,
@@ -231,13 +276,12 @@ Original messages ({count} messages, ~{tokens} tokens):
             messages: Messages (will be deleted)
 
         Returns:
-            CompressedMemory with empty summary
+            CompressedMemory with empty messages list
         """
         original_tokens = self._estimate_tokens(messages)
 
         return CompressedMemory(
-            summary="",
-            preserved_messages=[],
+            messages=[],
             original_message_count=len(messages),
             compressed_tokens=0,
             original_tokens=original_tokens,
@@ -292,13 +336,22 @@ Original messages ({count} messages, ~{tokens} tokens):
             if i >= 0:
                 preserve_indices.add(i)
 
-        # Step 4: Ensure tool pairs stay together
-        for assistant_idx, user_idx in tool_pairs:
-            # If either message in the pair is marked for preservation, preserve both
-            if assistant_idx in preserve_indices or user_idx in preserve_indices:
-                preserve_indices.add(assistant_idx)
-                preserve_indices.add(user_idx)
-            # Otherwise both will be compressed together
+        # Step 4: Ensure tool pairs stay together (iterate until stable)
+        # A single pass can miss pairs: e.g. pair [A, T1] is skipped because
+        # neither is preserved, then pair [A, T2] preserves A because T2 is in
+        # the recent window — but T1 was already skipped.  Fixed-point loop
+        # ensures all pairs containing a preserved index are fully preserved.
+        changed = True
+        while changed:
+            changed = False
+            for assistant_idx, user_idx in tool_pairs:
+                if assistant_idx in preserve_indices or user_idx in preserve_indices:
+                    if assistant_idx not in preserve_indices:
+                        preserve_indices.add(assistant_idx)
+                        changed = True
+                    if user_idx not in preserve_indices:
+                        preserve_indices.add(user_idx)
+                        changed = True
 
         # Step 5: Build preserved and to_compress lists
         preserved = []
@@ -372,7 +425,7 @@ Original messages ({count} messages, ~{tokens} tokens):
         orphaned_indices = list(pending_tool_uses.values())
 
         if orphaned_indices:
-            logger.warning(
+            logger.debug(
                 f"Found {len(orphaned_indices)} orphaned tool_use without matching tool_result - "
                 f"these will be preserved to wait for results"
             )

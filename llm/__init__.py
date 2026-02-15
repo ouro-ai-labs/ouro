@@ -13,7 +13,7 @@ from .content_utils import (
 )
 
 # Import adapter
-from .litellm_adapter import LiteLLMLLM
+from .litellm_adapter import LiteLLMAdapter
 from .message_types import (
     FunctionCall,
     LLMMessage,
@@ -23,6 +23,7 @@ from .message_types import (
     ToolCallBlock,
     ToolResult,
 )
+from .model_manager import ModelManager, ModelProfile
 
 __all__ = [
     # Core types
@@ -34,7 +35,10 @@ __all__ = [
     "FunctionCall",
     "StopReason",
     # Adapter
-    "LiteLLMLLM",
+    "LiteLLMAdapter",
+    # Model Manager
+    "ModelManager",
+    "ModelProfile",
     # Utilities
     "extract_text",
     "extract_text_from_message",

@@ -1,49 +1,51 @@
 """Core memory manager that orchestrates all memory operations."""
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 from config import Config
 from llm.content_utils import content_has_tool_calls
 from llm.message_types import LLMMessage
+from utils import terminal_ui
+from utils.tui.progress import AsyncSpinner
 
 from .compressor import WorkingMemoryCompressor
 from .short_term import ShortTermMemory
-from .store import MemoryStore
 from .token_tracker import TokenTracker
 from .types import CompressedMemory, CompressionStrategy
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from llm import LiteLLMLLM
+    from llm import LiteLLMAdapter
+
+    from .long_term import LongTermMemoryManager
 
 
 class MemoryManager:
-    """Central memory management system with built-in persistence."""
+    """Central memory management system with built-in persistence.
+
+    The persistence store is fully owned by MemoryManager and should not
+    be created or passed in from outside.
+    """
 
     def __init__(
         self,
-        llm: "LiteLLMLLM",
-        store: Optional[MemoryStore] = None,
+        llm: "LiteLLMAdapter",
         session_id: Optional[str] = None,
-        db_path: str = "data/memory.db",
     ):
         """Initialize memory manager.
 
         Args:
             llm: LLM instance for compression
-            store: Optional MemoryStore for persistence (if None, creates default store)
             session_id: Optional session ID (if resuming session)
-            db_path: Path to database file (default: data/memory.db)
         """
         self.llm = llm
-        self._db_path = db_path
 
-        # Always create/use store for persistence
-        if store is None:
-            store = MemoryStore(db_path=db_path)
-        self.store = store
+        # Store is fully owned by MemoryManager
+        from .store import YamlFileMemoryStore
+
+        self._store = YamlFileMemoryStore()
 
         # Lazy session creation: only create when first message is added
         # If session_id is provided (resuming), use it immediately
@@ -59,7 +61,7 @@ class MemoryManager:
         self.compressor = WorkingMemoryCompressor(llm)
         self.token_tracker = TokenTracker()
 
-        # Storage for system messages (summaries are now stored as regular messages in short_term)
+        # Storage for system messages
         self.system_messages: List[LLMMessage] = []
 
         # State tracking
@@ -68,43 +70,40 @@ class MemoryManager:
         self.last_compression_savings = 0
         self.compression_count = 0
 
-        # Summary message prefix for identification
-        self.SUMMARY_PREFIX = "[Conversation Summary]\n"
+        # Optional callback to get current todo context for compression
+        self._todo_context_provider: Optional[Callable[[], Optional[str]]] = None
+
+        # Long-term memory (cross-session)
+        self._long_term = None
+        if Config.LONG_TERM_MEMORY_ENABLED:
+            from .long_term import LongTermMemoryManager
+
+            self._long_term = LongTermMemoryManager(llm)
 
     @classmethod
-    def from_session(
+    async def from_session(
         cls,
         session_id: str,
-        llm: "LiteLLMLLM",
-        store: Optional[MemoryStore] = None,
-        db_path: str = "data/memory.db",
+        llm: "LiteLLMAdapter",
     ) -> "MemoryManager":
         """Load a MemoryManager from a saved session.
 
         Args:
             session_id: Session ID to load
             llm: LLM instance for compression
-            store: Optional MemoryStore instance (if None, creates default store)
-            db_path: Path to database file (default: data/memory.db)
 
         Returns:
             MemoryManager instance with loaded state
         """
-        # Create store if not provided
-        if store is None:
-            store = MemoryStore(db_path=db_path)
+        manager = cls(llm=llm, session_id=session_id)
 
         # Load session data
-        session_data = store.load_session(session_id)
+        session_data = await manager._store.load_session(session_id)
         if not session_data:
             raise ValueError(f"Session {session_id} not found")
 
-        # Create manager (config is now read from Config class directly)
-        manager = cls(llm=llm, store=store, session_id=session_id)
-
         # Restore state
         manager.system_messages = session_data["system_messages"]
-        manager.compression_count = session_data["stats"]["compression_count"]
 
         # Add messages to short-term memory (including any summary messages)
         for msg in session_data["messages"]:
@@ -121,18 +120,67 @@ class MemoryManager:
 
         return manager
 
-    def _ensure_session(self) -> None:
+    @staticmethod
+    async def list_sessions(limit: int = 50) -> List[Dict[str, Any]]:
+        """List saved sessions.
+
+        Args:
+            limit: Maximum number of sessions to return
+
+        Returns:
+            List of session summaries
+        """
+        from .store import YamlFileMemoryStore
+
+        store = YamlFileMemoryStore()
+        return await store.list_sessions(limit=limit)
+
+    @staticmethod
+    async def find_latest_session() -> Optional[str]:
+        """Find the most recently updated session ID.
+
+        Returns:
+            Session ID or None if no sessions exist
+        """
+        from .store import YamlFileMemoryStore
+
+        store = YamlFileMemoryStore()
+        return await store.find_latest_session()
+
+    @staticmethod
+    async def find_session_by_prefix(prefix: str) -> Optional[str]:
+        """Find a session by ID prefix.
+
+        Args:
+            prefix: Prefix of session UUID
+
+        Returns:
+            Full session ID or None
+        """
+        from .store import YamlFileMemoryStore
+
+        store = YamlFileMemoryStore()
+        return await store.find_session_by_prefix(prefix)
+
+    async def _ensure_session(self) -> None:
         """Lazily create session when first needed.
 
         This avoids creating empty sessions when MemoryManager is instantiated
         but no messages are ever added (e.g., user exits before running any task).
+
+        Raises:
+            RuntimeError: If session creation fails
         """
         if not self._session_created:
-            self.session_id = self.store.create_session()
-            self._session_created = True
-            logger.info(f"Created new session: {self.session_id}")
+            try:
+                self.session_id = await self._store.create_session()
+                self._session_created = True
+                logger.info(f"Created new session: {self.session_id}")
+            except Exception as e:
+                logger.error(f"Failed to create session: {e}")
+                raise RuntimeError(f"Failed to create memory session: {e}") from e
 
-    def add_message(self, message: LLMMessage, actual_tokens: Dict[str, int] = None) -> None:
+    async def add_message(self, message: LLMMessage, actual_tokens: Dict[str, int] = None) -> None:
         """Add a message to memory and trigger compression if needed.
 
         Args:
@@ -141,7 +189,7 @@ class MemoryManager:
                           Format: {"input": int, "output": int}
         """
         # Ensure session exists before adding messages
-        self._ensure_session()
+        await self._ensure_session()
 
         # Track system messages separately
         if message.role == "system":
@@ -163,17 +211,8 @@ class MemoryManager:
                 f"API usage: input={input_tokens}, output={output_tokens}, "
                 f"total={input_tokens + output_tokens}"
             )
-        else:
-            # Estimate token count for non-API messages (tool results, etc.)
-            provider = self.llm.provider_name.lower()
-            model = self.llm.model
-            tokens = self.token_tracker.count_message_tokens(message, provider, model)
-
-            # Update token tracker
-            if message.role == "assistant":
-                self.token_tracker.add_output_tokens(tokens)
-            else:
-                self.token_tracker.add_input_tokens(tokens)
+        # Non-API messages (user, tool results) are not tracked here — their
+        # tokens will be counted in the next API call's response.usage.input_tokens.
 
         # Add to short-term memory
         self.short_term.add_message(message)
@@ -194,7 +233,7 @@ class MemoryManager:
         should_compress, reason = self._should_compress()
         if should_compress:
             logger.info(f"🗜️  Triggering compression: {reason}")
-            self.compress()
+            await self.compress()
         else:
             # Log compression check details
             logger.debug(
@@ -219,11 +258,28 @@ class MemoryManager:
 
         return context
 
-    def compress(self, strategy: str = None) -> Optional[CompressedMemory]:
+    @property
+    def long_term(self) -> Optional["LongTermMemoryManager"]:
+        """Access the long-term memory manager (None if disabled)."""
+        return self._long_term
+
+    def set_todo_context_provider(self, provider: Callable[[], Optional[str]]) -> None:
+        """Set a callback to provide current todo context for compression.
+
+        The provider should return a formatted string of current todo items,
+        or None if no todos exist. This context will be injected into
+        compression summaries to preserve task state.
+
+        Args:
+            provider: Callable that returns current todo context string or None
+        """
+        self._todo_context_provider = provider
+
+    async def compress(self, strategy: str = None) -> Optional[CompressedMemory]:
         """Compress current short-term memory.
 
-        After compression, summary and preserved messages are put back into short_term
-        as regular messages, so they can participate in future compressions.
+        After compression, the compressed messages (including any summary as user message)
+        are put back into short_term as regular messages.
 
         Args:
             strategy: Compression strategy (None = auto-select)
@@ -245,12 +301,19 @@ class MemoryManager:
         logger.info(f"🗜️  Compressing {message_count} messages using {strategy} strategy")
 
         try:
-            # Perform compression
-            compressed = self.compressor.compress(
-                messages,
-                strategy=strategy,
-                target_tokens=self._calculate_target_tokens(),
-            )
+            # Get todo context if provider is set
+            todo_context = None
+            if self._todo_context_provider:
+                todo_context = self._todo_context_provider()
+
+            # Perform compression with TUI spinner
+            async with AsyncSpinner(terminal_ui.console, "Compressing memory..."):
+                compressed = await self.compressor.compress(
+                    messages,
+                    strategy=strategy,
+                    target_tokens=self._calculate_target_tokens(),
+                    todo_context=todo_context,
+                )
 
             # Track compression results
             self.compression_count += 1
@@ -259,32 +322,20 @@ class MemoryManager:
 
             # Update token tracker
             self.token_tracker.add_compression_savings(compressed.token_savings)
-
-            # Estimate tokens used for compression (the summary generation)
-            compression_cost = compressed.compressed_tokens
-            self.token_tracker.add_compression_cost(compression_cost)
+            self.token_tracker.add_compression_cost(compressed.compressed_tokens)
 
             # Remove compressed messages from short-term memory
             self.short_term.remove_first(message_count)
 
-            # Rebuild short_term with: summary + preserved messages (in order)
             # Get any remaining messages (added after compression started)
             remaining_messages = self.short_term.get_messages()
             self.short_term.clear()
 
-            # 1. Add summary first (represents older context)
-            if compressed.summary:
-                summary_message = LLMMessage(
-                    role="user",
-                    content=f"{self.SUMMARY_PREFIX}{compressed.summary}",
-                )
-                self.short_term.add_message(summary_message)
-
-            # 2. Add preserved messages in order
-            for msg in compressed.preserved_messages:
+            # Add compressed messages (summary + preserved, already combined by compressor)
+            for msg in compressed.messages:
                 self.short_term.add_message(msg)
 
-            # 3. Add any remaining messages
+            # Add any remaining messages
             for msg in remaining_messages:
                 self.short_term.add_message(msg)
 
@@ -429,7 +480,7 @@ class MemoryManager:
             "total_cost": self.token_tracker.get_total_cost(self.llm.model),
         }
 
-    def save_memory(self):
+    async def save_memory(self):
         """Save current memory state to store.
 
         This saves the complete memory state including:
@@ -439,7 +490,7 @@ class MemoryManager:
         Call this method after completing a task or at key checkpoints.
         """
         # Skip if no session was created (no messages were ever added)
-        if not self.store or not self._session_created or not self.session_id:
+        if not self._store or not self._session_created or not self.session_id:
             logger.debug("Skipping save_memory: no session created")
             return
 
@@ -450,11 +501,10 @@ class MemoryManager:
             logger.debug(f"Skipping save_memory: no messages to save for session {self.session_id}")
             return
 
-        self.store.save_memory(
+        await self._store.save_memory(
             session_id=self.session_id,
             system_messages=self.system_messages,
             messages=messages,
-            summaries=[],  # Summaries are now part of messages
         )
         logger.info(f"Saved memory state for session {self.session_id}")
 
@@ -467,3 +517,27 @@ class MemoryManager:
         self.was_compressed_last_iteration = False
         self.last_compression_savings = 0
         self.compression_count = 0
+
+    def rollback_incomplete_exchange(self) -> None:
+        """Rollback the last incomplete assistant response with tool_calls.
+
+        This is used when a task is interrupted before tool execution completes.
+        It removes the assistant message if it contains tool_calls but no results.
+        The user message is preserved so the agent can see the original question.
+
+        This prevents API errors about missing tool responses on the next turn.
+        """
+        messages = self.short_term.get_messages()
+        if not messages:
+            return
+
+        # Check if last message is an assistant message with tool_calls
+        last_msg = messages[-1]
+        if last_msg.role == "assistant" and self._message_has_tool_calls(last_msg):
+            # Remove only the assistant message with tool_calls
+            # Keep the user message so the agent can still see the question
+            self.short_term.remove_last(1)
+            logger.debug("Removed incomplete assistant message with tool_calls")
+
+            # Recalculate token count
+            self.current_tokens = self._recalculate_current_tokens()

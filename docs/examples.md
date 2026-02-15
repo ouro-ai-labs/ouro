@@ -1,330 +1,177 @@
-# Usage Examples
+# Examples
 
-This document provides detailed examples of using the Agentic Loop system with different modes and configurations.
+## Single Task Mode
 
-## Simple Calculation
-
-Calculate mathematical expressions using the calculator tool:
+Run a task and exit. The `--task` flag outputs the raw result only (no TUI chrome).
 
 ```bash
-python main.py --task "Calculate the first 10 digits of pi"
+# Simple calculation
+ouro --task "Calculate the first 10 digits of pi"
+
+# File operations
+ouro --task "Create a file hello.txt with content 'Hello, Agent!'"
+ouro --task "Read data.csv and count the number of rows"
+
+# Web search
+ouro --task "Search for the latest news about AI agents"
+
+# Shell
+ouro --task "List all Python files in the current directory"
+ouro --task "Check git status and show recent commits"
+
+# Code generation
+ouro --task "Write a Python script to calculate fibonacci numbers and save it to fib.py"
+
+# Specify model
+ouro --task "Summarize this README" --model openai/gpt-4o
 ```
 
-Expected output:
-```
-The first 10 digits of pi are: 3.141592653
-```
-
-## File Operations
-
-### Creating Files
+From source (without install):
 
 ```bash
-python main.py --task "Create a file hello.txt with content 'Hello, Agent!'"
+python main.py --task "Calculate 1+1"
 ```
 
-### Reading and Processing Files
+## ChatGPT / Codex Login
 
 ```bash
-python main.py --task "Read data.csv and count the number of rows"
-```
+# Login (select provider from menu)
+ouro --login
 
-### Multi-File Operations
+# Logout (select provider from menu)
+ouro --logout
 
-```bash
-python main.py --mode plan --task "Read all .txt files in the current directory and create a summary file"
-```
-
-## Web Search and Research
-
-### Simple Search
-
-```bash
-python main.py --task "Search for the latest news about AI agents"
-```
-
-### Research and Summarization
-
-```bash
-python main.py --mode plan --task "Search for AI agent information, summarize key concepts, and save to summary.txt"
-```
-
-This will:
-1. Create a plan for the research task
-2. Execute web searches
-3. Extract key information
-4. Create a comprehensive summary
-5. Save results to a file
-
-## Complex Multi-Step Tasks
-
-### Data Analysis Workflow
-
-```bash
-python main.py --mode plan --task "Analyze data.csv file and generate a report with statistics"
-```
-
-### Code Generation and Execution
-
-```bash
-python main.py --task "Write a Python script to calculate fibonacci numbers and save it to fib.py"
+# If browser does not open automatically, use this URL manually:
+# https://auth.openai.com/codex/device
 ```
 
 ## Interactive Mode
 
-For interactive sessions where you want to enter tasks dynamically:
+Start without `--task` to enter interactive mode:
 
 ```bash
-python main.py --mode react
+ouro
 ```
 
-Then enter your task:
-```
-What would you like me to help you with?
-> Calculate 123 * 456 and write the result to result.txt
->
-```
-(Press Enter twice to submit)
+Type your request and press Enter twice to submit. The agent will think, use tools, and respond.
 
-## Using Different LLM Providers
+### Slash Commands
 
-### With OpenAI GPT
+```
+/help                    Show available commands
+/stats                   Show token usage and cost
+/model                   Pick a different model
+/model edit              Edit ~/.ouro/models.yaml in your editor
+/login                   Login to OAuth provider (menu)
+/logout                  Logout from OAuth provider (menu)
+/theme                   Toggle dark/light theme
+/verbose                 Toggle thinking display
+/compact                 Toggle compact output
+/clear                   Clear conversation and start fresh
+/resume                  List recent sessions
+/resume a1b2c3d4         Resume session by ID prefix
+/exit                    Exit
+```
+
+### Keyboard Shortcuts
+
+- `/` triggers command autocomplete
+- `Ctrl+C` cancels the current operation
+- `Ctrl+L` clears the screen
+- `Ctrl+T` toggles thinking display
+- `Ctrl+S` shows quick stats
+- Up/Down arrows navigate command history
+
+## Session Resume
+
+Sessions are automatically saved. Resume with the CLI or interactively:
 
 ```bash
-# Set in .env:
-OPENAI_API_KEY=your_key_here
-LITELLM_MODEL=openai/gpt-4o
+# Resume most recent session
+ouro --resume
 
-# Run:
-python main.py --task "Your task here"
+# Resume by session ID prefix
+ouro --resume a1b2c3d4
+
+# Resume and continue with a new task
+ouro --resume a1b2c3d4 --task "Continue the analysis"
 ```
 
-### With Google Gemini
+In interactive mode:
+```
+/resume                  # Shows recent sessions to pick from
+/resume a1b2c3d4         # Directly resume by prefix
+```
 
+## Tool Usage
+
+The agent automatically selects tools based on the task. Some examples of what the tools enable:
+
+**File operations**:
 ```bash
-# Set in .env:
-GEMINI_API_KEY=your_key_here
-LITELLM_MODEL=gemini/gemini-1.5-flash
-
-# Run:
-python main.py --task "Your task here"
+ouro --task "Read all .txt files in ./data and create a summary"
+ouro --task "Find all TODO comments in Python files"
 ```
 
-### With Anthropic Claude
-
+**Web search and fetch**:
 ```bash
-# Set in .env:
-ANTHROPIC_API_KEY=your_key_here
-LITELLM_MODEL=anthropic/claude-3-5-sonnet-20241022
-
-# Run:
-python main.py --task "Your task here"
+ouro --task "Search for Python 3.12 new features and summarize"
+ouro --task "Fetch https://example.com and extract the main content"
 ```
 
-## Shell Tool Examples
-
-### Listing Files
-
+**Shell commands**:
 ```bash
-python main.py --task "List all Python files in the current directory"
+ouro --task "Show disk usage and available space"
+ouro --task "Run pytest and summarize the results"
 ```
 
-### Git Operations
-
+**Code navigation** (tree-sitter AST):
 ```bash
-python main.py --task "Check git status and show recent commits"
+ouro --task "List all classes and functions in src/"
 ```
 
-### System Information
-
-```bash
-python main.py --task "Show disk usage and available space"
-```
-
-## Comparing ReAct vs Plan-Execute
-
-### Same Task, Different Modes
-
-**ReAct Mode** (iterative problem-solving):
-```bash
-python main.py --mode react --task "Find all TODO comments in Python files and list them"
-```
-
-ReAct will:
-- Think about the approach
-- Search for files
-- Adjust strategy based on findings
-- Iterate until complete
-
-**Plan-Execute Mode** (structured approach):
-```bash
-python main.py --mode plan --task "Find all TODO comments in Python files and list them"
-```
-
-Plan-Execute will:
-- Create a complete plan upfront
-- Execute each step sequentially
-- Synthesize results at the end
-
-## Error Handling Examples
-
-### Automatic Retry on Rate Limits
-
-```bash
-python main.py --task "Perform 100 calculations in sequence"
-```
-
-If you hit rate limits, you'll see:
-```
-⚠️  Rate limit error: 429 You exceeded your current quota
-   Retrying in 2.3s... (attempt 1/5)
-```
-
-The system will automatically retry with exponential backoff.
-
-### Handling Missing Tools
-
-If a task requires a tool that's not available:
-
-```bash
-# Example:
-python main.py --task "Run ls command"
-```
-
-## Memory Management Examples
-
-For long-running tasks with many iterations:
-
-```bash
-# Enable memory management in .env:
-MEMORY_ENABLED=true
-
-# Run a complex task:
-python main.py --mode react --task "Analyze all Python files, find patterns, and generate a detailed report"
-```
-
-You'll see memory statistics at the end:
-```
---- Memory Statistics ---
-Total tokens: 45000
-Compressions: 3
-Net savings: 15000 tokens
-Total cost: $0.1234
-```
-
-See [Memory Management](memory-management.md) for more details.
-
-## Advanced Programmatic Usage
-
-### Custom Agent Configuration
+## Programmatic Usage
 
 ```python
 import asyncio
-
-from agent.react_agent import ReActAgent
-from llm import LiteLLMLLM
-from llm.retry import RetryConfig
-from tools import CalculatorTool, FileReadTool
-from config import Config
+from agent.agent import LoopAgent
+from llm import LiteLLMAdapter, ModelManager
+from tools.file_ops import FileReadTool
+from tools.shell import ShellTool
 
 async def main():
-    # Create custom LLM with retry config
-    llm = LiteLLMLLM(
-        model=Config.LITELLM_MODEL,
-        api_base=Config.LITELLM_API_BASE,
-        drop_params=Config.LITELLM_DROP_PARAMS,
-        timeout=Config.LITELLM_TIMEOUT,
-        retry_config=RetryConfig(max_retries=10, initial_delay=2.0, max_delay=60.0),
+    mm = ModelManager()
+    profile = mm.get_current_model()
+    if not profile:
+        raise RuntimeError("No models configured. Edit ~/.ouro/models.yaml.")
+
+    llm = LiteLLMAdapter(
+        model=profile.model_id,
+        api_key=profile.api_key,
+        api_base=profile.api_base,
     )
 
-    # Create agent with specific tools
-    agent = ReActAgent(
+    agent = LoopAgent(
         llm=llm,
         max_iterations=15,
-        tools=[CalculatorTool(), FileReadTool()]
+        tools=[ShellTool(), FileReadTool()],
     )
 
-    # Run task
-    result = await agent.run("Your complex task here")
+    result = await agent.run("Calculate 2^100 using python")
     print(result)
 
 if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-### Custom Tool Creation
+## Troubleshooting
 
-```python
-from tools.base import BaseTool
-from typing import Dict, Any
+**Task not completing**: Increase `MAX_ITERATIONS` in `~/.ouro/config` (default: 1000).
 
-class CustomTool(BaseTool):
-    @property
-    def name(self) -> str:
-        return "custom_tool"
+**High token usage**: Memory compression is enabled by default. Adjust `MEMORY_COMPRESSION_THRESHOLD` in `~/.ouro/config` to trigger compression earlier. Switch to a cheaper model with `--model` or `/model`.
 
-    @property
-    def description(self) -> str:
-        return "Does something custom"
+**API errors**: Verify your API key in `~/.ouro/models.yaml`. Test with a simple task: `ouro --task "Calculate 1+1"`.
 
-    @property
-    def parameters(self) -> Dict[str, Any]:
-        return {
-            "param1": {
-                "type": "string",
-                "description": "Parameter description"
-            }
-        }
+**Rate limits**: Automatic retry with exponential backoff is built in. Configure `RETRY_MAX_ATTEMPTS` in `~/.ouro/config` (default: 3).
 
-    def execute(self, param1: str) -> str:
-        # Your custom logic
-        return f"Processed: {param1}"
-
-# Use in agent
-agent = ReActAgent(
-    llm=llm,
-    tools=[CustomTool()]
-)
-```
-
-## Troubleshooting Common Issues
-
-### Task Not Completing
-
-If a task doesn't complete within max iterations:
-
-```bash
-# Increase max iterations in .env:
-MAX_ITERATIONS=20
-
-# Or pass it programmatically:
-agent = ReActAgent(llm=llm, max_iterations=20)
-```
-
-### High Token Usage
-
-For tasks consuming too many tokens:
-
-```bash
-# Enable memory compression:
-MEMORY_ENABLED=true
-MEMORY_COMPRESSION_THRESHOLD=40000
-
-# Use more efficient models:
-LITELLM_MODEL=openai/gpt-4o-mini  # or gemini/gemini-1.5-flash, anthropic/claude-3-5-haiku-20241022
-```
-
-### API Errors
-
-For consistent API errors:
-
-```bash
-# Check your API key configuration
-cat .env | grep API_KEY
-
-# Test with a simple task first
-python main.py --task "Calculate 1+1"
-
-# Enable debug logging (if available)
-DEBUG=true python main.py --task "Your task"
-```
+**Verbose output for debugging**: Use `--verbose` to log detailed info to `~/.ouro/logs/`.

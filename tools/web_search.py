@@ -1,13 +1,20 @@
 """Web search tool using DuckDuckGo."""
 
-from typing import Any, Dict
+import asyncio
+from typing import Any, Dict, List
 
-try:
-    from ddgs import DDGS
-except ImportError:  # pragma: no cover
-    DDGS = None  # type: ignore[assignment]
+from ddgs import DDGS
 
 from .base import BaseTool
+
+# Default timeout for web search operations
+DEFAULT_SEARCH_TIMEOUT = 30.0
+
+
+def _sync_search(query: str, max_results: int = 5) -> List[Dict[str, str]]:
+    """Synchronous search function to run in thread."""
+    with DDGS() as ddgs:
+        return list(ddgs.text(query, max_results=max_results))
 
 
 class WebSearchTool(BaseTool):
@@ -27,19 +34,28 @@ class WebSearchTool(BaseTool):
             "query": {
                 "type": "string",
                 "description": "Search query",
-            }
+            },
+            "timeout": {
+                "type": "number",
+                "description": "Optional timeout in seconds (default: 30)",
+                "default": DEFAULT_SEARCH_TIMEOUT,
+            },
         }
 
-    def execute(self, query: str) -> str:
+    async def execute(self, query: str, timeout: float = DEFAULT_SEARCH_TIMEOUT) -> str:
         """Execute web search and return results."""
-        if DDGS is None:
-            return "Error: Search dependency missing (ddgs). Reinstall dependencies."
-
         try:
+            timeout_val = float(timeout) if timeout else DEFAULT_SEARCH_TIMEOUT
             results = []
-            with DDGS() as ddgs:
-                for r in ddgs.text(query, max_results=5):
-                    results.append(f"[{r['title']}]({r['href']})\n{r['body']}\n")
+            async with asyncio.timeout(timeout_val):
+                search_results = await asyncio.to_thread(_sync_search, query, 5)
+                for r in search_results:
+                    title = r.get("title", "")
+                    href = r.get("href", "")
+                    body = r.get("body", "")
+                    results.append(f"[{title}]({href})\n{body}\n")
             return "\n---\n".join(results) if results else "No results found"
+        except TimeoutError:
+            return f"Error: Web search timed out after {timeout}s"
         except Exception as e:
             return f"Error searching web: {str(e)}"

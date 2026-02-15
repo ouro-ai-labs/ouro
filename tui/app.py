@@ -58,17 +58,15 @@ class AloopTUI(App):
         self.exit()
 
 
-async def run_tui_mode(agent: "BaseAgent", mode: str) -> None:
+async def run_tui_mode(agent: "BaseAgent") -> None:
     """Run the TUI mode.
 
     Args:
         agent: The agent instance
-        mode: Agent mode (react or plan)
     """
-    from config import Config
-
     # Extract model info for display
-    model = Config.LITELLM_MODEL
+    model_info = agent.get_current_model_info()
+    model = model_info["model_id"] if model_info else "unknown"
 
-    app = AloopTUI(agent=agent, mode=mode, model=model)
+    app = AloopTUI(agent=agent, mode="react", model=model)
     await app.run_async()

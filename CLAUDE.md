@@ -1,4 +1,4 @@
-# AgenticLoop — Agent Instructions
+# ouro — Agent Instructions
 
 This file defines the **operational workflow** for making changes in this repo (how to set up, run, test, format, build, and publish). Keep it short, specific, and executable; link to docs for long explanations.
 
@@ -18,6 +18,42 @@ Optional (recommended): enable git hooks:
 pre-commit install
 ```
 
+## Branching Workflow
+
+**IMPORTANT**: Every change must be developed on a new branch using a git worktree, then merged into `main` via pull request.
+
+1. Create a worktree with a new branch: `git worktree add ../ouro-<branch-name> -b <branch-name>`
+2. Work in the worktree directory, commit changes there.
+3. Push the branch and open a PR to merge into `main`.
+4. After the PR is merged, clean up: `git worktree remove ../ouro-<branch-name>`
+
+Never commit directly to `main`. All changes go through PR review.
+
+### Worktree Env (Recommended)
+
+Worktrees don't automatically share `.venv`. To avoid re-running bootstrap for every worktree, create the env once in the main checkout, then symlink it in each worktree:
+
+```bash
+# main checkout
+cd /path/to/ouro
+./scripts/bootstrap.sh
+
+# each worktree (example: ../ouro-my-branch)
+cd /path/to/ouro-my-branch
+ln -s ../ouro/.venv .venv
+# Point the editable install at *this* worktree (fast; doesn't reinstall deps).
+./scripts/dev.sh install
+./scripts/dev.sh check
+```
+
+## Checkpoint Commits
+
+Prefer small, reviewable commits:
+- Before committing, run `./scripts/dev.sh check` (precommit + typecheck + tests).
+- Keep mechanical changes (formatting, renames) in their own commit when possible.
+- **Human-in-the-loop**: at key checkpoints, the agent should *ask* whether to `git commit` and/or `git push` (do not do it automatically).
+- Before asking to commit, show a short change summary (e.g. `git diff --stat`) and the `./scripts/dev.sh check` result.
+
 ## CI
 
 GitHub Actions runs `./scripts/dev.sh precommit`, `./scripts/dev.sh test -q`, and strict typecheck on PRs.
@@ -33,16 +69,17 @@ TYPECHECK_STRICT=1 ./scripts/dev.sh typecheck
 ```
 
 Manual doc/workflow checks:
-- README/AGENTS/docs: avoid legacy/removed commands (`LLM_PROVIDER`, `pip install -e`, `requirements.txt`, `setup.py`)
+- README/AGENTS/docs: avoid legacy/removed commands or env-based config; use current docs only
 - Docker examples use `--mode`/`--task`
 - Python 3.12+ + uv-only prerequisites documented consistently
 
 Change impact reminders:
 - CLI changes → update `README.md`, `docs/examples.md`
-- Config changes → update `.env.example`, `docs/configuration.md`
+- Config changes → update `docs/configuration.md`
 - Workflow scripts → update `AGENTS.md`, `docs/packaging.md`
+- **New subpackages** → add to `pyproject.toml` `[tool.setuptools] packages` list (see Packaging Checklist below)
 
-Run a quick smoke task (requires a configured provider in `.env`):
+Run a quick smoke task (requires a configured provider in `~/.ouro/models.yaml`):
 
 ```bash
 python main.py --task "Calculate 1+1"
@@ -71,7 +108,6 @@ python main.py --task "Calculate 1+1"
 
 - All tests: `python -m pytest test/`
 - Memory suite: `python -m pytest test/memory/ -v`
-- Script: `./scripts/test.sh`
 - Unified entrypoint: `./scripts/dev.sh test`
 - Integration tests: set `RUN_INTEGRATION_TESTS=1` (live LLM; may incur cost)
 
@@ -88,7 +124,6 @@ python -m isort .
 python -m ruff check --fix .
 ```
 
-Script: `./scripts/format.sh`
 Unified entrypoint: `./scripts/dev.sh format`
 
 ### Lint / Typecheck
@@ -101,29 +136,27 @@ Unified entrypoint: `./scripts/dev.sh format`
 ### Build (Packaging)
 
 ```bash
-./scripts/build.sh
+./scripts/dev.sh build
 ```
-Unified entrypoint: `./scripts/dev.sh build`
 
 ### Publish (Manual / Interactive)
 
-`./scripts/publish.sh` defaults to an interactive confirmation and refuses to run without a TTY unless you pass `--yes`.
+`./scripts/dev.sh publish` defaults to an interactive confirmation and refuses to run without a TTY unless you pass `--yes`.
 
-- TestPyPI: `./scripts/publish.sh --test`
-- PyPI (manual): `./scripts/publish.sh`
-- Unified entrypoint: `./scripts/dev.sh publish`
+- TestPyPI: `./scripts/dev.sh publish --test`
+- PyPI (manual): `./scripts/dev.sh publish`
 
 ## Docs Pointers
 
-- Configuration & `.env`: `docs/configuration.md`
+- Configuration & `~/.ouro/models.yaml`: `docs/configuration.md`
 - Packaging & release checklist: `docs/packaging.md`
 - Extending tools/agents: `docs/extending.md`
-- Memory system: `docs/memory-management.md`, `docs/memory_persistence.md`
+- Memory system: `docs/memory-management.md`
 - Usage examples: `docs/examples.md`
 
 ## Safety & Secrets
 
-- Never commit `.env` or API keys.
+- Never commit `~/.ouro/config` or API keys.
 - Avoid running destructive shell commands; keep file edits scoped and reversible.
 - Publishing/releasing steps require explicit human intent (see `docs/packaging.md`).
 
@@ -152,20 +185,43 @@ Avoid over-specifying implementation details; focus on the "what" and "why", not
 
 Review existing RFCs before implementation to understand design decisions and constraints.
 
-## AsyncIO Migration (RFC 003)
-
-The runtime is migrating to an **asyncio-first** architecture. During this period:
+## Async Runtime Rules
 
 - **New runtime code must be async-first**: avoid introducing new blocking I/O in `agent/`, `llm/`, `memory/`, and `tools/`.
 - **Do not use `asyncio.run()` in library code**. Only entrypoints (e.g., `main.py`) should own the event loop.
 - If you must call a blocking library temporarily, ensure it’s executed behind an async boundary (e.g., `asyncio.to_thread`) and has a timeout/cancellation strategy.
+- **Strict async rule**: use native async libs where available (e.g., `aiofiles`, `httpx`). Use `aiofiles.os.path.*` for metadata checks. Only use `asyncio.to_thread` when no async API exists (e.g., glob/rglob). Avoid sync file copy; use async streaming instead.
 
-See `rfc/003-asyncio-migration.md` for phases and rules.
+### Testing Async Code
+
+- **Tests that call async code must be async**: use `async def test_xxx` for tests that await async functions or use async fixtures.
+- **Async fixtures must use `@pytest_asyncio.fixture`**: fixtures that perform async setup/teardown or depend on async fixtures must be async.
+- **Subprocess cleanup in tests**: when tests create subprocesses, ensure proper cleanup before the event loop closes:
+  - Call `process.kill()` + `await process.communicate()` to consume pipes
+  - Explicitly close transport with `proc._transport.close()` if needed
+  - Use async fixtures with `try/finally` to guarantee cleanup
+- **Avoid mixing sync and async fixtures**: if a fixture depends on an async fixture, it should also be async.
 
 ## When Changing Key Areas
 
 - If you change CLI flags / behavior: update `README.md` and `docs/examples.md`.
-- If you change configuration/env vars: update `docs/configuration.md` and `.env.example`.
+- If you change configuration/env vars: update `docs/configuration.md`.
 - If you change packaging/versioning: update `pyproject.toml` and `docs/packaging.md`.
-- If you change memory/compression/persistence: add/adjust tests under `test/memory/` and update `docs/memory-management.md` / `docs/memory_persistence.md`.
+- If you change memory/compression/persistence: add/adjust tests under `test/memory/` and update `docs/memory-management.md`.
 - **Significant changes**: write an RFC in `rfc/` before implementation (see RFC Design Documents section above).
+
+## Packaging Checklist
+
+**IMPORTANT**: This project uses an **explicit** package list in `pyproject.toml` (`[tool.setuptools] packages`). Setuptools does **not** auto-discover subpackages.
+
+When adding a new directory with `__init__.py` (i.e. a new Python subpackage), you **must** add it to the `packages` list in `pyproject.toml`. Forgetting this causes `ModuleNotFoundError` on PyPI installs (this has happened twice: v0.1.1 and v0.2.1).
+
+Before every release, verify the packages list is complete:
+
+```bash
+# List all packages in source tree (excluding test/.venv)
+find . -name '__init__.py' -not -path './.venv/*' -not -path './test/*' | sed 's|/[^/]*$||;s|^\./||' | tr '/' '.' | sort
+
+# Compare with pyproject.toml
+grep '^packages' pyproject.toml
+```

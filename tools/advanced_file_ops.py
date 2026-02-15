@@ -1,10 +1,14 @@
 """Advanced file operation tools inspired by Claude Code."""
 
+import asyncio
+import contextlib
 import re
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+import aiofiles
+import aiofiles.os
 
 from tools.base import BaseTool
 
@@ -41,14 +45,14 @@ Returns sorted list of matching file paths."""
             },
         }
 
-    def execute(self, pattern: str, path: str = ".") -> str:
+    async def execute(self, pattern: str, path: str = ".") -> str:
         """Find files matching glob pattern."""
         try:
             base_path = Path(path)
-            if not base_path.exists():
+            if not await aiofiles.os.path.exists(str(base_path)):
                 return f"Error: Path does not exist: {path}"
 
-            matches = sorted(base_path.glob(pattern))
+            matches = await asyncio.to_thread(lambda: sorted(base_path.glob(pattern)))
             if not matches:
                 return f"No files found matching pattern: {pattern} in {path}"
 
@@ -140,7 +144,7 @@ Examples:
             },
         }
 
-    def execute(
+    async def execute(
         self,
         pattern: str,
         path: str = ".",
@@ -156,12 +160,12 @@ Examples:
     ) -> str:
         """Search for pattern in files with optional file filtering."""
         base_path = Path(path)
-        if not base_path.exists():
+        if not await aiofiles.os.path.exists(str(base_path)):
             return f"Error: Path does not exist: {path}"
 
         # Use ripgrep if available
         if self._has_ripgrep:
-            return self._execute_ripgrep(
+            return await self._execute_ripgrep(
                 pattern=pattern,
                 path=path,
                 mode=mode,
@@ -174,7 +178,7 @@ Examples:
                 max_count=max_count,
             )
         else:
-            return self._execute_python_fallback(
+            return await self._execute_python_fallback(
                 pattern=pattern,
                 path=path,
                 mode=mode,
@@ -185,7 +189,7 @@ Examples:
                 max_count=max_count,
             )
 
-    def _execute_ripgrep(
+    async def _execute_ripgrep(
         self,
         pattern: str,
         path: str,
@@ -249,21 +253,25 @@ Examples:
         cmd.extend(["--", pattern, path])
 
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=30,
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
+            try:
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.communicate()
+                return "Error: Search timed out after 30 seconds"
 
-            output = result.stdout
-            if not output and result.returncode == 1:
+            output = stdout.decode(errors="ignore")
+            error_output = stderr.decode(errors="ignore")
+            if not output and process.returncode == 1:
                 return f"No matches found for pattern '{pattern}'"
-            elif result.returncode not in (0, 1):
-                # returncode 1 means no matches, 0 means matches found
-                # Other codes indicate errors
-                if result.stderr:
-                    return f"Error executing ripgrep: {result.stderr.strip()}"
+            elif process.returncode not in (0, 1):
+                if error_output:
+                    return f"Error executing ripgrep: {error_output.strip()}"
                 return f"No matches found for pattern '{pattern}'"
 
             # Limit output size
@@ -283,12 +291,10 @@ Examples:
 
             return output
 
-        except subprocess.TimeoutExpired:
-            return "Error: Search timed out after 30 seconds"
         except Exception as e:
             return f"Error executing ripgrep: {str(e)}"
 
-    def _execute_python_fallback(
+    async def _execute_python_fallback(
         self,
         pattern: str,
         path: str,
@@ -329,11 +335,15 @@ Examples:
             # Determine files to search
             if file_pattern:
                 try:
-                    files_to_search = list(base_path.glob(file_pattern))
+                    files_to_search = await asyncio.to_thread(
+                        lambda: [f for f in base_path.glob(file_pattern) if f.is_file()]
+                    )
                 except Exception as e:
                     return f"Error with file_pattern '{file_pattern}': {str(e)}"
             else:
-                files_to_search = [f for f in base_path.rglob("*") if f.is_file()]
+                files_to_search = await asyncio.to_thread(
+                    lambda: [f for f in base_path.rglob("*") if f.is_file()]
+                )
 
             # Filter out excluded patterns
             excludes = exclude_patterns if exclude_patterns is not None else default_excludes
@@ -341,11 +351,19 @@ Examples:
             # Pre-compute set of excluded files
             excluded_files = set()
             for exclude_pattern in excludes:
-                try:
-                    excluded_files.update(base_path.glob(exclude_pattern))
-                    excluded_files.update(base_path.rglob(exclude_pattern))
-                except Exception:
-                    pass
+                with contextlib.suppress(Exception):
+                    glob_matches = await asyncio.to_thread(
+                        lambda exclude_pattern=exclude_pattern: list(
+                            base_path.glob(exclude_pattern)
+                        )
+                    )
+                    rglob_matches = await asyncio.to_thread(
+                        lambda exclude_pattern=exclude_pattern: list(
+                            base_path.rglob(exclude_pattern)
+                        )
+                    )
+                    excluded_files.update(glob_matches)
+                    excluded_files.update(rglob_matches)
 
             # Also exclude common directories
             exclude_dirs = {
@@ -361,8 +379,6 @@ Examples:
             # Filter files
             filtered_files = []
             for file_path in files_to_search:
-                if not file_path.is_file():
-                    continue
                 if file_path in excluded_files:
                     continue
                 # Check for excluded directories
@@ -381,7 +397,8 @@ Examples:
                 files_searched += 1
 
                 try:
-                    content = file_path.read_text(encoding="utf-8")
+                    async with aiofiles.open(file_path, encoding="utf-8") as f:
+                        content = await f.read()
                     matches = list(regex.finditer(content))
 
                     if not matches:
@@ -422,114 +439,3 @@ Examples:
             return output
         except Exception as e:
             return f"Error executing grep: {str(e)}"
-
-
-class EditTool(BaseTool):
-    """Edit files surgically without reading entire contents."""
-
-    @property
-    def name(self) -> str:
-        return "edit_file"
-
-    @property
-    def description(self) -> str:
-        return """Edit files surgically without reading entire contents.
-
-Operations:
-- replace: Find and replace text exactly (old_text and new_text required)
-- append: Add to end of file (text required)
-- insert_at_line: Insert text at specific line number (line_number and text required)
-
-More efficient than reading full file, modifying, and writing back.
-
-IMPORTANT: Use this for small, targeted edits to save tokens."""
-
-    @property
-    def parameters(self) -> Dict[str, Any]:
-        return {
-            "file_path": {"type": "string", "description": "Path to the file to edit"},
-            "operation": {
-                "type": "string",
-                "description": "Operation to perform: replace, append, or insert_at_line",
-            },
-            "old_text": {
-                "type": "string",
-                "description": "Text to find and replace (for replace operation)",
-            },
-            "new_text": {
-                "type": "string",
-                "description": "New text to insert (for replace operation)",
-            },
-            "text": {
-                "type": "string",
-                "description": "Text to add (for append or insert_at_line operations)",
-            },
-            "line_number": {
-                "type": "integer",
-                "description": "Line number to insert at (for insert_at_line operation, 1-indexed)",
-            },
-        }
-
-    def execute(
-        self,
-        file_path: str,
-        operation: str,
-        old_text: str = "",
-        new_text: str = "",
-        text: str = "",
-        line_number: int = 0,
-        **kwargs,
-    ) -> str:
-        """Perform surgical file edit."""
-        try:
-            path = Path(file_path)
-
-            if not path.exists():
-                return f"Error: File does not exist: {file_path}"
-
-            if operation == "replace":
-                if not old_text:
-                    return "Error: old_text parameter is required for replace operation"
-
-                content = path.read_text(encoding="utf-8")
-
-                if old_text not in content:
-                    return f"Error: Text not found in {file_path}"
-
-                # Replace only the first occurrence
-                content = content.replace(old_text, new_text, 1)
-                path.write_text(content, encoding="utf-8")
-                return f"Successfully replaced text in {file_path}"
-
-            elif operation == "append":
-                if not text:
-                    return "Error: text parameter is required for append operation"
-
-                with path.open("a", encoding="utf-8") as f:
-                    f.write(text)
-                return f"Successfully appended to {file_path}"
-
-            elif operation == "insert_at_line":
-                if not text:
-                    return "Error: text parameter is required for insert_at_line operation"
-                if line_number <= 0:
-                    return "Error: line_number must be positive (1-indexed)"
-
-                lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
-
-                # Insert at the specified line (1-indexed)
-                if line_number > len(lines) + 1:
-                    return f"Error: line_number {line_number} is beyond file length {len(lines)}"
-
-                # Ensure text ends with newline if inserting in middle
-                insert_text = text if text.endswith("\n") else text + "\n"
-                lines.insert(line_number - 1, insert_text)
-
-                path.write_text("".join(lines), encoding="utf-8")
-                return f"Successfully inserted text at line {line_number} in {file_path}"
-
-            else:
-                return f"Error: Unknown operation '{operation}'. Supported: replace, append, insert_at_line"
-
-        except Exception as e:
-            return f"Error executing edit: {str(e)}"

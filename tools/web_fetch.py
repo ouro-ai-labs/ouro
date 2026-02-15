@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import ipaddress
 import json
@@ -9,13 +10,15 @@ import os
 import socket
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union
+from email.message import Message
+from typing import Any, TypedDict
 from urllib.parse import urljoin, urlparse
 
-import requests
+import aiofiles
+import aiofiles.os
+import httpx
 import trafilatura
 from lxml import html as lxml_html
-from requests.utils import get_encoding_from_headers
 
 from .base import BaseTool
 
@@ -39,6 +42,22 @@ CACHE_TTL_SECONDS = 300  # 5 minutes TTL
 CACHE_MAX_ENTRIES = 100
 
 
+def _get_encoding_from_headers(headers: httpx.Headers) -> str | None:
+    content_type = headers.get("content-type")
+    if not content_type:
+        return None
+    message = Message()
+    message["content-type"] = content_type
+    charset = message.get_param("charset")
+    if not charset:
+        return None
+    if isinstance(charset, tuple):
+        charset = charset[0]
+    if not isinstance(charset, str):
+        return None
+    return charset.strip("'\"")
+
+
 class ExtractedLink(TypedDict):
     """Structured link extracted from HTML content."""
 
@@ -51,7 +70,7 @@ class ExtractedLink(TypedDict):
 class CacheEntry:
     """Cache entry for URL fetch results."""
 
-    result: Dict[str, Any]
+    result: dict[str, Any]
     timestamp: float
     ttl: float
 
@@ -60,14 +79,14 @@ class WebFetchCache:
     """Simple in-memory cache for web fetch results."""
 
     def __init__(self, max_entries: int = CACHE_MAX_ENTRIES):
-        self._cache: Dict[str, CacheEntry] = {}
+        self._cache: dict[str, CacheEntry] = {}
         self._max_entries = max_entries
 
     def _make_key(self, url: str, format: str) -> str:
         """Create a cache key from URL and format."""
         return hashlib.md5(f"{url}:{format}".encode()).hexdigest()
 
-    def get(self, url: str, format: str) -> Optional[Dict[str, Any]]:
+    def get(self, url: str, format: str) -> dict[str, Any] | None:
         """Get cached result if valid."""
         key = self._make_key(url, format)
         entry = self._cache.get(key)
@@ -80,7 +99,7 @@ class WebFetchCache:
         return entry.result
 
     def set(
-        self, url: str, format: str, result: Dict[str, Any], ttl: float = CACHE_TTL_SECONDS
+        self, url: str, format: str, result: dict[str, Any], ttl: float = CACHE_TTL_SECONDS
     ) -> None:
         """Cache a result."""
         # Evict oldest entries if at capacity
@@ -103,7 +122,7 @@ _url_cache = WebFetchCache()
 class WebFetchError(Exception):
     """Structured error for WebFetchTool."""
 
-    def __init__(self, code: str, message: str, metadata: Optional[Dict[str, Any]] = None):
+    def __init__(self, code: str, message: str, metadata: dict[str, Any] | None = None):
         super().__init__(message)
         self.code = code
         self.message = message
@@ -129,7 +148,7 @@ class WebFetchTool(BaseTool):
         )
 
     @property
-    def parameters(self) -> Dict[str, Any]:
+    def parameters(self) -> dict[str, Any]:
         return {
             "url": {
                 "type": "string",
@@ -166,7 +185,7 @@ class WebFetchTool(BaseTool):
             },
         }
 
-    def execute(self, **kwargs) -> str:
+    async def execute(self, **kwargs) -> str:
         """Execute web fetch with format conversion."""
         url = kwargs.get("url")
         format_value = kwargs.get("format", "markdown")
@@ -190,7 +209,7 @@ class WebFetchTool(BaseTool):
                     result["metadata"]["duration_ms"] = int((time.time() - start) * 1000)
                     return json.dumps(result, ensure_ascii=False)
 
-            result = self._execute(
+            result = await self._execute(
                 url=url, format=format_value, timeout=timeout, start_time=start, save_to=save_to
             )
 
@@ -217,14 +236,14 @@ class WebFetchTool(BaseTool):
             }
             return json.dumps(error_result, ensure_ascii=False)
 
-    def _execute(
+    async def _execute(
         self,
         url: str,
         format: str,
-        timeout: Optional[float],
+        timeout: float | None,
         start_time: float,
-        save_to: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        save_to: str | None = None,
+    ) -> dict[str, Any]:
         if format not in {"markdown", "text", "html"}:
             raise WebFetchError(
                 "invalid_format",
@@ -232,24 +251,23 @@ class WebFetchTool(BaseTool):
                 {"requested_format": format},
             )
 
-        parsed_url = self._validate_url(url)
+        parsed_url = await self._validate_url(url)
         timeout_seconds = (
             DEFAULT_TIMEOUT_SECONDS
             if timeout is None
             else max(1.0, min(float(timeout), MAX_TIMEOUT_SECONDS))
         )
 
-        response, redirects = self._fetch_with_redirects(
+        response, content_bytes, redirects = await self._fetch_with_redirects(
             parsed_url.geturl(), format, timeout_seconds
         )
 
         content_type_header = response.headers.get("content-type", "")
         content_type = content_type_header.partition(";")[0].strip().lower()
-        content_bytes = self._read_response(response)
         encoding = (
-            get_encoding_from_headers(response.headers)
-            or response.encoding
-            or response.apparent_encoding
+            _get_encoding_from_headers(response.headers)
+            or getattr(response, "encoding", None)
+            or getattr(response, "apparent_encoding", None)
             or "utf-8"
         )
         content = content_bytes.decode(encoding, errors="replace")
@@ -257,18 +275,18 @@ class WebFetchTool(BaseTool):
         output, title = self._convert_content(content, content_type, format, url)
 
         # Extract structured links from HTML content
-        links: List[ExtractedLink] = []
+        links: list[ExtractedLink] = []
         if "html" in content_type or content_type in {"application/xhtml+xml"}:
-            links = self._extract_links(content, response.url)
+            links = self._extract_links(content, str(response.url))
 
         # Save content to file if save_to is specified
         saved_path = None
         if save_to:
-            saved_path = self._save_content(output, save_to)
+            saved_path = await self._save_content(output, save_to)
 
-        metadata: Dict[str, Any] = {
+        metadata: dict[str, Any] = {
             "requested_url": url,
-            "final_url": response.url,
+            "final_url": str(response.url),
             "status_code": response.status_code,
             "content_type": content_type_header,
             "charset": encoding,
@@ -311,7 +329,7 @@ class WebFetchTool(BaseTool):
             "metadata": metadata,
         }
 
-    def _save_content(self, content: str, save_to: str) -> str:
+    async def _save_content(self, content: str, save_to: str) -> str:
         """Save content to a file, creating parent directories if needed.
 
         Args:
@@ -326,16 +344,16 @@ class WebFetchTool(BaseTool):
 
         # Create parent directories if needed
         parent_dir = os.path.dirname(abs_path)
-        if parent_dir and not os.path.exists(parent_dir):
-            os.makedirs(parent_dir, exist_ok=True)
+        if parent_dir:
+            await aiofiles.os.makedirs(parent_dir, exist_ok=True)
 
         # Write content to file
-        with open(abs_path, "w", encoding="utf-8") as f:
-            f.write(content)
+        async with aiofiles.open(abs_path, "w", encoding="utf-8") as f:
+            await f.write(content)
 
         return abs_path
 
-    def _validate_url(self, url: str):
+    async def _validate_url(self, url: str):
         if not url.startswith(("http://", "https://")):
             raise WebFetchError(
                 "invalid_url",
@@ -374,10 +392,10 @@ class WebFetchTool(BaseTool):
                 {"host": host, "port": port},
             )
 
-        self._ensure_host_safe(host, port)
+        await self._ensure_host_safe(host, port)
         return parsed
 
-    def _ensure_host_safe(self, host: str, port: int) -> None:
+    async def _ensure_host_safe(self, host: str, port: int) -> None:
         try:
             ip = ipaddress.ip_address(host)
         except ValueError:
@@ -392,7 +410,7 @@ class WebFetchTool(BaseTool):
                 )
             return
 
-        resolved_ips = self._resolve_host(host, port)
+        resolved_ips = await self._resolve_host(host, port)
         if not resolved_ips:
             raise WebFetchError(
                 "dns_error",
@@ -409,9 +427,10 @@ class WebFetchTool(BaseTool):
                     {"host": host, "ip": str(ip_value)},
                 )
 
-    def _resolve_host(self, host: str, port: int) -> List[str]:
+    async def _resolve_host(self, host: str, port: int) -> list[str]:
         try:
-            infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+            loop = asyncio.get_running_loop()
+            infos = await loop.getaddrinfo(host, port, type=socket.SOCK_STREAM)
         except socket.gaierror:
             return []
         addresses = []
@@ -421,73 +440,76 @@ class WebFetchTool(BaseTool):
                 addresses.append(str(sockaddr[0]))
         return list(dict.fromkeys(addresses))
 
-    def _is_ip_allowed(self, ip: Union[ipaddress.IPv4Address, ipaddress.IPv6Address]) -> bool:
+    def _is_ip_allowed(self, ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
         if str(ip) == "169.254.169.254":
             return False
         return ip.is_global
 
-    def _fetch_with_redirects(
+    async def _fetch_with_redirects(
         self, url: str, format: str, timeout: float
-    ) -> Tuple[requests.Response, List[str]]:
-        session = requests.Session()
+    ) -> tuple[httpx.Response, bytes, list[str]]:
         headers = {
-            "User-Agent": "Mozilla/5.0 (compatible; AgenticLoop/1.0)",
+            "User-Agent": "Mozilla/5.0 (compatible; ouro/1.0)",
             "Accept": ACCEPT_HEADERS.get(format, "*/*"),
             "Accept-Language": "en-US,en;q=0.9",
         }
 
-        redirects: List[str] = []
+        redirects: list[str] = []
         current_url = url
-        for _ in range(MAX_REDIRECTS + 1):
-            parsed = self._validate_url(current_url)
-            try:
-                response = self._request(session, parsed.geturl(), headers, timeout)
-            except requests.Timeout as exc:
-                raise WebFetchError(
-                    "timeout",
-                    "Request timed out",
-                    {"requested_url": current_url},
-                ) from exc
-            except requests.RequestException as exc:
-                raise WebFetchError(
-                    "request_error",
-                    "Failed to fetch URL",
-                    {"requested_url": current_url, "error": str(exc)},
-                ) from exc
+        timeout_config = httpx.Timeout(timeout)
+        async with httpx.AsyncClient(follow_redirects=False, timeout=timeout_config) as client:
+            for _ in range(MAX_REDIRECTS + 1):
+                parsed = await self._validate_url(current_url)
+                try:
+                    response, content_bytes = await self._request(
+                        client, parsed.geturl(), headers, timeout
+                    )
+                except httpx.TimeoutException as exc:
+                    raise WebFetchError(
+                        "timeout",
+                        "Request timed out",
+                        {"requested_url": current_url},
+                    ) from exc
+                except httpx.RequestError as exc:
+                    raise WebFetchError(
+                        "request_error",
+                        "Failed to fetch URL",
+                        {"requested_url": current_url, "error": str(exc)},
+                    ) from exc
 
-            if response.status_code in {301, 302, 303, 307, 308}:
-                location = response.headers.get("location")
-                if not location:
+                if response.status_code in {301, 302, 303, 307, 308}:
+                    location = response.headers.get("location")
+                    if not location:
+                        raise WebFetchError(
+                            "http_error",
+                            "Redirect response missing Location header",
+                            {"requested_url": current_url, "status_code": response.status_code},
+                        )
+                    next_url = urljoin(current_url, location)
+                    try:
+                        await self._validate_url(next_url)
+                    except WebFetchError as exc:
+                        raise WebFetchError(
+                            "redirect_blocked",
+                            "Redirect target is not allowed",
+                            {
+                                "requested_url": current_url,
+                                "redirect_url": next_url,
+                                "redirect_error": exc.code,
+                            },
+                        ) from exc
+                    redirects.append(next_url)
+                    current_url = next_url
+                    continue
+
+                if response.status_code >= 400:
                     raise WebFetchError(
                         "http_error",
-                        "Redirect response missing Location header",
+                        f"Request failed with status code: {response.status_code}",
                         {"requested_url": current_url, "status_code": response.status_code},
                     )
-                next_url = urljoin(current_url, location)
-                try:
-                    self._validate_url(next_url)
-                except WebFetchError as exc:
-                    raise WebFetchError(
-                        "redirect_blocked",
-                        "Redirect target is not allowed",
-                        {
-                            "requested_url": current_url,
-                            "redirect_url": next_url,
-                            "redirect_error": exc.code,
-                        },
-                    ) from exc
-                redirects.append(next_url)
-                current_url = next_url
-                continue
 
-            if response.status_code >= 400:
-                raise WebFetchError(
-                    "http_error",
-                    f"Request failed with status code: {response.status_code}",
-                    {"requested_url": current_url, "status_code": response.status_code},
-                )
-
-            return response, redirects
+                return response, content_bytes, redirects
 
         raise WebFetchError(
             "redirect_blocked",
@@ -495,14 +517,18 @@ class WebFetchTool(BaseTool):
             {"requested_url": url, "redirects": redirects},
         )
 
-    def _request(
-        self, session: requests.Session, url: str, headers: Dict[str, str], timeout: float
-    ) -> requests.Response:
-        return session.get(
-            url, headers=headers, timeout=timeout, stream=True, allow_redirects=False
-        )
+    async def _request(
+        self, client: httpx.AsyncClient, url: str, headers: dict[str, str], timeout: float
+    ) -> tuple[httpx.Response, bytes]:
+        async with client.stream("GET", url, headers=headers, follow_redirects=False) as response:
+            if response.status_code in {301, 302, 303, 307, 308}:
+                return response, b""
+            if response.status_code >= 400:
+                return response, b""
+            content_bytes = await self._read_response(response)
+            return response, content_bytes
 
-    def _read_response(self, response: requests.Response) -> bytes:
+    async def _read_response(self, response: httpx.Response) -> bytes:
         content_length = response.headers.get("content-length")
         if content_length:
             try:
@@ -515,9 +541,9 @@ class WebFetchTool(BaseTool):
             except ValueError:
                 pass
 
-        chunks: List[bytes] = []
+        chunks: list[bytes] = []
         total = 0
-        for chunk in response.iter_content(chunk_size=65536):
+        async for chunk in response.aiter_bytes():
             if not chunk:
                 continue
             total += len(chunk)
@@ -532,7 +558,7 @@ class WebFetchTool(BaseTool):
 
     def _convert_content(
         self, content: str, content_type: str, format: str, url: str
-    ) -> Tuple[str, str]:
+    ) -> tuple[str, str]:
         if "html" in content_type or content_type in {"application/xhtml+xml"}:
             if format == "html":
                 return content, f"{url} ({content_type})"
@@ -555,7 +581,7 @@ class WebFetchTool(BaseTool):
             {"content_type": content_type},
         )
 
-    def _render_html(self, html: str, format: str, url: str) -> Tuple[str, str]:
+    def _render_html(self, html: str, format: str, url: str) -> tuple[str, str]:
         # Extract title from HTML
         title = url
         try:
@@ -585,7 +611,7 @@ class WebFetchTool(BaseTool):
         result = trafilatura.extract(html, include_links=False, include_formatting=False)
         return result.strip() if result else "", title
 
-    def _extract_links(self, html: str, base_url: str, max_links: int = 50) -> List[ExtractedLink]:
+    def _extract_links(self, html: str, base_url: str, max_links: int = 50) -> list[ExtractedLink]:
         """Extract structured links from HTML content.
 
         Args:
@@ -596,7 +622,7 @@ class WebFetchTool(BaseTool):
         Returns:
             List of ExtractedLink dictionaries with href, text, and type
         """
-        links: List[ExtractedLink] = []
+        links: list[ExtractedLink] = []
         try:
             tree = lxml_html.fromstring(html)
             parsed_base = urlparse(base_url)
@@ -632,10 +658,7 @@ class WebFetchTool(BaseTool):
                     parsed_href = urlparse(resolved_href)
                     href_domain = parsed_href.netloc.lower()
 
-                    if href_domain == base_domain:
-                        link_type = "internal"
-                    else:
-                        link_type = "external"
+                    link_type = "internal" if href_domain == base_domain else "external"
                     href = resolved_href
 
                 links.append(ExtractedLink(href=href, text=text[:200], type=link_type))

@@ -7,7 +7,9 @@ Usage:
     python tools/session_manager.py delete <session_id>
     python tools/session_manager.py stats <session_id>
 """
+
 import argparse
+import asyncio
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -15,7 +17,8 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from memory.store import MemoryStore
+from memory.store import YamlFileMemoryStore
+from utils.runtime import get_sessions_dir
 
 
 def format_timestamp(ts: str) -> str:
@@ -27,9 +30,9 @@ def format_timestamp(ts: str) -> str:
         return ts
 
 
-def list_sessions(store: MemoryStore, limit: int = 50):
+async def list_sessions(store: YamlFileMemoryStore, limit: int = 50):
     """List all sessions."""
-    sessions = store.list_sessions(limit=limit)
+    sessions = await store.list_sessions(limit=limit)
 
     if not sessions:
         print("No sessions found.")
@@ -37,23 +40,23 @@ def list_sessions(store: MemoryStore, limit: int = 50):
 
     print(f"\n📚 Sessions (showing {len(sessions)}):")
     print("=" * 100)
-    print(f"{'Session ID':<38} {'Created':<20} {'Messages':<10} {'Summaries':<10}")
+    print(f"{'Session ID':<38} {'Updated':<20} {'Messages':<10} {'Preview':<30}")
     print("-" * 100)
 
     for session in sessions:
         session_id = session["id"]
-        created = format_timestamp(session["created_at"])
+        updated = format_timestamp(session.get("updated_at", session.get("created_at", "")))
         msg_count = session["message_count"]
-        summary_count = session["summary_count"]
+        preview = session.get("preview", "")[:30]
 
-        print(f"{session_id:<38} {created:<20} {msg_count:<10} {summary_count:<10}")
+        print(f"{session_id:<38} {updated:<20} {msg_count:<10} {preview:<30}")
 
     print("=" * 100)
 
 
-def show_session(store: MemoryStore, session_id: str, show_messages: bool = False):
+async def show_session(store: YamlFileMemoryStore, session_id: str, show_messages: bool = False):
     """Show detailed session information."""
-    session_data = store.load_session(session_id)
+    session_data = await store.load_session(session_id)
 
     if not session_data:
         print(f"❌ Session {session_id} not found")
@@ -69,21 +72,6 @@ def show_session(store: MemoryStore, session_id: str, show_messages: bool = Fals
     print(f"  Created: {format_timestamp(stats['created_at'])}")
     print(f"  System Messages: {len(session_data['system_messages'])}")
     print(f"  Messages: {len(session_data['messages'])}")
-    print(f"  Summaries: {len(session_data['summaries'])}")
-    print(f"  Compression Count: {stats['compression_count']}")
-
-    # Summaries
-    if session_data["summaries"]:
-        print(f"\n📝 Summaries ({len(session_data['summaries'])}):")
-        for i, summary in enumerate(session_data["summaries"], 1):
-            print(f"\n  Summary {i}:")
-            print(f"    Original Messages: {summary.original_message_count}")
-            print(f"    Original Tokens: {summary.original_tokens}")
-            print(f"    Compressed Tokens: {summary.compressed_tokens}")
-            print(f"    Compression Ratio: {summary.compression_ratio:.2f}")
-            print(f"    Token Savings: {summary.token_savings}")
-            print(f"    Preserved Messages: {len(summary.preserved_messages)}")
-            print(f"    Summary Text: {summary.summary[:100]}...")
 
     # Messages (if requested)
     if show_messages and session_data["messages"]:
@@ -100,9 +88,9 @@ def show_session(store: MemoryStore, session_id: str, show_messages: bool = Fals
     print("=" * 100)
 
 
-def show_stats(store: MemoryStore, session_id: str):
+async def show_stats(store: YamlFileMemoryStore, session_id: str):
     """Show session statistics."""
-    stats = store.get_session_stats(session_id)
+    stats = await store.get_session_stats(session_id)
 
     if not stats:
         print(f"❌ Session {session_id} not found")
@@ -113,30 +101,21 @@ def show_stats(store: MemoryStore, session_id: str):
 
     print("\n⏰ Timing:")
     print(f"  Created: {format_timestamp(stats['created_at'])}")
+    if stats.get("updated_at"):
+        print(f"  Updated: {format_timestamp(stats['updated_at'])}")
 
     print("\n📨 Messages:")
     print(f"  System Messages: {stats['system_message_count']}")
     print(f"  Regular Messages: {stats['message_count']}")
     print(f"  Total Messages: {stats['system_message_count'] + stats['message_count']}")
 
-    print("\n🗜️  Compression:")
-    print(f"  Compressions: {stats['compression_count']}")
-    print(f"  Summaries: {stats['summary_count']}")
-
     print("\n🎫 Tokens:")
     print(f"  Message Tokens: {stats['total_message_tokens']:,}")
-    print(f"  Original Tokens (pre-compression): {stats['total_original_tokens']:,}")
-    print(f"  Compressed Tokens: {stats['total_compressed_tokens']:,}")
-    print(f"  Token Savings: {stats['token_savings']:,}")
-
-    if stats["total_original_tokens"] > 0:
-        savings_pct = (stats["token_savings"] / stats["total_original_tokens"]) * 100
-        print(f"  Savings Percentage: {savings_pct:.1f}%")
 
     print("=" * 80)
 
 
-def delete_session(store: MemoryStore, session_id: str, confirm: bool = False):
+async def delete_session(store: YamlFileMemoryStore, session_id: str, confirm: bool = False):
     """Delete a session."""
     if not confirm:
         response = input(f"Are you sure you want to delete session {session_id}? (yes/no): ")
@@ -144,14 +123,14 @@ def delete_session(store: MemoryStore, session_id: str, confirm: bool = False):
             print("Cancelled.")
             return
 
-    success = store.delete_session(session_id)
+    success = await store.delete_session(session_id)
     if success:
         print(f"✅ Session {session_id} deleted")
     else:
         print(f"❌ Session {session_id} not found")
 
 
-def main():
+async def main():
     parser = argparse.ArgumentParser(
         description="Manage memory sessions",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -175,10 +154,10 @@ Examples:
     )
 
     parser.add_argument(
-        "--db",
+        "--sessions-dir",
         type=str,
-        default="data/memory.db",
-        help="Path to database file (default: data/memory.db)",
+        default=None,
+        help="Path to sessions directory (default: .ouro/sessions/)",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
@@ -208,18 +187,19 @@ Examples:
         return
 
     # Initialize store
-    store = MemoryStore(db_path=args.db)
+    sessions_dir = args.sessions_dir if args.sessions_dir else get_sessions_dir()
+    store = YamlFileMemoryStore(sessions_dir=sessions_dir)
 
     # Execute command
     if args.command == "list":
-        list_sessions(store, limit=args.limit)
+        await list_sessions(store, limit=args.limit)
     elif args.command == "show":
-        show_session(store, args.session_id, show_messages=args.messages)
+        await show_session(store, args.session_id, show_messages=args.messages)
     elif args.command == "stats":
-        show_stats(store, args.session_id)
+        await show_stats(store, args.session_id)
     elif args.command == "delete":
-        delete_session(store, args.session_id, confirm=args.yes)
+        await delete_session(store, args.session_id, confirm=args.yes)
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

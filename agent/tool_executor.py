@@ -1,9 +1,9 @@
 """Tool execution engine for managing and executing tools."""
 
 import asyncio
-import inspect
 from typing import Any, Dict, List
 
+from config import Config
 from tools.base import BaseTool
 
 
@@ -20,12 +20,24 @@ class ToolExecutor:
             return f"Error: Tool '{tool_name}' not found"
 
         try:
-            execute = self.tools[tool_name].execute
-            if inspect.iscoroutinefunction(execute):
-                result = await execute(**tool_input)
+            timeout = Config.TOOL_TIMEOUT
+            if "timeout" in tool_input and tool_input["timeout"] is not None:
+                try:
+                    timeout = float(tool_input["timeout"])
+                except (TypeError, ValueError):
+                    timeout = Config.TOOL_TIMEOUT
+
+            if timeout is not None and timeout > 0:
+                async with asyncio.timeout(timeout):
+                    result = await self.tools[tool_name].execute(**tool_input)
             else:
-                result = await asyncio.to_thread(execute, **tool_input)
+                result = await self.tools[tool_name].execute(**tool_input)
             return str(result)
+        except asyncio.CancelledError:
+            # Re-raise CancelledError to allow proper cleanup
+            raise
+        except TimeoutError:
+            return f"Error: Tool '{tool_name}' timed out after {timeout}s"
         except Exception as e:
             return f"Error executing {tool_name}: {str(e)}"
 

@@ -18,7 +18,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - uses: astral-sh/setup-uv@v3
       - name: Bootstrap
-        run: ./scripts/bootstrap.sh --no-env
+        run: ./scripts/bootstrap.sh
       - name: Lint (pre-commit)
         run: ./scripts/dev.sh precommit
       - name: Tests
@@ -33,6 +33,6 @@ jobs:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@v3
       - name: Bootstrap
-        run: ./scripts/bootstrap.sh --no-env
+        run: ./scripts/bootstrap.sh
       - name: Typecheck
         run: TYPECHECK_STRICT=1 ./scripts/dev.sh typecheck
