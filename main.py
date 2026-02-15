@@ -22,11 +22,9 @@ from llm.chatgpt_auth import (
 from llm.oauth_model_sync import remove_oauth_models, sync_oauth_models
 from memory import MemoryManager
 from tools.advanced_file_ops import GlobTool, GrepTool
-from tools.explore import ExploreTool
 from tools.file_ops import FileReadTool, FileWriteTool
-from tools.parallel_execute import ParallelExecutionTool
+from tools.multi_task import MultiTaskTool
 from tools.shell import ShellTool
-from tools.shell_background import BackgroundTaskManager, ShellTaskStatusTool
 from tools.smart_edit import SmartEditTool
 from tools.web_fetch import WebFetchTool
 from tools.web_search import WebSearchTool
@@ -46,9 +44,6 @@ def create_agent(model_id: str | None = None):
     Returns:
         Configured LoopAgent instance with all tools
     """
-    # Initialize background task manager (shared between shell tools)
-    task_manager = BackgroundTaskManager.get_instance()
-
     # Initialize base tools
     tools = [
         FileReadTool(),
@@ -58,8 +53,7 @@ def create_agent(model_id: str | None = None):
         GlobTool(),
         GrepTool(),
         SmartEditTool(),
-        ShellTool(task_manager=task_manager),
-        ShellTaskStatusTool(task_manager=task_manager),
+        ShellTool(),
     ]
 
     # Initialize model manager
@@ -107,8 +101,7 @@ def create_agent(model_id: str | None = None):
     )
 
     # Add tools that require agent reference
-    agent.tool_executor.add_tool(ExploreTool(agent))
-    agent.tool_executor.add_tool(ParallelExecutionTool(agent))
+    agent.tool_executor.add_tool(MultiTaskTool(agent))
 
     return agent
 

@@ -141,11 +141,9 @@ ouro --resume a1b2c3d4
 | `grep_content` | Regex search in file contents |
 | `calculate` | Evaluate expressions / run Python code |
 | `shell` | Execute shell commands |
-| `shell_task_status` | Check background shell task status |
 | `web_search` | Web search (DuckDuckGo) |
 | `web_fetch` | Fetch and extract web page content |
-| `explore_context` | Explore project structure and context |
-| `parallel_execute` | Run multiple tool calls in parallel |
+| `multi_task` | Run multiple sub-agent tasks in parallel |
 | `notify` | Send email notifications (Resend) |
 | `manage_todo_list` | Manage a task/todo list |
 
