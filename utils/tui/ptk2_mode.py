@@ -246,14 +246,19 @@ class PTK2Driver:
             self._flush_interval_s = max(0.0, float(flush_ms) / 1000.0)
         except ValueError:
             self._flush_interval_s = 0.008
-        # Optional: limit how many visible characters we append per flush tick.
-        # Setting this too low can cause many full-layout redraws and hurt perf.
-        max_flush_chars = os.environ.get("PTK2_FLUSH_MAX_CHARS", "0")
+        # Optional: limit how many visible characters we append per flush tick
+        # *while streaming*. This makes output appear more "typewriter-like"
+        # instead of jumping in large chunks.
+        #
+        # This is intentionally only applied during streaming (thinking spinner
+        # active), because limiting all output can significantly increase the
+        # number of full-layout redraws.
+        max_flush_chars = os.environ.get("PTK2_STREAM_MAX_CHARS", "512")
         try:
             raw_max = int(max_flush_chars)
-            self._flush_max_visible_chars = max(256, raw_max) if raw_max > 0 else None
+            self._stream_max_visible_chars = max(64, raw_max) if raw_max > 0 else None
         except ValueError:
-            self._flush_max_visible_chars = None
+            self._stream_max_visible_chars = 512
         self._pending_raw = ""
         self._pending_norm = ""
         self._flush_handle: asyncio.Handle | None = None
@@ -706,11 +711,12 @@ class PTK2Driver:
         to_flush = self._pending_norm + normalized
         if not to_flush:
             return
-        if self._flush_max_visible_chars is None:
+        limit = self._stream_max_visible_chars if self._thinking_active else None
+        if limit is None:
             chunk, rest = to_flush, ""
         else:
             chunk, rest = split_visible_prefix_preserving_sgr(
-                to_flush, self._flush_max_visible_chars
+                to_flush, limit
             )
         self._pending_norm = rest
         if not chunk:
