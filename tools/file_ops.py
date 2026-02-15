@@ -13,6 +13,8 @@ from .code_structure import show_file_structure
 class FileReadTool(BaseTool):
     """Read contents of a file from the filesystem."""
 
+    readonly = True
+
     @property
     def name(self) -> str:
         return "read_file"

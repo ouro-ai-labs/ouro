@@ -10,6 +10,7 @@ class BaseTool(ABC):
     # Token limits for tool output size checking
     MAX_TOKENS = 25000
     CHARS_PER_TOKEN = 4  # Conservative estimate
+    readonly: bool = False
 
     @property
     @abstractmethod
