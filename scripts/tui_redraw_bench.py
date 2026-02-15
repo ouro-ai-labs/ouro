@@ -25,7 +25,6 @@ import contextlib
 import os
 import pty
 import re
-import resource
 import select
 import statistics
 import subprocess
@@ -49,11 +48,6 @@ def compact(text: str) -> str:
     return WHITESPACE_RE.sub("", text)
 
 
-def _rusage_children_seconds() -> float:
-    ru = resource.getrusage(resource.RUSAGE_CHILDREN)
-    return float(ru.ru_utime + ru.ru_stime)
-
-
 class PtySession:
     def __init__(self, mode: str) -> None:
         env = os.environ.copy()
@@ -65,16 +59,25 @@ class PtySession:
 
         self._capture_path: str | None = None
         self._capture_pos = 0
+        self._time_path: str | None = None
+        self.cpu_s: float | None = None
         if mode == "ptk2":
             fd, path = tempfile.mkstemp(prefix="ouro-ptk2-capture-", suffix=".log")
             os.close(fd)
             self._capture_path = path
             env["PTK2_CAPTURE_PATH"] = path
+        if os.path.exists("/usr/bin/time"):
+            fd, path = tempfile.mkstemp(prefix=f"ouro-{mode}-time-", suffix=".log")
+            os.close(fd)
+            self._time_path = path
 
         master_fd, slave_fd = pty.openpty()
         self.master_fd = master_fd
+        cmd = ["uv", "run", "ouro"]
+        if self._time_path:
+            cmd = ["/usr/bin/time", "-p", "-o", self._time_path, *cmd]
         self.proc = subprocess.Popen(  # noqa: S603
-            ["uv", "run", "ouro"],
+            cmd,
             cwd=str(REPO_ROOT),
             env=env,
             stdin=slave_fd,
@@ -136,12 +139,34 @@ class PtySession:
                     self.read_some(0.05)
                 if self.proc.poll() is None:
                     self.proc.terminate()
+            # Reap the child to ensure resource usage is accounted for.
+            with contextlib.suppress(Exception):
+                self.proc.wait(timeout=2.0)
+            if self._time_path:
+                try:
+                    data = Path(self._time_path).read_text(encoding="utf-8", errors="ignore")
+                except OSError:
+                    data = ""
+                user_s = 0.0
+                sys_s = 0.0
+                for line in data.splitlines():
+                    line = line.strip()
+                    if line.startswith("user "):
+                        with contextlib.suppress(ValueError):
+                            user_s = float(line.split()[1])
+                    elif line.startswith("sys "):
+                        with contextlib.suppress(ValueError):
+                            sys_s = float(line.split()[1])
+                self.cpu_s = max(0.0, user_s + sys_s) if (user_s or sys_s) else None
         finally:
             with contextlib.suppress(OSError):
                 os.close(self.master_fd)
             if self._capture_path:
                 with contextlib.suppress(OSError):
                     os.unlink(self._capture_path)
+            if self._time_path:
+                with contextlib.suppress(OSError):
+                    os.unlink(self._time_path)
 
 
 def summarize(samples: list[float]) -> str:
@@ -152,15 +177,17 @@ def summarize(samples: list[float]) -> str:
 
 
 def run_once(mode: str, *, chunks: int, chunk_size: int, delay_ms: float) -> tuple[float, float] | None:
-    cpu_before = _rusage_children_seconds()
     session = PtySession(mode)
+    ok = False
+    wall_s: float | None = None
     try:
         startup_idx = len(session.tail)
-        if not session.wait_for(
+        ok = session.wait_for(
             ["Interactive mode started. Type your message or use commands."],
             timeout=30,
             since_len=startup_idx,
-        ):
+        )
+        if not ok:
             return None
 
         cmd = f"/__bench_redraw chunks={chunks} chunk_size={chunk_size} delay_ms={delay_ms:g}\r"
@@ -171,12 +198,11 @@ def run_once(mode: str, *, chunks: int, chunk_size: int, delay_ms: float) -> tup
         wall_s = time.monotonic() - t0
         if not ok:
             return None
-
-        cpu_after = _rusage_children_seconds()
-        cpu_s = max(0.0, cpu_after - cpu_before)
-        return wall_s, cpu_s
     finally:
         session.close()
+
+    cpu_s = session.cpu_s if session.cpu_s is not None else 0.0
+    return (wall_s if wall_s is not None else 0.0), cpu_s
 
 
 def main() -> int:
@@ -214,4 +240,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

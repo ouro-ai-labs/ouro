@@ -228,6 +228,17 @@ class PTK2Driver:
         self._output_text = ""
         self._plain_tail_line_len = 0
         self._raw_ansi_carry = ""
+        # Coalesce high-frequency output writes into periodic flushes to avoid
+        # invalidating/redrawing the full PTK layout for every small chunk.
+        #
+        # This matters most for streaming output (many tiny writes).
+        flush_ms = os.environ.get("PTK2_FLUSH_MS", "16")
+        try:
+            self._flush_interval_s = max(0.0, float(flush_ms) / 1000.0)
+        except ValueError:
+            self._flush_interval_s = 0.016
+        self._pending_raw = ""
+        self._flush_handle: asyncio.Handle | None = None
         self._capture_path = os.environ.get("PTK2_CAPTURE_PATH")
         self._capture_fp: IO[str] | None = None
         self._debug_path = os.environ.get("PTK2_DEBUG_PATH")
@@ -561,8 +572,31 @@ class PTK2Driver:
         )
         self._invalidate()
 
-    def _append_output(self, chunk: str) -> None:
-        raw = self._raw_ansi_carry + chunk
+    def _schedule_flush(self) -> None:
+        if self._loop is None:
+            return
+        if self._flush_handle is not None and not self._flush_handle.cancelled():
+            return
+        if self._flush_interval_s <= 0:
+            # Flush synchronously when coalescing is disabled.
+            self._flush_pending()
+            return
+        self._flush_handle = self._loop.call_later(self._flush_interval_s, self._flush_pending)
+
+    def _enqueue_output(self, chunk: str) -> None:
+        if not chunk:
+            return
+        self._pending_raw += chunk
+        self._schedule_flush()
+
+    def _flush_pending(self) -> None:
+        # This runs in the PTK event loop thread.
+        self._flush_handle = None
+        if not self._pending_raw and not self._raw_ansi_carry:
+            return
+
+        raw = self._raw_ansi_carry + self._pending_raw
+        self._pending_raw = ""
         self._raw_ansi_carry = ""
 
         raw, carry = split_incomplete_ansi_suffix(raw)
@@ -585,7 +619,7 @@ class PTK2Driver:
             preserve_scroll=self.output_window.vertical_scroll,
         )
         self._debug(
-            f"append len={len(normalized)} total={len(self._output_text)} "
+            f"flush len={len(normalized)} total={len(self._output_text)} "
             f"manual={self._manual_scroll_mode} vscroll={self.output_window.vertical_scroll} "
             f"max_scroll={self._max_output_scroll()}"
         )
@@ -594,6 +628,10 @@ class PTK2Driver:
         if not text or self._loop is None:
             return
         self._loop.call_soon_threadsafe(self._append_output, text)
+
+    def _append_output(self, chunk: str) -> None:
+        # Keep the thread-safe entrypoint stable: older callbacks call this name.
+        self._enqueue_output(chunk)
 
     def _invalidate(self) -> None:
         with contextlib.suppress(Exception):
@@ -674,6 +712,9 @@ class PTK2Driver:
                     session_error = exc
 
         finally:
+            # Best-effort flush of any buffered output before teardown.
+            with contextlib.suppress(Exception):
+                self._flush_pending()
             if stop_task is not None:
                 stop_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
