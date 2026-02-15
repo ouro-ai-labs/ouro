@@ -382,11 +382,13 @@ class PTK2Driver:
             filter=Condition(lambda: self._thinking_active),
         )
 
+        # Place the thinking panel close to the input/output boundary (like a
+        # chat UI), not at the very top of the screen.
         root = HSplit(
             [
-                thinking_box,
                 self.output_window,
                 Window(height=1, char="─", style="class:divider"),
+                thinking_box,
                 input_row,
                 completion_box,
                 Window(height=1, content=self._status_control, style="class:status"),
