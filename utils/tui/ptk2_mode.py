@@ -241,24 +241,10 @@ class PTK2Driver:
         # invalidating/redrawing the full PTK layout for every small chunk.
         #
         # This matters most for streaming output (many tiny writes).
-        flush_ms = os.environ.get("PTK2_FLUSH_MS", "8")
-        try:
-            self._flush_interval_s = max(0.0, float(flush_ms) / 1000.0)
-        except ValueError:
-            self._flush_interval_s = 0.008
-        # Optional: limit how many visible characters we append per flush tick
-        # *while streaming*. This makes output appear more "typewriter-like"
-        # instead of jumping in large chunks.
-        #
-        # This is intentionally only applied during streaming (thinking spinner
-        # active), because limiting all output can significantly increase the
-        # number of full-layout redraws.
-        max_flush_chars = os.environ.get("PTK2_STREAM_MAX_CHARS", "512")
-        try:
-            raw_max = int(max_flush_chars)
-            self._stream_max_visible_chars = max(64, raw_max) if raw_max > 0 else None
-        except ValueError:
-            self._stream_max_visible_chars = 512
+        # Defaults are chosen to be smooth without requiring user tuning.
+        self._flush_interval_s = 0.004  # 4ms target flush cadence (best-effort).
+        # While "thinking" is active, render smaller slices to avoid chunky jumps.
+        self._stream_max_visible_chars = 128
         self._pending_raw = ""
         self._pending_norm = ""
         self._flush_handle: asyncio.Handle | None = None
@@ -799,6 +785,11 @@ class PTK2Driver:
         try:
             await task
         finally:
+            # Flush any pending output before leaving full-screen mode. This
+            # avoids delayed "/exit" output and ensures capture files include
+            # the last messages.
+            with contextlib.suppress(Exception):
+                self._flush_pending()
             with contextlib.suppress(Exception):
                 self.app.exit()
 
