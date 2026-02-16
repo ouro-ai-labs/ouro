@@ -20,6 +20,8 @@ class TokenTracker:
         """Initialize token tracker."""
         self.total_input_tokens = 0
         self.total_output_tokens = 0
+        self.total_cache_read_tokens = 0
+        self.total_cache_creation_tokens = 0
         self.compression_savings = 0  # Tokens saved through compression
         self.compression_cost = 0  # Tokens spent on compression
 
@@ -105,6 +107,14 @@ class TokenTracker:
     def add_output_tokens(self, count: int):
         """Record output tokens generated."""
         self.total_output_tokens += count
+
+    def add_cache_read_tokens(self, count: int):
+        """Record cache read (hit) tokens."""
+        self.total_cache_read_tokens += count
+
+    def add_cache_creation_tokens(self, count: int):
+        """Record cache creation (write) tokens."""
+        self.total_cache_creation_tokens += count
 
     def add_compression_savings(self, saved: int):
         """Record tokens saved through compression."""
@@ -199,5 +209,7 @@ class TokenTracker:
         """Reset all counters."""
         self.total_input_tokens = 0
         self.total_output_tokens = 0
+        self.total_cache_read_tokens = 0
+        self.total_cache_creation_tokens = 0
         self.compression_savings = 0
         self.compression_cost = 0

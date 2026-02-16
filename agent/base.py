@@ -172,6 +172,8 @@ class BaseAgent(ABC):
                         actual_tokens = {
                             "input": response.usage.get("input_tokens", 0),
                             "output": response.usage.get("output_tokens", 0),
+                            "cache_read": response.usage.get("cache_read_tokens", 0),
+                            "cache_creation": response.usage.get("cache_creation_tokens", 0),
                         }
                     await self.memory.add_message(assistant_msg, actual_tokens=actual_tokens)
 
@@ -188,6 +190,12 @@ class BaseAgent(ABC):
                     )
                     self.memory.token_tracker.add_output_tokens(
                         response.usage.get("output_tokens", 0)
+                    )
+                    self.memory.token_tracker.add_cache_read_tokens(
+                        response.usage.get("cache_read_tokens", 0)
+                    )
+                    self.memory.token_tracker.add_cache_creation_tokens(
+                        response.usage.get("cache_creation_tokens", 0)
                     )
                 messages.append(assistant_msg)
 
