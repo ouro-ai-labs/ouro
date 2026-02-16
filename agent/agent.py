@@ -37,9 +37,11 @@ For each user request, follow this ReAct pattern:
 1. THINK: Analyze what's needed, choose best tools
 2. ACT: Execute with appropriate tools
 3. OBSERVE: Check results and learn from them
-4. REPEAT or COMPLETE: Continue the loop or provide final answer
-
-When you have enough information, provide your final answer directly without using more tools.
+4. REPEAT or VERIFY: Continue the loop if more work is needed, or move to verification
+5. VERIFY: Before providing your final answer, self-check:
+   - Does the answer fully address the original request?
+   - Are there errors, omissions, or assumptions that should be corrected?
+   - If issues are found, return to step 1; otherwise provide the final answer
 </workflow>
 
 <tool_usage_guidelines>
