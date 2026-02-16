@@ -100,21 +100,19 @@ class TokenTracker:
         # Rough estimate: 1 token ≈ 4 characters
         return len(text) // 4
 
-    def add_input_tokens(self, count: int):
-        """Record input tokens used."""
-        self.total_input_tokens += count
+    def record_usage(self, usage: Dict[str, int]) -> None:
+        """Record token usage from an LLM response in one call.
 
-    def add_output_tokens(self, count: int):
-        """Record output tokens generated."""
-        self.total_output_tokens += count
+        Accepts the usage dict produced by LiteLLMAdapter._convert_response().
 
-    def add_cache_read_tokens(self, count: int):
-        """Record cache read (hit) tokens."""
-        self.total_cache_read_tokens += count
-
-    def add_cache_creation_tokens(self, count: int):
-        """Record cache creation (write) tokens."""
-        self.total_cache_creation_tokens += count
+        Args:
+            usage: Dict with keys input_tokens, output_tokens, and optionally
+                   cache_read_tokens, cache_creation_tokens.
+        """
+        self.total_input_tokens += usage.get("input_tokens", 0)
+        self.total_output_tokens += usage.get("output_tokens", 0)
+        self.total_cache_read_tokens += usage.get("cache_read_tokens", 0)
+        self.total_cache_creation_tokens += usage.get("cache_creation_tokens", 0)
 
     def add_compression_savings(self, saved: int):
         """Record tokens saved through compression."""

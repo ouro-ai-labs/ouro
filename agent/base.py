@@ -166,16 +166,7 @@ class BaseAgent(ABC):
             assistant_msg = response.to_message()
             if use_memory:
                 if save_to_memory:
-                    # Extract actual token usage from response
-                    actual_tokens = None
-                    if response.usage:
-                        actual_tokens = {
-                            "input": response.usage.get("input_tokens", 0),
-                            "output": response.usage.get("output_tokens", 0),
-                            "cache_read": response.usage.get("cache_read_tokens", 0),
-                            "cache_creation": response.usage.get("cache_creation_tokens", 0),
-                        }
-                    await self.memory.add_message(assistant_msg, actual_tokens=actual_tokens)
+                    await self.memory.add_message(assistant_msg, usage=response.usage)
 
                     # Log compression info if it happened
                     if self.memory.was_compressed_last_iteration:
@@ -185,18 +176,7 @@ class BaseAgent(ABC):
             else:
                 # For local messages (mini-loop), still track token usage
                 if response.usage:
-                    self.memory.token_tracker.add_input_tokens(
-                        response.usage.get("input_tokens", 0)
-                    )
-                    self.memory.token_tracker.add_output_tokens(
-                        response.usage.get("output_tokens", 0)
-                    )
-                    self.memory.token_tracker.add_cache_read_tokens(
-                        response.usage.get("cache_read_tokens", 0)
-                    )
-                    self.memory.token_tracker.add_cache_creation_tokens(
-                        response.usage.get("cache_creation_tokens", 0)
-                    )
+                    self.memory.token_tracker.record_usage(response.usage)
                 messages.append(assistant_msg)
 
             # Print thinking/reasoning if available (for all responses)

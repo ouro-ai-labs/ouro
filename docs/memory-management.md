@@ -202,10 +202,7 @@ response = await llm.call_async(messages, tools)
 
 await memory.add_message(
     LLMMessage(role="assistant", content=response.content),
-    actual_tokens={
-        "input": response.usage.input_tokens,
-        "output": response.usage.output_tokens,
-    },
+    usage=response.usage,
 )
 ```
 
@@ -240,6 +237,6 @@ stats = manager.get_stats()
 
 **High compression cost**: Compression itself uses LLM tokens. Increase the threshold to compress less often, or use `deletion` strategy (zero LLM cost).
 
-**Token estimates seem off**: Estimation accuracy varies by provider. For exact counts, pass `actual_tokens` from LLM responses (see above). OpenAI with tiktoken gives exact counts.
+**Token estimates seem off**: Estimation accuracy varies by provider. For exact counts, pass `usage` (the response.usage dict) from LLM responses (see above). OpenAI with tiktoken gives exact counts.
 
 **Unknown model pricing**: The system uses a default estimate. To add exact pricing, edit the `PRICING` dict in `memory/token_tracker.py`.
