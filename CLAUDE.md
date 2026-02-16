@@ -21,7 +21,7 @@ This repo expects a verification-driven workflow:
 - **Explore**: read/grep before editing; confirm where the behavior lives.
 - **Plan**: for multi-file or unfamiliar areas, write a short step plan + test plan before changing code.
 - **Implement**: make the smallest change that satisfies acceptance criteria; keep diffs reviewable.
-- **Ship**: run self-review protocol + update PR summary/checklist.
+- **Ship**: run `./scripts/dev.sh check` + update PR summary/checklist.
 
 Skip the explicit plan only when the change is truly tiny and local (e.g., typo, small refactor in one file).
 
@@ -110,12 +110,54 @@ Require explicit confirmation first:
 - Running live-LLM integration tests (`RUN_INTEGRATION_TESTS=1`) due to cost.
 - Deleting large amounts of files or doing broad refactors/renames.
 
-## Ship / Self-Review (Prefer One Command)
+## Ship (Prefer One Command)
 
-- Run `./scripts/dev.sh self-review`.
-- Note: `self-review` runs **tracked** tests by default; `git add` new tests before running it.
+- Run `./scripts/dev.sh check`.
+- Note: `check` runs **tracked** tests by default; `git add` new tests before running it.
 - If behavior changed, run one real smoke command: `python main.py --task "<...>" --verify` (or interactive).
-- Update PR body: `./scripts/dev.sh pr-body > /tmp/pr.md` and fill the checklist in `.github/pull_request_template.md`.
+- Update PR description using the template below (also mirrored in `.github/pull_request_template.md` for GitHub).
+
+## PR Description Template (Required)
+
+## Summary
+
+What changed and why (user-facing when applicable).
+
+## Scope
+
+- Goals:
+- Non-goals:
+
+## Invariants (Must Not Regress)
+
+- [ ] List 3–5 existing behaviors that must stay the same
+
+## Acceptance Criteria
+
+- [ ] Concrete, testable outcomes
+
+## Test Plan
+
+- [ ] Targeted tests:
+- [ ] `./scripts/dev.sh test -q`
+- [ ] `TYPECHECK_STRICT=1 ./scripts/dev.sh typecheck`
+
+## Smoke Run (Real CLI)
+
+- [ ] `python main.py --task "<...>" --verify` (or explain why not)
+
+## Adversarial Review (Answer Briefly)
+
+- What existing behavior could this break? (3–5 invariants)
+- Worst-case input/output size? Any truncation/limits?
+- Any secrets/logging risks?
+- Any async/blocking I/O added on hot paths?
+- What error message does the user see on failure? Is it actionable?
+
+## Docs / Compatibility
+
+- [ ] Updated relevant docs (`README.md`, `docs/examples.md`, `docs/configuration.md`) when needed
+- [ ] No secrets committed; no generated artifacts (`.venv/`, `dist/`, `build/`, `*.egg-info/`)
 
 ## Context Hygiene (Avoid Token/Attention Waste)
 

@@ -37,3 +37,7 @@ What changed and why (user-facing when applicable).
 
 - [ ] Updated relevant docs (`README.md`, `docs/examples.md`, `docs/configuration.md`) when needed
 - [ ] No secrets committed; no generated artifacts (`.venv/`, `dist/`, `build/`, `*.egg-info/`)
+
+---
+
+Note: This template is also embedded in `CLAUDE.md` so coding-agents always see it.

@@ -59,4 +59,3 @@ High-level approach only. Avoid over-specifying internals.
 ## Open Questions
 
 - …
-

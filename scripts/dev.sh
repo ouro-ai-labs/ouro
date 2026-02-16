@@ -15,8 +15,6 @@ Commands:
   lint           Check formatting/lint (black/isort/ruff)
   precommit      Run pre-commit on all files
   invariants     Check repo invariants (RFC numbering, symlink rules)
-  pr-body        Print a PR body starter (diff/stat + checklist)
-  self-review    Run strict local acceptance checks (invariants/precommit/typecheck/tests)
   typecheck      Run mypy (best-effort; set TYPECHECK_STRICT=1 to fail)
   check          Run precommit + typecheck + tests
   build          Build dist/ artifacts
@@ -27,8 +25,7 @@ Examples:
   ./scripts/dev.sh test -q
   ./scripts/dev.sh test -q test/test_shell.py
   ./scripts/dev.sh invariants
-  ./scripts/dev.sh pr-body > /tmp/pr.md
-  ./scripts/dev.sh self-review
+  ./scripts/dev.sh check
   ./scripts/dev.sh format
   ./scripts/dev.sh lint
   ./scripts/dev.sh precommit
@@ -89,23 +86,6 @@ case "$cmd" in
     source ./scripts/_env.sh
     "$PYTHON" ./scripts/check_repo_invariants.py
     ;;
-  pr-body)
-    source ./scripts/_env.sh
-    "$PYTHON" ./scripts/gen_pr_body.py "$@"
-    ;;
-  self-review)
-    ./scripts/dev.sh invariants
-    ./scripts/dev.sh precommit
-    TYPECHECK_STRICT=1 ./scripts/dev.sh typecheck
-    # Run only tracked tests by default to avoid accidental untracked scratch files.
-    # If you add new tests, `git add` them before running self-review.
-    tracked_tests=()
-    while IFS= read -r path; do
-      [[ -n "$path" ]] || continue
-      tracked_tests+=("$path")
-    done < <(git ls-files 'test/**/*.py' 'test/*.py')
-    ./scripts/dev.sh test -q "${tracked_tests[@]}"
-    ;;
   typecheck)
     STRICT="${TYPECHECK_STRICT:-0}"
 
@@ -126,8 +106,15 @@ case "$cmd" in
   check)
     ./scripts/dev.sh invariants
     ./scripts/dev.sh precommit
-    ./scripts/dev.sh typecheck
-    ./scripts/dev.sh test
+    TYPECHECK_STRICT=1 ./scripts/dev.sh typecheck
+    # Run only tracked tests by default to avoid accidental untracked scratch files.
+    # If you add new tests, `git add` them before running check.
+    tracked_tests=()
+    while IFS= read -r path; do
+      [[ -n "$path" ]] || continue
+      tracked_tests+=("$path")
+    done < <(git ls-files 'test/**/*.py' 'test/*.py')
+    ./scripts/dev.sh test -q "${tracked_tests[@]}"
     ;;
   build)
     source ./scripts/_env.sh
