@@ -125,7 +125,11 @@ class TokenTracker:
         self.compression_cost += cost
 
     def _find_pricing(self, model: str) -> dict:
-        """Find pricing entry for a model.
+        """Find pricing entry for a model using longest substring match.
+
+        When multiple keys match (e.g. both "claude-sonnet-4" and
+        "claude-sonnet-4-5" match "anthropic/claude-sonnet-4-5-20250929"),
+        the longest key wins so ordering in MODEL_PRICING doesn't matter.
 
         Args:
             model: Model identifier
@@ -133,9 +137,15 @@ class TokenTracker:
         Returns:
             Pricing dict with at least 'input' and 'output' keys
         """
+        best_key = ""
+        best_pricing = None
         for model_key, price in self.PRICING.items():
-            if model_key in model:
-                return price
+            if model_key != "default" and model_key in model and len(model_key) > len(best_key):
+                best_key = model_key
+                best_pricing = price
+
+        if best_pricing:
+            return best_pricing
 
         logger.info(
             f"No pricing found for model {model}, using default pricing (DeepSeek-Reasoner equivalent)"
