@@ -3,6 +3,8 @@
 import logging
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
+import litellm
+
 from config import Config
 from llm.content_utils import extract_text
 from llm.message_types import LLMMessage
@@ -526,29 +528,28 @@ Original messages ({count} messages, ~{tokens} tokens):
         return text if text else str(message.content)
 
     def _estimate_tokens(self, messages: List[LLMMessage]) -> int:
-        """Estimate token count for messages.
+        """Count tokens for messages using litellm.token_counter.
 
         Args:
             messages: Messages to count
 
         Returns:
-            Estimated token count
+            Token count
         """
-        # Improved estimation: account for message structure and content
-        total_chars = 0
-        for msg in messages:
-            # Add overhead for message structure (role, type fields, etc.)
-            total_chars += 20  # ~5 tokens for structure
+        if not messages:
+            return 0
 
-            # Extract and count content
-            content = self._extract_text_content(msg)
-            total_chars += len(content)
+        model = self.llm.model
+        msg_dicts = [m.to_dict() for m in messages]
 
-            # For complex content (lists), add overhead for JSON structure
-            if isinstance(msg.content, list):
-                # Each block has type, id, etc. fields
-                total_chars += len(msg.content) * 30  # ~7 tokens per block overhead
-
-        # More accurate ratio: ~3.5 characters per token for mixed content
-        # (English text is ~4 chars/token, code/JSON is ~3 chars/token)
-        return int(total_chars / 3.5)
+        try:
+            return litellm.token_counter(model=model, messages=msg_dicts)
+        except Exception as e:
+            logger.debug(f"litellm.token_counter failed ({e}), using fallback")
+            # Fallback: character-based estimation
+            total_chars = 0
+            for msg in messages:
+                total_chars += 20  # overhead per message
+                content = self._extract_text_content(msg)
+                total_chars += len(content)
+            return max(1, int(total_chars / 3.5))

@@ -3,6 +3,8 @@
 import logging
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
+import litellm
+
 from config import Config
 from llm.content_utils import content_has_tool_calls
 from llm.message_types import LLMMessage
@@ -69,6 +71,9 @@ class MemoryManager:
         self.was_compressed_last_iteration = False
         self.last_compression_savings = 0
         self.compression_count = 0
+
+        # Tool schema token overhead (counted once per session)
+        self._tool_schema_tokens: int = 0
 
         # Optional callback to get current todo context for compression
         self._todo_context_provider: Optional[Callable[[], Optional[str]]] = None
@@ -269,6 +274,32 @@ class MemoryManager:
         """
         self._todo_context_provider = provider
 
+    def set_tool_schemas(self, schemas: list) -> None:
+        """Calculate and cache the token overhead of tool schemas.
+
+        Tool schemas are sent with every API call but were previously
+        not counted towards context size.  This method computes their
+        token cost once (schemas don't change within a session).
+
+        Args:
+            schemas: List of tool schema dicts (OpenAI function-calling format)
+        """
+        if not schemas:
+            self._tool_schema_tokens = 0
+            return
+
+        model = self.llm.model
+        dummy_msg = {"role": "user", "content": "x"}
+        try:
+            base = litellm.token_counter(model=model, messages=[dummy_msg])
+            with_tools = litellm.token_counter(model=model, messages=[dummy_msg], tools=schemas)
+            self._tool_schema_tokens = max(0, with_tools - base)
+        except Exception as e:
+            logger.debug(f"Failed to count tool schema tokens: {e}")
+            self._tool_schema_tokens = 0
+
+        logger.info(f"Tool schema token overhead: {self._tool_schema_tokens}")
+
     async def compress(self, strategy: str = None) -> Optional[CompressedMemory]:
         """Compress current short-term memory.
 
@@ -437,6 +468,8 @@ class MemoryManager:
     def _recalculate_current_tokens(self) -> int:
         """Recalculate current token count from scratch.
 
+        Includes message tokens + tool schema overhead.
+
         Returns:
             Current token count
         """
@@ -452,6 +485,9 @@ class MemoryManager:
         # Count short-term messages (includes summary messages)
         for msg in self.short_term.get_messages():
             total += self.token_tracker.count_message_tokens(msg, provider, model)
+
+        # Add tool schema overhead
+        total += self._tool_schema_tokens
 
         return total
 
@@ -473,6 +509,7 @@ class MemoryManager:
             "net_savings": self.token_tracker.compression_savings
             - self.token_tracker.compression_cost,
             "short_term_count": self.short_term.count(),
+            "tool_schema_tokens": self._tool_schema_tokens,
             "total_cost": self.token_tracker.get_total_cost(self.llm.model),
         }
 
@@ -510,6 +547,7 @@ class MemoryManager:
         self.system_messages.clear()
         self.token_tracker.reset()
         self.current_tokens = 0
+        self._tool_schema_tokens = 0
         self.was_compressed_last_iteration = False
         self.last_compression_savings = 0
         self.compression_count = 0

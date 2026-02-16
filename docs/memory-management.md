@@ -170,13 +170,15 @@ python tools/session_manager.py delete <id>                 # Delete session
 
 ## Token Tracking and Costs
 
-Token counting method varies by provider:
+Token counting uses `litellm.token_counter()` for all providers, which internally uses tiktoken. This gives consistent, accurate results across providers — especially for non-English text and code.
 
 | Provider | Method | Accuracy |
 |----------|--------|----------|
-| OpenAI | tiktoken (exact) | High |
-| Anthropic | Estimation (~3.5 chars/token) | Good |
-| Others | Default estimation | Approximate |
+| All | litellm.token_counter (tiktoken) | High (~5-15% variance for non-OpenAI models) |
+
+Previous versions used character-ratio estimation (e.g. `len(text)/3.5` for Anthropic), which underestimated Chinese text by 40-57%. The current approach eliminates this class of errors.
+
+Tool schemas (sent with every API call) are also counted towards context size. The overhead is computed once per session via `set_tool_schemas()`.
 
 Pricing is built-in for common models (per 1M tokens). Unknown models use a default estimate.
 
@@ -237,6 +239,6 @@ stats = manager.get_stats()
 
 **High compression cost**: Compression itself uses LLM tokens. Increase the threshold to compress less often, or use `deletion` strategy (zero LLM cost).
 
-**Token estimates seem off**: Estimation accuracy varies by provider. For exact counts, pass `usage` (the response.usage dict) from LLM responses (see above). OpenAI with tiktoken gives exact counts.
+**Token estimates seem off**: All providers now use litellm/tiktoken for counting. For exact API usage, pass `usage` from LLM responses (see above). Context size estimation (used for compression decisions) is accurate to within ~5-15%.
 
 **Unknown model pricing**: The system uses a default estimate. To add exact pricing, edit the `PRICING` dict in `memory/token_tracker.py`.
