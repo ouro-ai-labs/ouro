@@ -6,8 +6,6 @@ control used by LiteLLM across providers.
 
 from __future__ import annotations
 
-from typing import Optional
-
 # Accepted inputs (CLI / interactive). `off` is a UI-friendly alias for `none`.
 REASONING_EFFORT_CHOICES: tuple[str, ...] = (
     "default",
@@ -31,7 +29,7 @@ _CANONICAL: set[str] = {
 }
 
 
-def normalize_reasoning_effort(value: Optional[str]) -> Optional[str]:
+def normalize_reasoning_effort(value: str | None) -> str | None:
     """Normalize user input into a canonical `reasoning_effort` or None.
 
     Returns:
@@ -58,7 +56,7 @@ def normalize_reasoning_effort(value: Optional[str]) -> Optional[str]:
     raise ValueError(f"Invalid reasoning_effort: {value!r}. Allowed: {allowed}")
 
 
-def display_reasoning_effort(value: Optional[str]) -> str:
+def display_reasoning_effort(value: str | None) -> str:
     """Render reasoning effort for UX (never returns None)."""
 
     normalized = normalize_reasoning_effort(value)

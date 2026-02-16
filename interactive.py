@@ -34,8 +34,6 @@ from utils.tui.skills_ui import SkillsAction, pick_skills_action
 from utils.tui.status_bar import StatusBar
 from utils.tui.theme import Theme, set_theme
 
-from llm.reasoning import REASONING_EFFORT_CHOICES
-
 
 class InteractiveSession:
     """Manages an interactive conversation session with the agent."""

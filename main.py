@@ -12,7 +12,6 @@ from agent.skills import SkillsRegistry, render_skills_section
 from config import Config
 from interactive import run_interactive_mode, run_model_setup_mode
 from llm import LiteLLMAdapter, ModelManager
-from llm.reasoning import REASONING_EFFORT_CHOICES
 from llm.chatgpt_auth import (
     get_all_auth_provider_statuses,
     get_supported_auth_providers,
@@ -21,6 +20,7 @@ from llm.chatgpt_auth import (
     logout_auth_provider,
 )
 from llm.oauth_model_sync import remove_oauth_models, sync_oauth_models
+from llm.reasoning import REASONING_EFFORT_CHOICES
 from memory import MemoryManager
 from tools.advanced_file_ops import GlobTool, GrepTool
 from tools.file_ops import FileReadTool, FileWriteTool
