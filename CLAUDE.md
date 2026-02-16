@@ -2,7 +2,28 @@
 
 This file defines the **operational workflow** for making changes in this repo (how to set up, run, test, format, build, and publish). Keep it short, specific, and executable; link to docs for long explanations.
 
+Note: `AGENTS.md` is a symlink to this file (`CLAUDE.md`) for compatibility with multiple agent/rules systems.
+
 Prerequisites: Python 3.12+ and `uv` (https://github.com/astral-sh/uv).
+
+## Command Discovery (No Guessing)
+
+**IMPORTANT**: Never assume a CLI flag or dev command exists.
+
+- For ouro CLI flags: run `python main.py -h` (and `python main.py --mode interactive -h` if relevant).
+- For repo workflow commands: run `./scripts/dev.sh --help`.
+
+## Core Workflow (Verify → Explore → Plan → Implement → Ship)
+
+This repo expects a verification-driven workflow:
+
+- **Verify**: always define how correctness will be checked (tests, expected output, smoke command).
+- **Explore**: read/grep before editing; confirm where the behavior lives.
+- **Plan**: for multi-file or unfamiliar areas, write a short step plan + test plan before changing code.
+- **Implement**: make the smallest change that satisfies acceptance criteria; keep diffs reviewable.
+- **Ship**: run `./scripts/dev.sh check` + update PR summary/checklist.
+
+Skip the explicit plan only when the change is truly tiny and local (e.g., typo, small refactor in one file).
 
 ## Quickstart (Local Dev)
 
@@ -17,6 +38,29 @@ Optional (recommended): enable git hooks:
 ```bash
 pre-commit install
 ```
+
+## Scoped Instructions (Read When Touching These Areas)
+
+This repo uses directory-scoped rule files for focus. If you modify code/docs under these paths, also read the matching file first:
+
+- `agent/CLAUDE.md` (runtime/loop safety + verification)
+- `tools/CLAUDE.md` (tool contracts + targeted tests)
+- `llm/CLAUDE.md` (provider safety + timeouts)
+- `memory/CLAUDE.md` (serialization invariants + memory suite)
+- `utils/tui/CLAUDE.md` (TUI UX stability + autocomplete/skills tests)
+- `rfc/CLAUDE.md` (RFC writing discipline + template)
+- `docs/CLAUDE.md` (docs consistency/executable examples)
+- `test/CLAUDE.md` (test strategy + integration gating)
+
+## Prompting Template (Use This With Agents)
+
+When asking an agent to make changes, prefer this structure:
+
+- **Goal**: what user-visible behavior changes?
+- **Non-goals**: what must *not* change?
+- **Where**: file(s) / module(s) to inspect first.
+- **Acceptance criteria**: concrete, testable statements.
+- **Verification**: which targeted tests to run + one real smoke run when relevant.
 
 ## Branching Workflow
 
@@ -54,86 +98,82 @@ Prefer small, reviewable commits:
 - **Human-in-the-loop**: at key checkpoints, the agent should *ask* whether to `git commit` and/or `git push` (do not do it automatically).
 - Before asking to commit, show a short change summary (e.g. `git diff --stat`) and the `./scripts/dev.sh check` result.
 
+## Permissions / Approval Boundaries
+
+Allowed without prompting:
+- Read files, list directories, search (`rg`).
+- Run targeted unit tests or formatting/lint via `./scripts/dev.sh …`.
+
+Require explicit confirmation first:
+- Publishing (`./scripts/dev.sh publish`) or release actions.
+- Git operations that change remote history (`git push`, opening PRs).
+- Running live-LLM integration tests (`RUN_INTEGRATION_TESTS=1`) due to cost.
+- Deleting large amounts of files or doing broad refactors/renames.
+
+## Ship (Prefer One Command)
+
+- Run `./scripts/dev.sh check`.
+- Note: `check` runs **tracked** tests by default; `git add` new tests before running it.
+- If behavior changed, run one real smoke command: `python main.py --task "<...>" --verify` (or interactive).
+- Update PR description using the template below (also mirrored in `.github/pull_request_template.md` for GitHub).
+
+## PR Description Template (Required)
+
+## Summary
+
+What changed and why (user-facing when applicable).
+
+## Scope
+
+- Goals:
+- Non-goals:
+
+## Invariants (Must Not Regress)
+
+- [ ] List 3–5 existing behaviors that must stay the same
+
+## Acceptance Criteria
+
+- [ ] Concrete, testable outcomes
+
+## Test Plan
+
+- [ ] Targeted tests:
+- [ ] `./scripts/dev.sh test -q`
+- [ ] `TYPECHECK_STRICT=1 ./scripts/dev.sh typecheck`
+
+## Smoke Run (Real CLI)
+
+- [ ] `python main.py --task "<...>" --verify` (or explain why not)
+
+## Adversarial Review (Answer Briefly)
+
+- What existing behavior could this break? (3–5 invariants)
+- Worst-case input/output size? Any truncation/limits?
+- Any secrets/logging risks?
+- Any async/blocking I/O added on hot paths?
+- What error message does the user see on failure? Is it actionable?
+
+## Docs / Compatibility
+
+- [ ] Updated relevant docs (`README.md`, `docs/examples.md`, `docs/configuration.md`) when needed
+- [ ] No secrets committed; no generated artifacts (`.venv/`, `dist/`, `build/`, `*.egg-info/`)
+
+## Context Hygiene (Avoid Token/Attention Waste)
+
+- Prefer targeted file reads and `rg` over dumping large logs/blobs into chat.
+- When you must include outputs, include only the relevant excerpt and point to the file/command used.
+- If a task becomes long/debug-heavy, pause and re-state current hypothesis + next verification step.
+
 ## CI
 
 GitHub Actions runs `./scripts/dev.sh precommit`, `./scripts/dev.sh test -q`, and strict typecheck on PRs.
 
-## Review Checklist
-
-Run these before concluding a change:
-
-```bash
-./scripts/dev.sh precommit
-TYPECHECK_STRICT=1 ./scripts/dev.sh typecheck
-./scripts/dev.sh test -q
-```
-
-Manual doc/workflow checks:
-- README/AGENTS/docs: avoid legacy/removed commands or env-based config; use current docs only
-- Docker examples use `--mode`/`--task`
-- Python 3.12+ + uv-only prerequisites documented consistently
-
-Change impact reminders:
-- CLI changes → update `README.md`, `docs/examples.md`
-- Config changes → update `docs/configuration.md`
-- Workflow scripts → update `AGENTS.md`, `docs/packaging.md`
-- **New subpackages** → add to `pyproject.toml` `[tool.setuptools] packages` list (see Packaging Checklist below)
-
-Run a quick smoke task (requires a configured provider in `~/.ouro/models.yaml`):
-
-```bash
-python main.py --task "Calculate 1+1"
-```
-
-## Repo Map
-
-- `main.py`, `cli.py`, `interactive.py`: CLI entry points and UX
-- `agent/`: agent loops (ReAct, Plan-Execute) and orchestration
-- `tools/`: tool implementations (file ops, shell, web search, etc.)
-- `llm/`: provider adapters + retry logic
-- `memory/`: memory manager, compression, persistence
-- `docs/`: user/developer documentation
-- `scripts/`: packaging/publishing scripts
-- `test/`: tests (some require API keys; memory tests are mostly mocked)
-- `rfc/`: RFC design documents for significant changes
-
 ## Commands (Golden Path)
 
-### Install
+Everything should be runnable via `./scripts/dev.sh` (see `./scripts/dev.sh --help`).
 
-- Use `./scripts/bootstrap.sh` to create `.venv` and install dependencies.
-- Use `./scripts/dev.sh install` to reinstall dev deps into an existing `.venv`.
-
-### Tests
-
-- All tests: `python -m pytest test/`
-- Memory suite: `python -m pytest test/memory/ -v`
-- Unified entrypoint: `./scripts/dev.sh test`
-- Integration tests: set `RUN_INTEGRATION_TESTS=1` (live LLM; may incur cost)
-
-### Format
-
-This repo uses `black` + `isort` + `ruff` (see `pyproject.toml`).
-
-**IMPORTANT**: Always run formatting before committing to avoid CI failures:
-
-```bash
-source .venv/bin/activate
-python -m black .
-python -m isort .
-python -m ruff check --fix .
-```
-
-Unified entrypoint: `./scripts/dev.sh format`
-
-### Lint / Typecheck
-
-- Lint (format check): `./scripts/dev.sh lint`
-- Ruff (linter with auto-fix): `python -m ruff check --fix .`
-- Pre-commit (recommended): `./scripts/dev.sh precommit`
-- Typecheck (best-effort): `./scripts/dev.sh typecheck` (set `TYPECHECK_STRICT=1` to fail on errors)
-
-### Build (Packaging)
+### Build / Publish
 
 ```bash
 ./scripts/dev.sh build
@@ -157,71 +197,12 @@ Unified entrypoint: `./scripts/dev.sh format`
 ## Safety & Secrets
 
 - Never commit `~/.ouro/config` or API keys.
+- Never commit generated artifacts: `.venv/`, `dist/`, `build/`, `*.egg-info/`.
 - Avoid running destructive shell commands; keep file edits scoped and reversible.
 - Publishing/releasing steps require explicit human intent (see `docs/packaging.md`).
 
-## RFC Design Documents
+## Gotchas (Common Rework Sources)
 
-**IMPORTANT**: Before starting significant changes, check `rfc/` for existing design documents and create new ones when needed.
-
-When to write an RFC:
-- Adding new agent types or major agent behavior changes
-- Significant architectural changes (new modules, major refactors)
-- New tool categories or substantial tool modifications
-- Changes to memory system, persistence, or compression strategies
-- New LLM provider integrations or API changes
-- Breaking changes to CLI or configuration
-
-RFC file naming: `rfc/NNN-short-description.md` (e.g., `rfc/001-plan-execute-agent.md`)
-
-RFC should focus on design thinking:
-- Problem statement: what problem are we solving and why now?
-- Design goals and constraints
-- Proposed approach and alternatives considered (with trade-offs)
-- Key design decisions and rationale
-- Open questions and risks
-
-Avoid over-specifying implementation details; focus on the "what" and "why", not the "how".
-
-Review existing RFCs before implementation to understand design decisions and constraints.
-
-## Async Runtime Rules
-
-- **New runtime code must be async-first**: avoid introducing new blocking I/O in `agent/`, `llm/`, `memory/`, and `tools/`.
-- **Do not use `asyncio.run()` in library code**. Only entrypoints (e.g., `main.py`) should own the event loop.
-- If you must call a blocking library temporarily, ensure it’s executed behind an async boundary (e.g., `asyncio.to_thread`) and has a timeout/cancellation strategy.
-- **Strict async rule**: use native async libs where available (e.g., `aiofiles`, `httpx`). Use `aiofiles.os.path.*` for metadata checks. Only use `asyncio.to_thread` when no async API exists (e.g., glob/rglob). Avoid sync file copy; use async streaming instead.
-
-### Testing Async Code
-
-- **Tests that call async code must be async**: use `async def test_xxx` for tests that await async functions or use async fixtures.
-- **Async fixtures must use `@pytest_asyncio.fixture`**: fixtures that perform async setup/teardown or depend on async fixtures must be async.
-- **Subprocess cleanup in tests**: when tests create subprocesses, ensure proper cleanup before the event loop closes:
-  - Call `process.kill()` + `await process.communicate()` to consume pipes
-  - Explicitly close transport with `proc._transport.close()` if needed
-  - Use async fixtures with `try/finally` to guarantee cleanup
-- **Avoid mixing sync and async fixtures**: if a fixture depends on an async fixture, it should also be async.
-
-## When Changing Key Areas
-
-- If you change CLI flags / behavior: update `README.md` and `docs/examples.md`.
-- If you change configuration/env vars: update `docs/configuration.md`.
-- If you change packaging/versioning: update `pyproject.toml` and `docs/packaging.md`.
-- If you change memory/compression/persistence: add/adjust tests under `test/memory/` and update `docs/memory-management.md`.
-- **Significant changes**: write an RFC in `rfc/` before implementation (see RFC Design Documents section above).
-
-## Packaging Checklist
-
-**IMPORTANT**: This project uses an **explicit** package list in `pyproject.toml` (`[tool.setuptools] packages`). Setuptools does **not** auto-discover subpackages.
-
-When adding a new directory with `__init__.py` (i.e. a new Python subpackage), you **must** add it to the `packages` list in `pyproject.toml`. Forgetting this causes `ModuleNotFoundError` on PyPI installs (this has happened twice: v0.1.1 and v0.2.1).
-
-Before every release, verify the packages list is complete:
-
-```bash
-# List all packages in source tree (excluding test/.venv)
-find . -name '__init__.py' -not -path './.venv/*' -not -path './test/*' | sed 's|/[^/]*$||;s|^\./||' | tr '/' '.' | sort
-
-# Compare with pyproject.toml
-grep '^packages' pyproject.toml
-```
+- **Async-first runtime**: avoid new blocking I/O in `agent/`, `llm/`, `memory/`, `tools/`; don't use `asyncio.run()` in library code.
+- **Packaging**: `pyproject.toml` uses an explicit `[tool.setuptools] packages` list; add new subpackages there or PyPI installs can break.
+- **Significant changes**: write/update an RFC first (see `rfc/README.md` and `rfc/TEMPLATE.md`).

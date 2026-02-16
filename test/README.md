@@ -2,46 +2,44 @@
 
 This directory contains test files for the ouro project.
 
-## Test Files
-
-- `test_basic.py` - Basic functionality tests for tools and imports
-- `test_memory.py` - Memory management system demonstration and tests
-
-## Running Tests
-
-### Prerequisites
-
-Bootstrap a local dev environment (recommended):
+## Quickstart
 
 ```bash
 ./scripts/bootstrap.sh
-source .venv/bin/activate
+./scripts/dev.sh test -q
 ```
 
-### Run Individual Tests
+## Running Tests
 
-From the project root directory:
+### Run a Single Test File / Test Case
 
 ```bash
-# Run a subset (fast)
-python3 -m pytest test/test_basic.py -q
-python3 -m pytest test/memory/ -q
+# Single file (fast)
+./scripts/dev.sh test -q test/test_shell.py
+
+# Single test (nodeid)
+./scripts/dev.sh test -q test/test_shell.py::test_command_timeout
 ```
 
-### Run All Tests
+### Run a Test Folder (Suite)
 
 ```bash
-# From project root
-python3 -m pytest test/
+./scripts/dev.sh test -q test/memory/
 ```
 
-## Test Coverage
+```bash
+# All tests
+./scripts/dev.sh test
+```
 
-- **test_basic.py**: Tests basic tool functionality, imports, and API key configuration
-- **test_memory.py**: Demonstrates memory compression and token tracking features
+### Integration (Live LLM) Tests
+
+```bash
+RUN_INTEGRATION_TESTS=1 ./scripts/dev.sh test -q -m integration
+```
 
 ## Notes
 
-- Live LLM integration tests are skipped by default (set `RUN_INTEGRATION_TESTS=1` to enable).
-- Set up your `.ouro/models.yaml` file before running tests that require API access
-- Memory tests use a mock LLM and don't require API keys
+- Live LLM integration tests are skipped by default; enabling them may incur cost.
+- Some CLI smoke runs (outside pytest) require a configured provider in `~/.ouro/models.yaml`.
+- Prefer targeted tests during iteration; run `./scripts/dev.sh check` before asking for review/merge.

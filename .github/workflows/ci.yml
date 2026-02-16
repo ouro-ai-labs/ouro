@@ -19,6 +19,8 @@ jobs:
       - uses: astral-sh/setup-uv@v3
       - name: Bootstrap
         run: ./scripts/bootstrap.sh
+      - name: Repo invariants
+        run: ./scripts/dev.sh invariants
       - name: Lint (pre-commit)
         run: ./scripts/dev.sh precommit
       - name: Tests
@@ -34,5 +36,7 @@ jobs:
       - uses: astral-sh/setup-uv@v3
       - name: Bootstrap
         run: ./scripts/bootstrap.sh
+      - name: Repo invariants
+        run: ./scripts/dev.sh invariants
       - name: Typecheck
         run: TYPECHECK_STRICT=1 ./scripts/dev.sh typecheck

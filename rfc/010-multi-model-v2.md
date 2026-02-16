@@ -1,4 +1,4 @@
-# RFC: Multi-Model Configuration and Runtime Switching (v2)
+# RFC 010: Multi-Model Configuration and Runtime Switching (v2)
 
 Status: **Completed** (2026-01-30)
 
