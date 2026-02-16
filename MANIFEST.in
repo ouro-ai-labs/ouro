@@ -3,3 +3,4 @@ include README.md
 include LICENSE
 recursive-include docs *.md
 recursive-include examples *.py *.md
+recursive-include agent/skills/system *

@@ -1,4 +1,4 @@
-# RFC 008: Skills System MVP
+# RFC 011: Skills System MVP
 
 ## Status
 

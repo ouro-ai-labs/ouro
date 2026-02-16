@@ -81,6 +81,7 @@ py-modules = ["main", "interactive", "config", "cli"]
 [tool.setuptools.package-data]
 "*" = ["py.typed"]
 "ouro_harbor" = ["*.j2"]
+"agent.skills" = ["system/**"]
 
 [tool.black]
 line-length = 100

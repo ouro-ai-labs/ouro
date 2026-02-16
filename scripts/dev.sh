@@ -14,6 +14,9 @@ Commands:
   format         Run black + isort + ruff --fix
   lint           Check formatting/lint (black/isort/ruff)
   precommit      Run pre-commit on all files
+  invariants     Check repo invariants (RFC numbering, symlink rules)
+  pr-body        Print a PR body starter (diff/stat + checklist)
+  self-review    Run strict local acceptance checks (invariants/precommit/typecheck/tests)
   typecheck      Run mypy (best-effort; set TYPECHECK_STRICT=1 to fail)
   check          Run precommit + typecheck + tests
   build          Build dist/ artifacts
@@ -22,6 +25,10 @@ Commands:
 Examples:
   ./scripts/dev.sh install
   ./scripts/dev.sh test -q
+  ./scripts/dev.sh test -q test/test_shell.py
+  ./scripts/dev.sh invariants
+  ./scripts/dev.sh pr-body > /tmp/pr.md
+  ./scripts/dev.sh self-review
   ./scripts/dev.sh format
   ./scripts/dev.sh lint
   ./scripts/dev.sh precommit
@@ -46,7 +53,21 @@ case "$cmd" in
     ;;
   test)
     source ./scripts/_env.sh
-    "$PYTHON" -m pytest test/ "$@"
+    has_explicit_target="false"
+    for arg in "$@"; do
+      # If the user passes a path/nodeid, don't force running the whole suite.
+      # Keep the default restricted to test/ when only options/filters are provided.
+      if [[ "$arg" == *"::"* ]] || [[ "$arg" == test ]] || [[ "$arg" == test/* ]] || [[ "$arg" == *.py ]] || [[ "$arg" == ./* ]] || [[ "$arg" == ../* ]] || [[ "$arg" == /* ]]; then
+        has_explicit_target="true"
+        break
+      fi
+    done
+
+    if [[ "$has_explicit_target" == "true" ]]; then
+      "$PYTHON" -m pytest "$@"
+    else
+      "$PYTHON" -m pytest test/ "$@"
+    fi
     ;;
   format)
     source ./scripts/_env.sh
@@ -63,6 +84,27 @@ case "$cmd" in
   precommit)
     source ./scripts/_env.sh
     "$PYTHON" -m pre_commit run --all-files "$@"
+    ;;
+  invariants)
+    source ./scripts/_env.sh
+    "$PYTHON" ./scripts/check_repo_invariants.py
+    ;;
+  pr-body)
+    source ./scripts/_env.sh
+    "$PYTHON" ./scripts/gen_pr_body.py "$@"
+    ;;
+  self-review)
+    ./scripts/dev.sh invariants
+    ./scripts/dev.sh precommit
+    TYPECHECK_STRICT=1 ./scripts/dev.sh typecheck
+    # Run only tracked tests by default to avoid accidental untracked scratch files.
+    # If you add new tests, `git add` them before running self-review.
+    tracked_tests=()
+    while IFS= read -r path; do
+      [[ -n "$path" ]] || continue
+      tracked_tests+=("$path")
+    done < <(git ls-files 'test/**/*.py' 'test/*.py')
+    ./scripts/dev.sh test -q "${tracked_tests[@]}"
     ;;
   typecheck)
     STRICT="${TYPECHECK_STRICT:-0}"
@@ -82,6 +124,7 @@ case "$cmd" in
     exit 0
     ;;
   check)
+    ./scripts/dev.sh invariants
     ./scripts/dev.sh precommit
     ./scripts/dev.sh typecheck
     ./scripts/dev.sh test
