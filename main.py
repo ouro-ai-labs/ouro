@@ -20,6 +20,7 @@ from llm.chatgpt_auth import (
     logout_auth_provider,
 )
 from llm.oauth_model_sync import remove_oauth_models, sync_oauth_models
+from llm.reasoning import REASONING_EFFORT_CHOICES
 from memory import MemoryManager
 from tools.advanced_file_ops import GlobTool, GrepTool
 from tools.file_ops import FileReadTool, FileWriteTool
@@ -209,6 +210,12 @@ def main():
         default=False,
         help="Enable Ralph Loop verification (outer loop that retries on failure). Only applies to --task mode.",
     )
+    parser.add_argument(
+        "--reasoning-effort",
+        choices=REASONING_EFFORT_CHOICES,
+        default="default",
+        help="Run-scoped reasoning level (LiteLLM/OpenAI-style). Use 'default' to omit the parameter, or 'off' as an alias for 'none'.",
+    )
 
     args = parser.parse_args()
 
@@ -319,6 +326,9 @@ def main():
         agent = create_agent(model_id=args.model)
 
     async def _run() -> None:
+        # Apply run-scoped reasoning control (affects primary task calls only).
+        agent.set_reasoning_effort(args.reasoning_effort)
+
         # Load resumed session if requested
         if resume_session_id:
             await agent.load_session(resume_session_id)
