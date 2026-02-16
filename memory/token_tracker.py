@@ -1,9 +1,12 @@
 """Token counting and cost tracking for memory management."""
 
+import hashlib
+import json
 import logging
 from typing import Dict
 
-from llm.content_utils import extract_text
+import litellm
+
 from llm.message_types import LLMMessage
 from utils.model_pricing import MODEL_PRICING
 
@@ -24,81 +27,55 @@ class TokenTracker:
         self.total_cache_creation_tokens = 0
         self.compression_savings = 0  # Tokens saved through compression
         self.compression_cost = 0  # Tokens spent on compression
+        self._token_cache: Dict[str, int] = {}
 
     def count_message_tokens(self, message: LLMMessage, provider: str, model: str) -> int:
-        """Count tokens in a message.
+        """Count tokens in a message using litellm.token_counter.
 
         Args:
             message: LLMMessage to count tokens for
-            provider: LLM provider name ("openai", "anthropic", "gemini")
+            provider: LLM provider name (kept for API compat, not used for routing)
             model: Model identifier
 
         Returns:
             Token count
         """
-        content = self._extract_content(message)
+        cache_key = self._make_cache_key(message)
+        if cache_key in self._token_cache:
+            return self._token_cache[cache_key]
 
-        if provider == "openai":
-            return self._count_openai_tokens(content, model)
-        elif provider == "anthropic":
-            return self._count_anthropic_tokens(content)
-        elif provider == "gemini":
-            return self._count_gemini_tokens(content)
-        else:
-            # Fallback: rough estimate
-            return len(str(content)) // 4
+        try:
+            msg_dict = message.to_dict()
+            count = litellm.token_counter(model=model, messages=[msg_dict])
+        except Exception as e:
+            logger.debug(f"litellm.token_counter failed ({e}), using fallback")
+            content = self._extract_content_text(message)
+            count = max(1, len(content) // 4)
 
-    def _extract_content(self, message) -> str:
-        """Extract text content from message.
+        self._token_cache[cache_key] = count
+        return count
 
-        Uses centralized extract_text from content_utils.
-        """
-        # Use centralized extraction
+    def _make_cache_key(self, message: LLMMessage) -> str:
+        """Build a content-based cache key for a message."""
+        parts = [message.role, str(message.content or "")]
+        if message.tool_calls:
+            parts.append(json.dumps(message.tool_calls, sort_keys=True))
+        if message.tool_call_id:
+            parts.append(message.tool_call_id)
+        if message.name:
+            parts.append(message.name)
+        raw = "|".join(parts)
+        return hashlib.sha256(raw.encode("utf-8", errors="replace")).hexdigest()
+
+    @staticmethod
+    def _extract_content_text(message: LLMMessage) -> str:
+        """Fallback: extract plain text from a message for rough estimation."""
+        from llm.content_utils import extract_text
+
         text = extract_text(message.content)
-
-        # For token counting, also include tool calls as string representation
         if hasattr(message, "tool_calls") and message.tool_calls:
             text += "\n" + str(message.tool_calls)
-
         return text if text else str(message.content)
-
-    def _count_openai_tokens(self, text: str, model: str) -> int:
-        """Count tokens using tiktoken for OpenAI models."""
-        try:
-            import tiktoken
-
-            try:
-                encoding = tiktoken.encoding_for_model(model)
-            except KeyError:
-                # Fallback to cl100k_base for unknown models
-                encoding = tiktoken.get_encoding("cl100k_base")
-
-            return len(encoding.encode(text))
-        except ImportError:
-            logger.warning("tiktoken not installed, using fallback estimation")
-            return len(text) // 4
-        except Exception as e:
-            logger.warning(f"Error counting tokens: {e}, using fallback")
-            return len(text) // 4
-
-    def _count_anthropic_tokens(self, text: str) -> int:
-        """Count tokens for Anthropic models.
-
-        Note: Anthropic SDK no longer provides a direct token counting method.
-        Using estimation: ~3.5 characters per token (based on Claude's tokenizer).
-        """
-        # Anthropic's rough estimation: 1 token ≈ 3.5 characters
-        # This is more accurate than 4 chars/token for Claude models
-        return int(len(text) / 3.5) if len(text) > 0 else 0
-
-    def _count_gemini_tokens(self, text: str) -> int:
-        """Estimate tokens for Gemini models.
-
-        Note: Google doesn't provide a token counting API for Gemini,
-        so we use an approximation.
-        """
-        # Rough estimate: 1 token ≈ 4 characters
-        return len(text) // 4
 
     def record_usage(self, usage: Dict[str, int]) -> None:
         """Record token usage from an LLM response in one call.
@@ -181,8 +158,8 @@ class TokenTracker:
     def get_total_cost(self, model: str) -> float:
         """Get total cost for this conversation, accounting for cache token pricing.
 
-        Cache read tokens are cheaper than regular input (e.g. 0.1× for Anthropic).
-        Cache write tokens may be more expensive (e.g. 1.25× for Anthropic).
+        Cache read tokens are cheaper than regular input (e.g. 0.1x for Anthropic).
+        Cache write tokens may be more expensive (e.g. 1.25x for Anthropic).
         Non-cached input tokens are priced at the standard input rate.
 
         Args:
@@ -250,3 +227,4 @@ class TokenTracker:
         self.total_cache_creation_tokens = 0
         self.compression_savings = 0
         self.compression_cost = 0
+        self._token_cache.clear()

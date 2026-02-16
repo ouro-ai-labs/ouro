@@ -443,8 +443,8 @@ class TestTokenEstimation:
         messages = [LLMMessage(role="user", content=long_content)]
         tokens = compressor._estimate_tokens(messages)
 
-        # Should estimate roughly 4 chars per token
-        expected_range = (len(long_content) // 5, len(long_content) // 3)
+        # litellm/tiktoken: roughly 4 chars per token for English, plus message overhead
+        expected_range = (len(long_content) // 6, len(long_content) // 2)
         assert expected_range[0] < tokens < expected_range[1]
 
     async def test_estimate_tokens_with_tool_content(self, mock_llm, tool_use_messages):

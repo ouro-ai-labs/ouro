@@ -163,6 +163,7 @@ class TestMemoryCompression:
         assert "compression_cost" in stats
         assert "net_savings" in stats
         assert "short_term_count" in stats
+        assert "tool_schema_tokens" in stats
 
 
 class TestToolCallMatching:
