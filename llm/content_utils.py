@@ -289,21 +289,3 @@ def content_has_tool_results(content: Any) -> bool:
                 return True
 
     return False
-
-
-def estimate_tokens(content: Any) -> int:
-    """Estimate token count for content.
-
-    Uses a simple character-based estimation:
-    ~3.5 characters per token for mixed content.
-
-    Args:
-        content: Content to estimate
-
-    Returns:
-        Estimated token count
-    """
-    text = extract_text(content)
-    if not text:
-        return 0
-    return max(1, int(len(text) / 3.5))

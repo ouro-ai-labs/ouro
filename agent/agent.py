@@ -104,6 +104,7 @@ AGENTS.md is optional. If not found, proceed normally.
         await self.memory.add_message(LLMMessage(role="user", content=task))
 
         tools = self.tool_executor.get_tool_schemas()
+        self.memory.set_tool_schemas(tools)
 
         if verify:
             # Use ralph loop (outer verification wrapping the inner ReAct loop)
