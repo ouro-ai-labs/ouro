@@ -88,117 +88,34 @@ ouro --resume a1b2c3d4
 | `--verify` | | Enable self-verification (Ralph Loop) in `--task` mode |
 | `--verbose` | `-v` | Enable verbose logging to `~/.ouro/logs/` |
 
-## Interactive Commands
-
-### Slash Commands
-
-| Command | Description |
-|---------|-------------|
-| `/help` | Show help |
-| `/clear` | Clear conversation and start fresh |
-| `/stats` | Show memory and token usage statistics |
-| `/resume [id]` | List or resume a previous session |
-| `/model` | Pick a model (arrow keys + Enter) |
-| `/model edit` | Open `~/.ouro/models.yaml` in editor (auto-reload on save) |
-| `/login` | Open OAuth provider selector and login |
-| `/logout` | Open OAuth provider selector and logout |
-| `/theme` | Toggle dark/light theme |
-| `/verbose` | Toggle thinking display |
-| `/compact` | Trigger memory compression and show token savings |
-| `/exit` | Exit (also `/quit`) |
-
-### Keyboard Shortcuts
-
-| Key | Action |
-|-----|--------|
-| `/` | Command autocomplete |
-| `Ctrl+C` | Graceful interrupt (cancels current operation, rolls back incomplete memory) |
-| `Ctrl+L` | Clear screen |
-| `Ctrl+T` | Toggle thinking display |
-| `Ctrl+S` | Show quick stats |
-| Up/Down | Navigate command history |
-
 ## Features
 
 - **Unified agent loop**: Think-Act-Observe cycle — planning, sub-agents, and tool use all happen in one loop, chosen autonomously by the agent
-- **Self-verification**: An outer loop verifies the agent's answer against the original task and re-enters if incomplete
-- **Memory compression**: LLM-driven summarization when context exceeds a token threshold, with multiple strategies (`sliding_window`, `selective`, `deletion`)
-- **Git-aware memory**: Git-based memory system that persists and manages agent memory through version control
-- **Session persistence**: Conversations saved as human-readable YAML files under `~/.ouro/sessions/`, resumable via `--resume` or `/resume`
-- **Parallel exploration**: Concurrent tool calls for exploring codebases and gathering information in parallel
-- **Parallel sub-agents**: Spawn multiple sub-agents to work on independent subtasks simultaneously
+- **Self-verification**: Ralph Loop verifies the agent's answer against the original task and re-enters if incomplete (`--verify`)
+- **Parallel execution**: Concurrent readonly tool calls in a single turn, plus `multi_task` for spawning parallel sub-agents with dependency ordering
+- **Memory system**: LLM-driven compression (sliding window / selective / deletion), git-aware long-term memory, and YAML session persistence resumable via `--resume`
+- **OAuth login**: `--login` / `/login` to authenticate with ChatGPT Codex subscription models; bundled OAuth catalog auto-synced
+- **TUI**: Dark/light themes, slash-command autocomplete, live status bar, token & cache tracking (`/stats`)
+- **Skills**: Extensible skill registry — list, install, and manage via `/skills`
+- **Benchmarks**: First-class [Harbor](https://github.com/laude-institute/harbor) integration for agent evaluation (see [Evaluation](#evaluation))
 
-## Tools
+## Evaluation
 
-| Tool | Description |
-|------|-------------|
-| `read_file` | Read file contents |
-| `write_file` | Write content to a file |
-| `search_files` | Search for files by name |
-| `edit_file` | Exact string replacement in files |
-| `smart_edit` | LLM-assisted file editing |
-| `glob_files` | Glob pattern file matching |
-| `grep_content` | Regex search in file contents |
-| `calculate` | Evaluate expressions / run Python code |
-| `shell` | Execute shell commands |
-| `web_search` | Web search (DuckDuckGo) |
-| `web_fetch` | Fetch and extract web page content |
-| `multi_task` | Run multiple sub-agent tasks in parallel |
-| `notify` | Send email notifications (Resend) |
-| `manage_todo_list` | Manage a task/todo list |
+Ouro can be evaluated on agent benchmarks using [Harbor](https://github.com/laude-institute/harbor). A convenience script `harbor-run.sh` is provided at the repo root:
 
-## Project Structure
+1. Edit `harbor-run.sh` to set your model, dataset, and ouro version.
+2. Run:
 
+```bash
+export OURO_API_KEY=<your-api-key>
+./harbor-run.sh                    # run with defaults in the script
+./harbor-run.sh -l 5               # limit to 5 tasks
+./harbor-run.sh --n-concurrent 4   # 4 parallel workers
 ```
-ouro/
-├── main.py                 # Entry point (argparse)
-├── cli.py                  # CLI wrapper (`ouro` entry point)
-├── interactive.py          # Interactive session, model setup, TUI
-├── config.py               # Runtime config (~/.ouro/config)
-├── agent/
-│   ├── base.py             # BaseAgent (ReAct + Ralph loops)
-│   ├── agent.py            # LoopAgent
-│   ├── verification.py     # LLMVerifier for Ralph loop
-│   ├── context.py          # Context injection (cwd, platform, date)
-│   ├── tool_executor.py    # Tool execution engine
-│   └── todo.py             # Todo list data structure
-├── llm/
-│   ├── litellm_adapter.py  # LiteLLM adapter (100+ providers)
-│   ├── model_manager.py    # Model config from ~/.ouro/models.yaml
-│   ├── retry.py            # Retry with exponential backoff
-│   └── message_types.py    # LLMMessage, LLMResponse, ToolCall
-├── memory/
-│   ├── manager.py          # Memory orchestrator + persistence
-│   ├── compressor.py       # LLM-driven compression
-│   ├── short_term.py       # Short-term memory (sliding window)
-│   ├── token_tracker.py    # Token counting + cost tracking
-│   ├── types.py            # Core data structures
-│   └── store/
-│       └── yaml_file_memory_store.py  # YAML session persistence
-├── tools/                  # 18 tool implementations
-├── utils/
-│   ├── tui/                # TUI components (input, themes, status bar)
-│   ├── logger.py           # Logging setup
-│   └── model_pricing.py    # Model pricing data
-├── docs/                   # Documentation
-├── test/                   # Tests
-├── scripts/                # Dev scripts (bootstrap.sh, dev.sh)
-└── rfc/                    # RFC design documents
-```
+
+Extra flags are forwarded to `harbor run`, so any Harbor CLI option works. See [ouro_harbor/README.md](ouro_harbor/README.md) for full details.
 
 ## Configuration
-
-Runtime settings live in `~/.ouro/config` (auto-created). Key settings:
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `MAX_ITERATIONS` | `1000` | Maximum agent loop iterations |
-| `TOOL_TIMEOUT` | `600` | Tool execution timeout (seconds) |
-| `RALPH_LOOP_MAX_ITERATIONS` | `3` | Max verification attempts |
-| `MEMORY_ENABLED` | `true` | Enable memory management |
-| `MEMORY_COMPRESSION_THRESHOLD` | `60000` | Token threshold for compression |
-| `MEMORY_SHORT_TERM_SIZE` | `100` | Messages kept at full fidelity |
-| `RETRY_MAX_ATTEMPTS` | `3` | Rate-limit retry attempts |
 
 See [Configuration Guide](docs/configuration.md) for all settings.
 
@@ -209,10 +126,6 @@ See [Configuration Guide](docs/configuration.md) for all settings.
 - [Memory Management](docs/memory-management.md) -- compression, persistence, token tracking
 - [Extending](docs/extending.md) -- adding tools, agents, LLM providers
 - [Packaging](docs/packaging.md) -- building, publishing, Docker
-
-## Evaluation
-
-Ouro can be evaluated on agent benchmarks using [Harbor](https://github.com/laude-institute/harbor). See [ouro_harbor/README.md](ouro_harbor/README.md) for setup and usage instructions.
 
 ## Contributing
 

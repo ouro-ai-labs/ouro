@@ -24,7 +24,31 @@ pip install -e ".[harbor]"
 
 ## Running Benchmarks
 
-### Basic Usage
+### Quick Start with `harbor-run.sh`
+
+The repo root includes a ready-to-use wrapper script. Edit the configuration variables at the top of the file (model, dataset, ouro version, proxy, etc.), then run:
+
+```bash
+export OURO_API_KEY=<your-api-key>
+./harbor-run.sh                    # run with defaults in the script
+./harbor-run.sh -l 5               # limit to 5 tasks
+./harbor-run.sh --n-concurrent 4   # 4 parallel workers
+```
+
+Key variables in `harbor-run.sh`:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MODEL` | `anthropic/kimi-k2-5-latest` | LiteLLM model ID |
+| `DATASET` | `terminal-bench-sample@2.0` | Benchmark dataset |
+| `AGENT_VERSION` | `0.2.3` | ouro PyPI version to install in container |
+| `AGENT_BRANCH` | *(empty)* | Git branch to install from (overrides `AGENT_VERSION`) |
+| `TIMEOUT_MULTIPLIER` | `2.0` | Multiplier for setup/run timeouts |
+| `PROXY_PORT` | `7890` | Local proxy port (set empty to disable) |
+
+Any extra flags are forwarded directly to `harbor run`.
+
+### Manual Usage
 
 ```bash
 export OURO_API_KEY=<your-api-key>
