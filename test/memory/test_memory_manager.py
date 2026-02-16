@@ -379,11 +379,11 @@ class TestEdgeCases:
         """Test using actual token counts from LLM response."""
         manager = MemoryManager(mock_llm)
 
-        # Add message with actual token counts
+        # Add message with actual token counts (response.usage format)
         msg = LLMMessage(role="assistant", content="Response")
-        actual_tokens = {"input": 100, "output": 50}
+        usage = {"input_tokens": 100, "output_tokens": 50}
 
-        await manager.add_message(msg, actual_tokens=actual_tokens)
+        await manager.add_message(msg, usage=usage)
 
         stats = manager.get_stats()
         assert stats["total_input_tokens"] >= 100
@@ -398,7 +398,7 @@ class TestEdgeCases:
         """
         manager = MemoryManager(mock_llm)
 
-        # Add user and tool-result messages (no actual_tokens)
+        # Add user and tool-result messages (no usage)
         await manager.add_message(LLMMessage(role="user", content="Hello"))
         await manager.add_message(
             LLMMessage(
@@ -416,7 +416,7 @@ class TestEdgeCases:
         # Now add an API message — only its reported tokens should count
         await manager.add_message(
             LLMMessage(role="assistant", content="Response"),
-            actual_tokens={"input": 500, "output": 80},
+            usage={"input_tokens": 500, "output_tokens": 80},
         )
 
         stats = manager.get_stats()

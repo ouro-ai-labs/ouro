@@ -263,10 +263,21 @@ def print_memory_stats(stats: Dict[str, Any]) -> None:
     # Calculate total tokens
     total_used = stats["total_input_tokens"] + stats["total_output_tokens"]
 
+    # Check if cache data is present
+    cache_read = stats.get("cache_read_tokens", 0)
+    cache_creation = stats.get("cache_creation_tokens", 0)
+    has_cache = cache_read > 0 or cache_creation > 0
+
     # Add rows
     table.add_row("Total Tokens", f"{total_used:,}")
-    table.add_row("├─ Input", f"{stats['total_input_tokens']:,}")
-    table.add_row("└─ Output", f"{stats['total_output_tokens']:,}")
+    if has_cache:
+        table.add_row("├─ Input", f"{stats['total_input_tokens']:,}")
+        table.add_row("│  ├─ Cache Read", f"{cache_read:,}")
+        table.add_row("│  └─ Cache Write", f"{cache_creation:,}")
+        table.add_row("└─ Output", f"{stats['total_output_tokens']:,}")
+    else:
+        table.add_row("├─ Input", f"{stats['total_input_tokens']:,}")
+        table.add_row("└─ Output", f"{stats['total_output_tokens']:,}")
     table.add_row("Current Context", f"{stats['current_tokens']:,}")
     table.add_row("Compressions", str(stats["compression_count"]))
 

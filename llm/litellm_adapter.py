@@ -128,10 +128,15 @@ class LiteLLMAdapter:
 
         if hasattr(response, "usage") and response.usage:
             usage = response.usage
+            cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+            cache_creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
+            cache_info = ""
+            if cache_read or cache_creation:
+                cache_info = f", CacheRead={cache_read}, CacheCreation={cache_creation}"
             logger.debug(
                 f"Token Usage: Input={usage.get('prompt_tokens', 0)}, "
                 f"Output={usage.get('completion_tokens', 0)}, "
-                f"Total={usage.get('total_tokens', 0)}"
+                f"Total={usage.get('total_tokens', 0)}{cache_info}"
             )
 
         return self._convert_response(response)
@@ -300,6 +305,9 @@ class LiteLLMAdapter:
             usage_dict = {
                 "input_tokens": response.usage.get("prompt_tokens", 0),
                 "output_tokens": response.usage.get("completion_tokens", 0),
+                "cache_read_tokens": getattr(response.usage, "cache_read_input_tokens", 0) or 0,
+                "cache_creation_tokens": getattr(response.usage, "cache_creation_input_tokens", 0)
+                or 0,
             }
 
         # Extract thinking content

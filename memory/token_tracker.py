@@ -20,6 +20,8 @@ class TokenTracker:
         """Initialize token tracker."""
         self.total_input_tokens = 0
         self.total_output_tokens = 0
+        self.total_cache_read_tokens = 0
+        self.total_cache_creation_tokens = 0
         self.compression_savings = 0  # Tokens saved through compression
         self.compression_cost = 0  # Tokens spent on compression
 
@@ -98,13 +100,19 @@ class TokenTracker:
         # Rough estimate: 1 token ≈ 4 characters
         return len(text) // 4
 
-    def add_input_tokens(self, count: int):
-        """Record input tokens used."""
-        self.total_input_tokens += count
+    def record_usage(self, usage: Dict[str, int]) -> None:
+        """Record token usage from an LLM response in one call.
 
-    def add_output_tokens(self, count: int):
-        """Record output tokens generated."""
-        self.total_output_tokens += count
+        Accepts the usage dict produced by LiteLLMAdapter._convert_response().
+
+        Args:
+            usage: Dict with keys input_tokens, output_tokens, and optionally
+                   cache_read_tokens, cache_creation_tokens.
+        """
+        self.total_input_tokens += usage.get("input_tokens", 0)
+        self.total_output_tokens += usage.get("output_tokens", 0)
+        self.total_cache_read_tokens += usage.get("cache_read_tokens", 0)
+        self.total_cache_creation_tokens += usage.get("cache_creation_tokens", 0)
 
     def add_compression_savings(self, saved: int):
         """Record tokens saved through compression."""
@@ -114,10 +122,41 @@ class TokenTracker:
         """Record tokens spent on compression."""
         self.compression_cost += cost
 
+    def _find_pricing(self, model: str) -> dict:
+        """Find pricing entry for a model using longest substring match.
+
+        When multiple keys match (e.g. both "claude-sonnet-4" and
+        "claude-sonnet-4-5" match "anthropic/claude-sonnet-4-5-20250929"),
+        the longest key wins so ordering in MODEL_PRICING doesn't matter.
+
+        Args:
+            model: Model identifier
+
+        Returns:
+            Pricing dict with at least 'input' and 'output' keys
+        """
+        best_key = ""
+        best_pricing = None
+        for model_key, price in self.PRICING.items():
+            if model_key != "default" and model_key in model and len(model_key) > len(best_key):
+                best_key = model_key
+                best_pricing = price
+
+        if best_pricing:
+            return best_pricing
+
+        logger.info(
+            f"No pricing found for model {model}, using default pricing (DeepSeek-Reasoner equivalent)"
+        )
+        return self.PRICING["default"]
+
     def calculate_cost(
         self, model: str, input_tokens: int = None, output_tokens: int = None
     ) -> float:
-        """Calculate cost for given token usage.
+        """Calculate cost for given token usage (without cache adjustments).
+
+        Used for hypothetical cost calculations (e.g. compression savings).
+        For actual conversation cost, use get_total_cost() which accounts for cache pricing.
 
         Args:
             model: Model identifier
@@ -132,28 +171,19 @@ class TokenTracker:
         if output_tokens is None:
             output_tokens = self.total_output_tokens
 
-        # Find matching pricing
-        pricing = None
-        for model_key, price in self.PRICING.items():
-            if model_key in model:
-                pricing = price
-                break
+        pricing = self._find_pricing(model)
 
-        if not pricing:
-            logger.info(
-                f"No pricing found for model {model}, using default pricing (DeepSeek-Reasoner equivalent)"
-            )
-            # Fallback to default pricing (using reasonable mid-tier estimate)
-            pricing = self.PRICING["default"]
-
-        # Calculate cost
         input_cost = (input_tokens * pricing["input"]) / 1_000_000
         output_cost = (output_tokens * pricing["output"]) / 1_000_000
 
         return input_cost + output_cost
 
     def get_total_cost(self, model: str) -> float:
-        """Get total cost for this conversation.
+        """Get total cost for this conversation, accounting for cache token pricing.
+
+        Cache read tokens are cheaper than regular input (e.g. 0.1× for Anthropic).
+        Cache write tokens may be more expensive (e.g. 1.25× for Anthropic).
+        Non-cached input tokens are priced at the standard input rate.
 
         Args:
             model: Model identifier
@@ -161,7 +191,24 @@ class TokenTracker:
         Returns:
             Total cost in USD
         """
-        return self.calculate_cost(model)
+        pricing = self._find_pricing(model)
+
+        cache_read_price = pricing.get("cache_read", pricing["input"])
+        cache_write_price = pricing.get("cache_write", pricing["input"])
+
+        non_cached_input = max(
+            0,
+            self.total_input_tokens
+            - self.total_cache_read_tokens
+            - self.total_cache_creation_tokens,
+        )
+
+        input_cost = (non_cached_input * pricing["input"]) / 1_000_000
+        cache_read_cost = (self.total_cache_read_tokens * cache_read_price) / 1_000_000
+        cache_write_cost = (self.total_cache_creation_tokens * cache_write_price) / 1_000_000
+        output_cost = (self.total_output_tokens * pricing["output"]) / 1_000_000
+
+        return input_cost + cache_read_cost + cache_write_cost + output_cost
 
     def get_net_savings(self, model: str) -> Dict[str, float]:
         """Calculate net token and cost savings after accounting for compression overhead.
@@ -199,5 +246,7 @@ class TokenTracker:
         """Reset all counters."""
         self.total_input_tokens = 0
         self.total_output_tokens = 0
+        self.total_cache_read_tokens = 0
+        self.total_cache_creation_tokens = 0
         self.compression_savings = 0
         self.compression_cost = 0

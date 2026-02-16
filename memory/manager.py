@@ -180,13 +180,13 @@ class MemoryManager:
                 logger.error(f"Failed to create session: {e}")
                 raise RuntimeError(f"Failed to create memory session: {e}") from e
 
-    async def add_message(self, message: LLMMessage, actual_tokens: Dict[str, int] = None) -> None:
+    async def add_message(self, message: LLMMessage, usage: Dict[str, int] = None) -> None:
         """Add a message to memory and trigger compression if needed.
 
         Args:
             message: Message to add
-            actual_tokens: Optional dict with actual token counts from LLM response
-                          Format: {"input": int, "output": int}
+            usage: Optional usage dict from LLM response (response.usage).
+                   Keys: input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens.
         """
         # Ensure session exists before adding messages
         await self._ensure_session()
@@ -196,20 +196,14 @@ class MemoryManager:
             self.system_messages.append(message)
             return
 
-        # Count tokens (use actual if provided, otherwise estimate)
-        if actual_tokens:
-            # Use actual token counts from LLM response
-            # Note: input_tokens includes full context sent to API, not just new content
-            input_tokens = actual_tokens.get("input", 0)
-            output_tokens = actual_tokens.get("output", 0)
-
-            self.token_tracker.add_input_tokens(input_tokens)
-            self.token_tracker.add_output_tokens(output_tokens)
-
-            # Log API usage separately
+        # Record token usage if provided
+        if usage:
+            self.token_tracker.record_usage(usage)
             logger.debug(
-                f"API usage: input={input_tokens}, output={output_tokens}, "
-                f"total={input_tokens + output_tokens}"
+                f"API usage: input={usage.get('input_tokens', 0)}, "
+                f"output={usage.get('output_tokens', 0)}, "
+                f"cache_read={usage.get('cache_read_tokens', 0)}, "
+                f"cache_creation={usage.get('cache_creation_tokens', 0)}"
             )
         # Non-API messages (user, tool results) are not tracked here — their
         # tokens will be counted in the next API call's response.usage.input_tokens.
@@ -471,6 +465,8 @@ class MemoryManager:
             "current_tokens": self.current_tokens,
             "total_input_tokens": self.token_tracker.total_input_tokens,
             "total_output_tokens": self.token_tracker.total_output_tokens,
+            "cache_read_tokens": self.token_tracker.total_cache_read_tokens,
+            "cache_creation_tokens": self.token_tracker.total_cache_creation_tokens,
             "compression_count": self.compression_count,
             "total_savings": self.token_tracker.compression_savings,
             "compression_cost": self.token_tracker.compression_cost,
