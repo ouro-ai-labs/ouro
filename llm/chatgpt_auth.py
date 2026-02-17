@@ -37,6 +37,9 @@ _AUTH_PROVIDER_ALIASES = {
 CHATGPT_OAUTH_AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize"
 CHATGPT_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token"
 CHATGPT_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
+CHATGPT_OAUTH_REDIRECT_HOST = "localhost"
+CHATGPT_OAUTH_REDIRECT_PATH = "/auth/callback"
+CHATGPT_OAUTH_DEFAULT_CALLBACK_PORT = 1455
 CHATGPT_OAUTH_SCOPES = "openid profile email offline_access"
 CHATGPT_OAUTH_DEFAULT_TIMEOUT_SECONDS = 10 * 60
 CHATGPT_OAUTH_HTTP_TIMEOUT_SECONDS = 30
@@ -529,7 +532,7 @@ async def _login_chatgpt_oauth_via_local_server() -> None:
             "`OURO_CHATGPT_OAUTH_ALLOW_NON_LOOPBACK=1` if you understand the risks."
         )
     port_raw = (os.environ.get("OURO_CHATGPT_OAUTH_CALLBACK_PORT") or "").strip()
-    port = int(port_raw) if port_raw else 0
+    port = int(port_raw) if port_raw else CHATGPT_OAUTH_DEFAULT_CALLBACK_PORT
 
     def _set_result(code: str) -> None:
         if not result.done():
@@ -555,7 +558,7 @@ async def _login_chatgpt_oauth_via_local_server() -> None:
             parsed = urllib.parse.urlparse(self.path)
             params = urllib.parse.parse_qs(parsed.query)
 
-            if parsed.path == "/callback":
+            if parsed.path == CHATGPT_OAUTH_REDIRECT_PATH:
                 got_state = _query_param_first(params, "state")
                 if got_state != state:
                     self._send_text(400, "Invalid state.")
@@ -583,7 +586,7 @@ async def _login_chatgpt_oauth_via_local_server() -> None:
                 )
                 return
 
-            if parsed.path == "/cancel":
+            if parsed.path == "/auth/cancel":
                 loop.call_soon_threadsafe(_set_exception, RuntimeError("OAuth login cancelled."))
                 self._send_text(200, "Cancelled. You can close this tab.")
                 return
@@ -614,8 +617,9 @@ async def _login_chatgpt_oauth_via_local_server() -> None:
                 bound_port = await asyncio.to_thread(_pick_unused_port, host)
 
     try:
-        redirect_host = _format_host_for_url(host)
-        redirect_uri = f"http://{redirect_host}:{bound_port}/callback"
+        redirect_uri = (
+            f"http://{CHATGPT_OAUTH_REDIRECT_HOST}:{bound_port}{CHATGPT_OAUTH_REDIRECT_PATH}"
+        )
         client = _oauth_client(redirect_uri=redirect_uri)
         try:
             auth_url, returned_state = client.create_authorization_url(
