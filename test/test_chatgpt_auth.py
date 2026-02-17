@@ -7,11 +7,8 @@ from pathlib import Path
 
 import httpx
 
-import httpx
-
 from llm.chatgpt_auth import (
     ChatGPTAuthStatus,
-    _get_chatgpt_authenticator,
     _prompt_for_redirect_code,
     configure_chatgpt_auth_env,
     get_auth_provider_status,
@@ -79,7 +76,7 @@ async def test_login_uses_oauth_flow_by_default(tmp_path, monkeypatch):
     auth_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("CHATGPT_TOKEN_DIR", str(auth_dir))
 
-    called = {"oauth": 0, "device": 0}
+    called = {"oauth": 0}
 
     async def fake_oauth_login():
         called["oauth"] += 1
@@ -96,17 +93,10 @@ async def test_login_uses_oauth_flow_by_default(tmp_path, monkeypatch):
             encoding="utf-8",
         )
 
-    async def fake_device_login():
-        called["device"] += 1
-
     monkeypatch.setattr("llm.chatgpt_auth._login_chatgpt_oauth_via_local_server", fake_oauth_login)
-    monkeypatch.setattr(
-        "llm.chatgpt_auth._login_chatgpt_via_litellm_device_code", fake_device_login
-    )
 
     status = await login_chatgpt()
     assert called["oauth"] == 1
-    assert called["device"] == 0
     assert status.exists is True
     assert status.has_access_token is True
     assert status.account_id == "acct_login"
@@ -280,37 +270,6 @@ async def test_login_prints_manual_url_when_browser_open_fails(tmp_path, monkeyp
 
     assert any("Could not open browser automatically" in msg for msg in messages)
     assert (auth_dir / "auth.json").exists()
-
-
-async def test_login_can_force_device_code_flow(tmp_path, monkeypatch):
-    auth_dir = tmp_path / "chatgpt-auth"
-    auth_dir.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setenv("CHATGPT_TOKEN_DIR", str(auth_dir))
-    monkeypatch.setenv("OURO_CHATGPT_LOGIN_METHOD", "device")
-
-    called = {"device": 0, "oauth": 0}
-
-    async def fake_device_login():
-        called["device"] += 1
-        (auth_dir / "auth.json").write_text(
-            json.dumps({"access_token": "token-device", "expires_at": int(time.time()) + 3600}),
-            encoding="utf-8",
-        )
-
-    async def fake_oauth_login():
-        called["oauth"] += 1
-
-    monkeypatch.setattr(
-        "llm.chatgpt_auth._login_chatgpt_via_litellm_device_code", fake_device_login
-    )
-    monkeypatch.setattr("llm.chatgpt_auth._login_chatgpt_oauth_via_local_server", fake_oauth_login)
-
-    status = await login_chatgpt()
-
-    assert called["device"] == 1
-    assert called["oauth"] == 0
-    assert status.exists is True
-    assert status.has_access_token is True
 
 
 async def test_prompt_for_redirect_code_accepts_query_string(monkeypatch):

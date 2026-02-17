@@ -34,7 +34,6 @@ _AUTH_PROVIDER_ALIASES = {
     "openai-codex": "chatgpt",
 }
 
-CHATGPT_DEVICE_VERIFY_URL = "https://auth.openai.com/codex/device"
 CHATGPT_OAUTH_AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize"
 CHATGPT_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token"
 CHATGPT_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
@@ -150,86 +149,6 @@ def _parse_expires_at(value: Any) -> int | None:
         with suppress(ValueError):
             return int(float(value))
     return None
-
-
-def _decode_jwt_claims(token: str) -> dict[str, Any]:
-    try:
-        parts = token.split(".")
-        if len(parts) < 2:
-            return {}
-        payload_b64 = parts[1]
-        payload_b64 += "=" * (-len(payload_b64) % 4)
-        payload_bytes = base64.urlsafe_b64decode(payload_b64.encode("ascii"))
-        data = json.loads(payload_bytes.decode("utf-8"))
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
-
-
-def _get_expires_at_from_access_token(access_token: str | None) -> int | None:
-    if not access_token:
-        return None
-    exp = _decode_jwt_claims(access_token).get("exp")
-    if isinstance(exp, (int, float)):
-        return int(exp)
-    return None
-
-
-def _extract_account_id_from_token(token: str | None) -> str | None:
-    if not token:
-        return None
-    auth_claims = _decode_jwt_claims(token).get("https://api.openai.com/auth")
-    if isinstance(auth_claims, dict):
-        account_id = auth_claims.get("chatgpt_account_id")
-        if isinstance(account_id, str) and account_id:
-            return account_id
-    return None
-
-
-async def _persist_account_id_if_missing(account_id: str | None) -> None:
-    if not account_id:
-        return
-    auth_file = _get_chatgpt_auth_file_path()
-    data = await _read_json(auth_file) or {}
-    if data.get("account_id"):
-        return
-    data["account_id"] = account_id
-    await _write_json(auth_file, data)
-
-
-async def _get_account_id_from_auth_file() -> str | None:
-    auth_file = _get_chatgpt_auth_file_path()
-    data = await _read_json(auth_file) or {}
-    account_id = data.get("account_id")
-    if isinstance(account_id, str) and account_id:
-        return account_id
-
-    id_token = data.get("id_token") if isinstance(data.get("id_token"), str) else None
-    access_token = data.get("access_token") if isinstance(data.get("access_token"), str) else None
-    derived = _extract_account_id_from_token(id_token) or _extract_account_id_from_token(
-        access_token
-    )
-    await _persist_account_id_if_missing(derived)
-    return derived
-
-
-def _is_access_token_valid(access_token: str | None, expires_at: int | None) -> bool:
-    if not access_token or expires_at is None:
-        return False
-    return time.time() < (expires_at - TOKEN_EXPIRY_SKEW_SECONDS)
-
-
-def _is_loopback_host(host: str) -> bool:
-    normalized = host.strip().lower()
-    if normalized == "localhost":
-        return True
-
-    expires_at = _parse_expires_at(data.get("expires_at"))
-    if expires_at is None:
-        # unknown expiry; let authenticator decide without forcing a new browser tab
-        return False
-
-    return time.time() >= (expires_at - TOKEN_EXPIRY_SKEW_SECONDS)
 
 
 def _decode_jwt_claims(token: str) -> dict[str, Any]:
@@ -538,13 +457,6 @@ def _generate_pkce_verifier() -> str:
     return verifier[:128]
 
 
-def _get_chatgpt_login_method() -> str:
-    raw = (os.environ.get("OURO_CHATGPT_LOGIN_METHOD") or "").strip().lower()
-    if raw in {"device", "device_code", "device-code"}:
-        return "device"
-    return "oauth"
-
-
 async def _open_url_best_effort(url: str) -> bool:
     if os.environ.get("OURO_NO_BROWSER", "").strip().lower() in {"1", "true", "yes"}:
         return False
@@ -773,140 +685,6 @@ async def _login_chatgpt_oauth_via_local_server() -> None:
                 await asyncio.to_thread(thread.join, 1)
 
 
-def _open_chatgpt_device_page_best_effort() -> bool:
-    """Open ChatGPT device-login page if possible.
-
-    Returns:
-        True if the browser launch was accepted by the platform handler.
-    """
-    if os.environ.get("OURO_NO_BROWSER", "").strip().lower() in {"1", "true", "yes"}:
-        return False
-
-    with suppress(Exception):
-        return bool(webbrowser.open(CHATGPT_DEVICE_VERIFY_URL, new=2))
-
-    return False
-
-
-def _format_host_for_url(host: str) -> str:
-    # RFC 3986: IPv6 literals must be bracketed.
-    if ":" in host and not (host.startswith("[") and host.endswith("]")):
-        return f"[{host}]"
-    return host
-
-
-def _query_param_first(params: dict[str, list[str]], key: str) -> str | None:
-    values = params.get(key)
-    if not values:
-        return None
-    value = values[0]
-    return value if value else None
-
-
-async def _prompt_for_redirect_code(*, expected_state: str) -> str:
-    if not sys.stdin.isatty():
-        raise RuntimeError(
-            "Timed out waiting for the localhost OAuth callback, and stdin is not a TTY. "
-            "Re-run login in an interactive terminal, or use SSH port-forwarding for the callback port."
-        )
-
-    raw = await asyncio.to_thread(
-        input,
-        "Paste the full redirect URL from your browser (or just the `code`): ",
-    )
-    text = (raw or "").strip()
-    if not text:
-        raise RuntimeError("No redirect URL/code provided.")
-
-    if text.startswith(("http://", "https://")):
-        parsed = urllib.parse.urlparse(text)
-        query = urllib.parse.parse_qs(parsed.query)
-        fragment = urllib.parse.parse_qs(parsed.fragment)
-        params = {**query, **fragment}
-
-        error = _query_param_first(params, "error")
-        if error:
-            desc = _query_param_first(params, "error_description") or ""
-            raise RuntimeError(f"OAuth error: {error} {desc}".strip())
-
-        code = _query_param_first(params, "code")
-        state = _query_param_first(params, "state")
-        if state and state != expected_state:
-            raise RuntimeError("Redirect URL state mismatch.")
-        if not code:
-            raise RuntimeError("Redirect URL missing `code` parameter.")
-        return code
-
-    if text.startswith(("?", "#")) or any(key in text for key in ("code=", "state=", "error=")):
-        left, sep, right = text.partition("#")
-        left_params = urllib.parse.parse_qs(left.lstrip("?#"))
-        right_params = urllib.parse.parse_qs(right.lstrip("?#")) if sep else {}
-        params = {**left_params, **right_params}
-
-        error = _query_param_first(params, "error")
-        if error:
-            desc = _query_param_first(params, "error_description") or ""
-            raise RuntimeError(f"OAuth error: {error} {desc}".strip())
-
-        code = _query_param_first(params, "code")
-        state = _query_param_first(params, "state")
-        if state and state != expected_state:
-            raise RuntimeError("Redirect code state mismatch.")
-        if not code:
-            raise RuntimeError("Missing authorization code.")
-        return code
-
-    if "#" in text:
-        code, state = text.split("#", 1)
-        code = code.strip()
-        state = state.strip()
-        if state and state != expected_state:
-            raise RuntimeError("Redirect code state mismatch.")
-        if not code:
-            raise RuntimeError("Missing authorization code.")
-        return code
-
-    return text
-
-
-async def _login_chatgpt_via_litellm_device_code() -> None:
-    # Best effort: pre-open device page only when a fresh login is likely required.
-    if await _should_open_browser_before_login():
-        opened = await asyncio.to_thread(_open_chatgpt_device_page_best_effort)
-        if not opened:
-            if bind_error is None:
-                print(  # noqa: T201
-                    "Could not open browser automatically. Open this URL manually:\n"
-                    f"{auth_url}\n\n"
-                    "If you are running on a remote machine, port-forward the callback server:\n"
-                    f"  ssh -L {bound_port}:{host}:{bound_port} <host>\n",
-                    flush=True,
-                )
-            else:
-                print(  # noqa: T201
-                    "Could not open browser automatically. Open this URL manually:\n"
-                    f"{auth_url}\n",
-                    flush=True,
-                )
-
-        if bind_error is not None:
-            print(  # noqa: T201
-                "Could not start the localhost OAuth callback server. After you sign in, your browser may show a "
-                "connection error; copy the redirect URL from the address bar and paste it here.",
-                flush=True,
-            )
-
-        timeout_raw = (os.environ.get("OURO_CHATGPT_OAUTH_TIMEOUT_SECONDS") or "").strip()
-        timeout_seconds = int(timeout_raw) if timeout_raw else CHATGPT_OAUTH_DEFAULT_TIMEOUT_SECONDS
-        if bind_error is not None:
-            code = await _prompt_for_redirect_code(expected_state=state)
-        else:
-            try:
-                code = await asyncio.wait_for(result, timeout=timeout_seconds)
-            except TimeoutError:
-                code = await _prompt_for_redirect_code(expected_state=state)
-
-
 class _AuthlibOAuthAuthenticator:
     async def get_access_token(self) -> str:
         await _ensure_auth_dir()
@@ -946,39 +724,15 @@ class _AuthlibOAuthAuthenticator:
         return await _get_account_id_from_auth_file()
 
 
-class _LiteLLMDeviceCodeAuthenticator:
-    async def get_access_token(self) -> str:
-        await _ensure_auth_dir()
-        # Ensure the token exists on disk; LiteLLM handles polling/exchange internally.
-        await _login_chatgpt_via_litellm_device_code()
-        auth_file = _get_chatgpt_auth_file_path()
-        data = await _read_json(auth_file) or {}
-        token = data.get("access_token")
-        if not isinstance(token, str) or not token:
-            raise RuntimeError("LiteLLM device-code login did not produce an access token.")
-        return token
-
-    async def get_account_id(self) -> str | None:
-        return await _get_account_id_from_auth_file()
-
-
-def _get_chatgpt_authenticator_for_method(method: str) -> ChatGPTAuthenticator:
-    if method == "device":
-        return _LiteLLMDeviceCodeAuthenticator()
-    return _AuthlibOAuthAuthenticator()
-
-
 async def login_chatgpt() -> ChatGPTAuthStatus:
     """Ensure ChatGPT OAuth credentials exist and return resulting status.
 
-    Defaults to a browser-based OAuth (PKCE) flow with a localhost callback server,
-    which works in workspaces that disable the OAuth device-code grant. To force
-    the legacy device-code flow, set `OURO_CHATGPT_LOGIN_METHOD=device`.
+    Uses a browser-based OAuth (PKCE) flow with a localhost callback server, with
+    a manual paste fallback when the callback cannot be reached.
     """
     await _ensure_auth_dir()
 
-    method = _get_chatgpt_login_method()
-    authenticator = _get_chatgpt_authenticator_for_method(method)
+    authenticator: ChatGPTAuthenticator = _AuthlibOAuthAuthenticator()
     await authenticator.get_access_token()
     await authenticator.get_account_id()
     return await get_chatgpt_auth_status()
