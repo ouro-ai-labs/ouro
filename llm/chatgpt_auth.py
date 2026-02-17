@@ -1,4 +1,4 @@
-"""ChatGPT (Codex subscription) auth helpers built on top of LiteLLM.
+"""ChatGPT (Codex subscription) auth helpers (LiteLLM-compatible token layout).
 
 This module keeps OAuth credentials under ``~/.ouro/auth/chatgpt`` and exposes
 async helpers for login/logout/status.
@@ -34,7 +34,6 @@ _AUTH_PROVIDER_ALIASES = {
     "openai-codex": "chatgpt",
 }
 
-CHATGPT_DEVICE_VERIFY_URL = "https://auth.openai.com/codex/device"
 CHATGPT_OAUTH_AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize"
 CHATGPT_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token"
 CHATGPT_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
@@ -150,31 +149,6 @@ def _parse_expires_at(value: Any) -> int | None:
         with suppress(ValueError):
             return int(float(value))
     return None
-
-
-async def _should_open_browser_before_login() -> bool:
-    """Whether pre-opening browser is likely necessary.
-
-    If auth.json already has a valid access token or any refresh token,
-    LiteLLM can usually proceed without a fresh device login.
-    """
-    data = await _read_json(_get_chatgpt_auth_file_path())
-    if not data:
-        return True
-
-    if data.get("refresh_token"):
-        return False
-
-    access_token = bool(data.get("access_token"))
-    if not access_token:
-        return True
-
-    expires_at = _parse_expires_at(data.get("expires_at"))
-    if expires_at is None:
-        # unknown expiry; let authenticator decide without forcing a new browser tab
-        return False
-
-    return time.time() >= (expires_at - TOKEN_EXPIRY_SKEW_SECONDS)
 
 
 def _decode_jwt_claims(token: str) -> dict[str, Any]:
@@ -483,13 +457,6 @@ def _generate_pkce_verifier() -> str:
     return verifier[:128]
 
 
-def _get_chatgpt_login_method() -> str:
-    raw = (os.environ.get("OURO_CHATGPT_LOGIN_METHOD") or "").strip().lower()
-    if raw in {"device", "device_code", "device-code"}:
-        return "device"
-    return "oauth"
-
-
 async def _open_url_best_effort(url: str) -> bool:
     if os.environ.get("OURO_NO_BROWSER", "").strip().lower() in {"1", "true", "yes"}:
         return False
@@ -718,60 +685,6 @@ async def _login_chatgpt_oauth_via_local_server() -> None:
                 await asyncio.to_thread(thread.join, 1)
 
 
-def _open_chatgpt_device_page_best_effort() -> bool:
-    """Open ChatGPT device-login page if possible.
-
-    Returns:
-        True if the browser launch was accepted by the platform handler.
-    """
-    if os.environ.get("OURO_NO_BROWSER", "").strip().lower() in {"1", "true", "yes"}:
-        return False
-
-    with suppress(Exception):
-        return bool(webbrowser.open(CHATGPT_DEVICE_VERIFY_URL, new=2))
-
-    return False
-
-
-def _get_chatgpt_authenticator():
-    try:
-        import litellm
-    except Exception as e:  # pragma: no cover - import error path
-        raise RuntimeError(
-            "LiteLLM is required for ChatGPT login. Install/upgrade litellm>=1.81.1."
-        ) from e
-
-    config_cls = getattr(litellm, "ChatGPTConfig", None)
-    if config_cls is None:
-        raise RuntimeError(
-            "Installed LiteLLM does not support ChatGPT OAuth provider. "
-            "Please upgrade to litellm>=1.81.1."
-        )
-
-    config = config_cls()
-    authenticator = getattr(config, "authenticator", None)
-    if authenticator is None:
-        raise RuntimeError("LiteLLM ChatGPT authenticator is unavailable.")
-
-    return authenticator
-
-
-async def _login_chatgpt_via_litellm_device_code() -> None:
-    # Best effort: pre-open device page only when a fresh login is likely required.
-    if await _should_open_browser_before_login():
-        opened = await asyncio.to_thread(_open_chatgpt_device_page_best_effort)
-        if not opened:
-            print(  # noqa: T201
-                "Could not open browser automatically. Open "
-                f"{CHATGPT_DEVICE_VERIFY_URL} manually.",
-                flush=True,
-            )
-
-    authenticator = await asyncio.to_thread(_get_chatgpt_authenticator)
-    await asyncio.to_thread(authenticator.get_access_token)
-    await asyncio.to_thread(authenticator.get_account_id)
-
-
 class _AuthlibOAuthAuthenticator:
     async def get_access_token(self) -> str:
         await _ensure_auth_dir()
@@ -811,39 +724,15 @@ class _AuthlibOAuthAuthenticator:
         return await _get_account_id_from_auth_file()
 
 
-class _LiteLLMDeviceCodeAuthenticator:
-    async def get_access_token(self) -> str:
-        await _ensure_auth_dir()
-        # Ensure the token exists on disk; LiteLLM handles polling/exchange internally.
-        await _login_chatgpt_via_litellm_device_code()
-        auth_file = _get_chatgpt_auth_file_path()
-        data = await _read_json(auth_file) or {}
-        token = data.get("access_token")
-        if not isinstance(token, str) or not token:
-            raise RuntimeError("LiteLLM device-code login did not produce an access token.")
-        return token
-
-    async def get_account_id(self) -> str | None:
-        return await _get_account_id_from_auth_file()
-
-
-def _get_chatgpt_authenticator_for_method(method: str) -> ChatGPTAuthenticator:
-    if method == "device":
-        return _LiteLLMDeviceCodeAuthenticator()
-    return _AuthlibOAuthAuthenticator()
-
-
 async def login_chatgpt() -> ChatGPTAuthStatus:
     """Ensure ChatGPT OAuth credentials exist and return resulting status.
 
-    Defaults to a browser-based OAuth (PKCE) flow with a localhost callback server,
-    which works in workspaces that disable the OAuth device-code grant. To force
-    the legacy device-code flow, set `OURO_CHATGPT_LOGIN_METHOD=device`.
+    Uses a browser-based OAuth (PKCE) flow with a localhost callback server, with
+    a manual paste fallback when the callback cannot be reached.
     """
     await _ensure_auth_dir()
 
-    method = _get_chatgpt_login_method()
-    authenticator = _get_chatgpt_authenticator_for_method(method)
+    authenticator: ChatGPTAuthenticator = _AuthlibOAuthAuthenticator()
     await authenticator.get_access_token()
     await authenticator.get_account_id()
     return await get_chatgpt_auth_status()

@@ -56,7 +56,7 @@ default: openai/gpt-4o
 For `chatgpt/*` subscription models, run `ouro --login` (or `/login` in interactive mode) and select provider before use.
 OAuth models shown in `/model` are seeded from ouro's bundled catalog (synced from pi-ai `openai-codex` model list).
 Maintainer note: refresh this catalog via `python scripts/update_oauth_model_catalog.py`.
-Login uses a browser-based OAuth (PKCE) flow with a localhost callback server. If browser auto-open fails, ouro prints a URL you can open manually (for remote machines, SSH port-forwarding may be required). To force the legacy device-code flow, set `OURO_CHATGPT_LOGIN_METHOD=device`.
+Login uses a browser-based OAuth (PKCE) flow with a localhost callback server. If browser auto-open fails, ouro prints a URL you can open manually (for remote machines, SSH port-forwarding may be required).
 
 See [LiteLLM Providers](https://docs.litellm.ai/docs/providers) for the full list.
 

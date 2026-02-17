@@ -54,7 +54,7 @@ For `chatgpt/*` models, login with OAuth before first use:
 - After login, use `/model` to pick one of the added `chatgpt/*` models.
 - The added set comes from ouro's bundled OAuth catalog (synced from pi-ai `openai-codex` model list, including GPT-5.3 Codex variants).
 
-Login uses a browser-based OAuth (PKCE) flow with a localhost callback server, which works in workspaces that disable the OAuth device-code grant. If browser launch is blocked, ouro prints a URL you can open manually. For remote machines, you may need SSH port-forwarding to reach the localhost callback server. To force the legacy device-code flow, set `OURO_CHATGPT_LOGIN_METHOD=device`.
+Login uses a browser-based OAuth (PKCE) flow with a localhost callback server, which works in workspaces that disable the OAuth device-code grant. If browser launch is blocked, ouro prints a URL you can open manually. For remote machines, you may need SSH port-forwarding to reach the localhost callback server.
 
 Credentials are stored under `~/.ouro/auth/chatgpt/`.
 
