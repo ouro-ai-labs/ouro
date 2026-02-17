@@ -229,6 +229,7 @@ async def test_login_prints_manual_url_when_browser_open_fails(tmp_path, monkeyp
     auth_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("CHATGPT_TOKEN_DIR", str(auth_dir))
     monkeypatch.setenv("OURO_CHATGPT_OAUTH_TIMEOUT_SECONDS", "5")
+    monkeypatch.setenv("OURO_CHATGPT_OAUTH_CALLBACK_PORT", "0")
 
     messages: list[str] = []
     monkeypatch.setattr(
