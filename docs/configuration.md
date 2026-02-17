@@ -14,13 +14,14 @@ models:
   openai/gpt-4o:
     api_key: sk-...
 
-  chatgpt/gpt-5.3-codex:
+  chatgpt/gpt-5.2-codex:
     timeout: 600
 
   ollama/llama2:
     api_base: http://localhost:11434
 
 default: anthropic/claude-3-5-sonnet-20241022
+current: anthropic/claude-3-5-sonnet-20241022
 ```
 
 The model ID (key under `models`) uses the LiteLLM `provider/model` format. See [LiteLLM Providers](https://docs.litellm.ai/docs/providers) for supported providers.
@@ -44,6 +45,8 @@ The model ID (key under `models`) uses the LiteLLM `provider/model` format. See 
 - `/model` -- pick from configured models (arrow keys + Enter)
 - `/model edit` -- open `~/.ouro/models.yaml` in your editor (auto-reload on save)
 
+`default` is your fallback model. `current` is the actively selected model and is persisted when you switch via `/model`.
+
 ### ChatGPT / Codex Subscription Login
 
 For `chatgpt/*` models, login with OAuth before first use:
@@ -52,7 +55,7 @@ For `chatgpt/*` models, login with OAuth before first use:
 - Interactive: `/login` (then pick provider)
 - Logout: `ouro --logout` or `/logout`
 - After login, use `/model` to pick one of the added `chatgpt/*` models.
-- The added set comes from ouro's bundled OAuth catalog (synced from pi-ai `openai-codex` model list, including GPT-5.3 Codex variants).
+- The added set comes from ouro's bundled OAuth catalog (synced from pi-ai `openai-codex` model list).
 
 Login uses a browser-based OAuth (PKCE) flow with a localhost callback server, which works in workspaces that disable the OAuth device-code grant. If browser launch is blocked, ouro prints a URL you can open manually. For remote machines, you may need SSH port-forwarding to reach the localhost callback server.
 

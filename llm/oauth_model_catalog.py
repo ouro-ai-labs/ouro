@@ -12,8 +12,8 @@ from __future__ import annotations
 PI_AI_VERSION = "0.52.12"
 PI_AI_PROVIDER_ID = "openai-codex"
 
-# Synced from pi-ai openai-codex provider model IDs, mapped to ouro's chatgpt/*
-# LiteLLM provider namespace.
+# Synced from pi-ai openai-codex provider model IDs, filtered to those supported by
+# the pinned LiteLLM chatgpt provider, and mapped to ouro's chatgpt/* namespace.
 OAUTH_PROVIDER_MODEL_IDS: dict[str, tuple[str, ...]] = {
     "chatgpt": (
         "chatgpt/gpt-5.1",
@@ -21,8 +21,6 @@ OAUTH_PROVIDER_MODEL_IDS: dict[str, tuple[str, ...]] = {
         "chatgpt/gpt-5.1-codex-mini",
         "chatgpt/gpt-5.2",
         "chatgpt/gpt-5.2-codex",
-        "chatgpt/gpt-5.3-codex",
-        "chatgpt/gpt-5.3-codex-spark",
     ),
 }
 

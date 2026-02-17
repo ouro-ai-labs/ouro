@@ -4,7 +4,7 @@ Status: **Proposed**
 
 ## Problem Statement
 
-ouro currently requires static API keys in `~/.ouro/models.yaml`. This blocks users who want to use ChatGPT Plus/Pro Codex subscription credentials (OAuth/device flow) instead of API keys.
+ouro currently requires static API keys in `~/.ouro/models.yaml`. This blocks users who want to use ChatGPT Plus/Pro Codex subscription credentials (OAuth PKCE flow) instead of API keys.
 
 We need a way to authenticate and run Codex-capable models without introducing a large new provider stack.
 
@@ -34,10 +34,13 @@ Rationale: ChatGPT subscription provider support (`chatgpt/*`) appears in LiteLL
 
 Add `llm/chatgpt_auth.py` to:
 - set/normalize `CHATGPT_TOKEN_DIR` to `~/.ouro/auth/chatgpt`
-- open ChatGPT device-login page in browser on a best-effort basis when fresh auth is likely needed
-- trigger login via LiteLLM ChatGPT authenticator
+- run browser-based OAuth PKCE with localhost callback (`/auth/callback`) and manual paste fallback
+- refresh tokens from `refresh_token` before prompting login
 - remove local auth file for logout
 - expose provider-level auth status for provider picker filtering
+
+In runtime requests, `LiteLLMAdapter` pre-validates ChatGPT auth before calling LiteLLM to avoid
+falling back to LiteLLM's built-in device-code login flow.
 
 ### 3. Add CLI and interactive auth commands
 
@@ -73,10 +76,10 @@ Example model config:
 
 ```yaml
 models:
-  chatgpt/gpt-5.3-codex:
+  chatgpt/gpt-5.2-codex:
     timeout: 600
 
-default: chatgpt/gpt-5.3-codex
+default: chatgpt/gpt-5.2-codex
 ```
 
 ## Alternatives Considered

@@ -1,10 +1,9 @@
 """LiteLLM adapter for unified LLM access across 100+ providers."""
 
+import importlib
 import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple, Union
-
-import litellm
 
 from utils import get_logger
 
@@ -21,11 +20,7 @@ from .retry import with_retry
 
 logger = get_logger(__name__)
 
-# Suppress LiteLLM's verbose logging to console
-# LiteLLM uses its own logger that prints to console by default
-litellm_logger = logging.getLogger("LiteLLM")
-litellm_logger.setLevel(logging.WARNING)  # Only show warnings and errors
-litellm_logger.propagate = False  # Don't propagate to root logger
+_LITELLM = None
 
 
 class LiteLLMAdapter:
@@ -52,21 +47,61 @@ class LiteLLMAdapter:
         self.drop_params = kwargs.pop("drop_params", True)
         self.timeout = kwargs.pop("timeout", 600)
 
-        # Configure LiteLLM global settings
-        litellm.drop_params = self.drop_params
-        litellm.set_verbose = False  # Disable verbose output
-        litellm.suppress_debug_info = True  # Suppress debug info
+        if self.provider == "chatgpt":
+            from .chatgpt_auth import configure_chatgpt_auth_env
 
-        # Also suppress httpx and openai loggers that LiteLLM uses
-        logging.getLogger("httpx").setLevel(logging.WARNING)
-        logging.getLogger("openai").setLevel(logging.WARNING)
-        logging.getLogger("anthropic").setLevel(logging.WARNING)
+            configure_chatgpt_auth_env()
 
         logger.info(f"Initialized LiteLLM adapter for provider: {self.provider}, model: {model}")
+
+    def _get_litellm(self):
+        global _LITELLM  # noqa: PLW0603
+        if _LITELLM is None:
+            _LITELLM = importlib.import_module("litellm")
+
+            # Suppress LiteLLM's verbose logging to console.
+            litellm_logger = logging.getLogger("LiteLLM")
+            litellm_logger.setLevel(logging.WARNING)
+            litellm_logger.propagate = False
+
+            # Also suppress httpx and upstream provider loggers that LiteLLM uses.
+            logging.getLogger("httpx").setLevel(logging.WARNING)
+            logging.getLogger("openai").setLevel(logging.WARNING)
+            logging.getLogger("anthropic").setLevel(logging.WARNING)
+
+        return _LITELLM
+
+    def _configure_litellm_globals(self) -> None:
+        litellm = self._get_litellm()
+        litellm.drop_params = self.drop_params
+        litellm.set_verbose = False
+        litellm.suppress_debug_info = True
+
+    @with_retry()
+    async def _ensure_chatgpt_access_token_with_retry(self) -> None:
+        from .chatgpt_auth import ensure_chatgpt_access_token
+
+        await ensure_chatgpt_access_token(interactive=False)
+
+    async def _ensure_provider_ready(self) -> None:
+        if self.provider != "chatgpt":
+            return
+
+        from .chatgpt_auth import ChatGPTLoginRequiredError, configure_chatgpt_auth_env
+
+        configure_chatgpt_auth_env()
+        try:
+            await self._ensure_chatgpt_access_token_with_retry()
+        except ChatGPTLoginRequiredError as e:
+            raise RuntimeError(
+                "ChatGPT is not logged in (or your session expired). Run `/login` to authenticate."
+            ) from e
 
     @with_retry()
     async def _make_api_call_async(self, **call_params):
         """Internal async API call with retry logic."""
+        self._configure_litellm_globals()
+        litellm = self._get_litellm()
         acompletion = getattr(litellm, "acompletion", None)
         if acompletion is None:
             raise RuntimeError("LiteLLM async completion is unavailable.")
@@ -114,6 +149,7 @@ class LiteLLMAdapter:
         **kwargs,
     ) -> LLMResponse:
         """Async LLM call via LiteLLM with automatic retry."""
+        await self._ensure_provider_ready()
         litellm_messages, call_params = self._build_call_params(
             messages=messages,
             tools=tools,

@@ -9,8 +9,10 @@ import httpx
 
 from llm.chatgpt_auth import (
     ChatGPTAuthStatus,
+    ChatGPTLoginRequiredError,
     _prompt_for_redirect_code,
     configure_chatgpt_auth_env,
+    ensure_chatgpt_access_token,
     get_auth_provider_status,
     get_chatgpt_auth_status,
     is_auth_status_logged_in,
@@ -222,6 +224,19 @@ async def test_login_opens_browser_when_token_near_expiry_and_no_refresh(tmp_pat
     await login_chatgpt()
 
     assert called["oauth"] == 1
+
+
+async def test_ensure_access_token_non_interactive_requires_login(tmp_path, monkeypatch):
+    auth_dir = tmp_path / "chatgpt-auth"
+    auth_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("CHATGPT_TOKEN_DIR", str(auth_dir))
+
+    try:
+        await ensure_chatgpt_access_token(interactive=False)
+    except ChatGPTLoginRequiredError as exc:
+        assert "not logged in" in str(exc).lower()
+    else:  # pragma: no cover
+        raise AssertionError("Expected ChatGPTLoginRequiredError")
 
 
 async def test_login_prints_manual_url_when_browser_open_fails(tmp_path, monkeypatch):

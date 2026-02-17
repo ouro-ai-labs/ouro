@@ -28,8 +28,19 @@ def sync_oauth_models(model_manager: ModelManager, provider: str) -> list[str]:
         List of newly added model IDs.
     """
     model_ids = _get_provider_model_ids(provider)
+    desired_model_ids = set(model_ids)
     added: list[str] = []
     changed = False
+
+    # Remove stale OAuth-managed entries for this provider that are no longer
+    # present in the bundled catalog.
+    for model_id, profile in list(model_manager.models.items()):
+        if not _is_managed_profile(profile, provider):
+            continue
+        if model_id in desired_model_ids:
+            continue
+        del model_manager.models[model_id]
+        changed = True
 
     for model_id in model_ids:
         if model_id in model_manager.models:
@@ -48,8 +59,16 @@ def sync_oauth_models(model_manager: ModelManager, provider: str) -> list[str]:
         model_manager.default_model_id = model_ids[0]
         changed = True
 
+    if model_manager.default_model_id not in model_manager.models:
+        model_manager.default_model_id = next(iter(model_manager.models.keys()), None)
+        changed = True
+
     if model_manager.current_model_id is None and model_manager.default_model_id:
         model_manager.current_model_id = model_manager.default_model_id
+
+    if model_manager.current_model_id not in model_manager.models:
+        model_manager.current_model_id = model_manager.default_model_id
+        changed = True
 
     if changed:
         model_manager._save()

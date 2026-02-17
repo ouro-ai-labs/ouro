@@ -34,6 +34,7 @@ models:
   # ollama/llama2:
   #   api_base: http://localhost:11434
 default: null
+current: null
 """
 
 
@@ -192,7 +193,10 @@ class ModelManager:
         if self.default_model_id not in self.models:
             self.default_model_id = next(iter(self.models.keys()), None)
 
-        self.current_model_id = self.default_model_id
+        current = config.get("current")
+        self.current_model_id = current if isinstance(current, str) else self.default_model_id
+        if self.current_model_id not in self.models:
+            self.current_model_id = self.default_model_id
         logger.info(f"Loaded {len(self.models)} models from {self.config_path}")
 
     def _save(self) -> None:
@@ -202,6 +206,7 @@ class ModelManager:
         config = {
             "models": {mid: profile.to_dict() for mid, profile in self.models.items()},
             "default": self.default_model_id,
+            "current": self.current_model_id,
         }
         header = "# Model Configuration\n# This file is gitignored - do not commit to version control\n\n"
         body = yaml.safe_dump(config, sort_keys=False, allow_unicode=True)
@@ -231,7 +236,7 @@ class ModelManager:
         if model_id not in self.models:
             return False
         self.default_model_id = model_id
-        if not self.current_model_id:
+        if not self.current_model_id or self.current_model_id not in self.models:
             self.current_model_id = model_id
         self._save()
         return True
@@ -240,6 +245,7 @@ class ModelManager:
         if model_id not in self.models:
             return None
         self.current_model_id = model_id
+        self._save()
         return self.get_current_model()
 
     def validate_model(self, model: ModelProfile) -> tuple[bool, str]:

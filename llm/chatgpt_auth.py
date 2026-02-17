@@ -58,6 +58,10 @@ class ChatGPTAuthStatus:
     expired: bool | None
 
 
+class ChatGPTLoginRequiredError(RuntimeError):
+    """Raised when a non-interactive caller needs user login."""
+
+
 def normalize_auth_provider(provider: str | None) -> str | None:
     """Normalize provider aliases for auth commands.
 
@@ -688,41 +692,53 @@ async def _login_chatgpt_oauth_via_local_server() -> None:
 
 class _AuthlibOAuthAuthenticator:
     async def get_access_token(self) -> str:
-        await _ensure_auth_dir()
-        auth_file = _get_chatgpt_auth_file_path()
-        data = await _read_json(auth_file) or {}
-
-        access_token = (
-            data.get("access_token") if isinstance(data.get("access_token"), str) else None
-        )
-        expires_at = _parse_expires_at(data.get("expires_at")) or _get_expires_at_from_access_token(
-            access_token
-        )
-        if expires_at is not None and data.get("expires_at") != expires_at:
-            data["expires_at"] = expires_at
-            await _write_json(auth_file, data)
-
-        if _is_access_token_valid(access_token, expires_at):
-            return access_token  # type: ignore[return-value]
-
-        refresh_token = (
-            data.get("refresh_token") if isinstance(data.get("refresh_token"), str) else None
-        )
-        if refresh_token:
-            tokens = await _refresh_chatgpt_tokens(refresh_token)
-            record = _build_auth_record(tokens)
-            await _write_json(auth_file, record)
-            return record["access_token"]
-
-        await _login_chatgpt_oauth_via_local_server()
-        data_after = await _read_json(auth_file) or {}
-        token_after = data_after.get("access_token")
-        if not isinstance(token_after, str) or not token_after:
-            raise RuntimeError("ChatGPT OAuth login did not produce an access token.")
-        return token_after
+        return await ensure_chatgpt_access_token(interactive=True)
 
     async def get_account_id(self) -> str | None:
         return await _get_account_id_from_auth_file()
+
+
+async def ensure_chatgpt_access_token(*, interactive: bool) -> str:
+    """Ensure a usable access token exists.
+
+    This function refreshes tokens when possible. If ``interactive`` is False and
+    there is no refresh token available, it raises instead of triggering a login
+    flow. This prevents downstream libraries (e.g. LiteLLM) from falling back to
+    device-code login prompts during normal request execution.
+    """
+    await _ensure_auth_dir()
+    auth_file = _get_chatgpt_auth_file_path()
+    data = await _read_json(auth_file) or {}
+
+    access_token = data.get("access_token") if isinstance(data.get("access_token"), str) else None
+    expires_at = _parse_expires_at(data.get("expires_at")) or _get_expires_at_from_access_token(
+        access_token
+    )
+    if expires_at is not None and data.get("expires_at") != expires_at:
+        data["expires_at"] = expires_at
+        await _write_json(auth_file, data)
+
+    if _is_access_token_valid(access_token, expires_at):
+        return access_token  # type: ignore[return-value]
+
+    refresh_token = (
+        data.get("refresh_token") if isinstance(data.get("refresh_token"), str) else None
+    )
+    if refresh_token:
+        tokens = await _refresh_chatgpt_tokens(refresh_token)
+        record = _build_auth_record(tokens)
+        await _write_json(auth_file, record)
+        return record["access_token"]
+
+    if not interactive:
+        raise ChatGPTLoginRequiredError("ChatGPT is not logged in.")
+
+    await _login_chatgpt_oauth_via_local_server()
+    data_after = await _read_json(auth_file) or {}
+    token_after = data_after.get("access_token")
+    if not isinstance(token_after, str) or not token_after:
+        raise RuntimeError("ChatGPT OAuth login did not produce an access token.")
+    return token_after
 
 
 async def login_chatgpt() -> ChatGPTAuthStatus:

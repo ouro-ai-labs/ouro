@@ -44,13 +44,14 @@ models:
   anthropic/claude-sonnet-4:
     api_key: sk-ant-...
 
-  chatgpt/gpt-5.3-codex:
+  chatgpt/gpt-5.2-codex:
     timeout: 600
 
   ollama/llama2:
     api_base: http://localhost:11434
 
 default: openai/gpt-4o
+current: openai/gpt-4o
 ```
 
 For `chatgpt/*` subscription models, run `ouro --login` (or `/login` in interactive mode) and select provider before use.
