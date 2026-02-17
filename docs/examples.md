@@ -41,8 +41,9 @@ ouro --login
 # Logout (select provider from menu)
 ouro --logout
 
-# If browser does not open automatically, use this URL manually:
-# https://auth.openai.com/codex/device
+# If browser does not open automatically, ouro will print a URL you can open manually.
+# To force the legacy device-code flow:
+# OURO_CHATGPT_LOGIN_METHOD=device ouro --login
 ```
 
 ## Interactive Mode

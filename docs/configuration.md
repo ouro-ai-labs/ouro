@@ -54,9 +54,16 @@ For `chatgpt/*` models, login with OAuth before first use:
 - After login, use `/model` to pick one of the added `chatgpt/*` models.
 - The added set comes from ouro's bundled OAuth catalog (synced from pi-ai `openai-codex` model list, including GPT-5.3 Codex variants).
 
-The device-login page is opened in browser on a best-effort basis when fresh authorization is likely needed. If your existing token/refresh state is still valid, login usually completes without a new browser step. If your environment blocks browser launch, open `https://auth.openai.com/codex/device` manually and enter the code shown in terminal.
+Login uses a browser-based OAuth (PKCE) flow with a localhost callback server, which works in workspaces that disable the OAuth device-code grant. If browser launch is blocked, ouro prints a URL you can open manually. For remote machines, you may need SSH port-forwarding to reach the localhost callback server. To force the legacy device-code flow, set `OURO_CHATGPT_LOGIN_METHOD=device`.
 
 Credentials are stored under `~/.ouro/auth/chatgpt/`.
+
+Advanced environment overrides (rarely needed):
+- `OURO_CHATGPT_OAUTH_AUTHORIZE_URL`: override the authorization endpoint.
+- `OURO_CHATGPT_OAUTH_TOKEN_URL`: override the token/refresh endpoint.
+- `OURO_CHATGPT_OAUTH_HTTP_TIMEOUT_SECONDS`: HTTP timeout for token/refresh requests.
+- `OURO_CHATGPT_USER_AGENT`: override User-Agent header for token/refresh requests.
+- `OURO_CHATGPT_OAUTH_ALLOW_NON_LOOPBACK`: allow binding the localhost callback server to a non-loopback address (not recommended).
 
 Maintainer note: refresh the bundled OAuth model catalog with `python scripts/update_oauth_model_catalog.py`.
 
