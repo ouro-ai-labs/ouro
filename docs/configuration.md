@@ -56,14 +56,24 @@ For `chatgpt/*` models, login with OAuth before first use:
 
 Login uses a browser-based OAuth (PKCE) flow with a localhost callback server, which works in workspaces that disable the OAuth device-code grant. If browser launch is blocked, ouro prints a URL you can open manually. For remote machines, you may need SSH port-forwarding to reach the localhost callback server.
 
-Credentials are stored under `~/.ouro/auth/chatgpt/`.
+Credentials are stored under `~/.ouro/auth/chatgpt/` (LiteLLM-compatible `auth.json`).
 
-Advanced environment overrides (rarely needed):
-- `OURO_CHATGPT_OAUTH_AUTHORIZE_URL`: override the authorization endpoint.
-- `OURO_CHATGPT_OAUTH_TOKEN_URL`: override the token/refresh endpoint.
-- `OURO_CHATGPT_OAUTH_HTTP_TIMEOUT_SECONDS`: HTTP timeout for token/refresh requests.
-- `OURO_CHATGPT_USER_AGENT`: override User-Agent header for token/refresh requests.
-- `OURO_CHATGPT_OAUTH_ALLOW_NON_LOOPBACK`: allow binding the localhost callback server to a non-loopback address (not recommended).
+Advanced environment overrides (rarely needed; defaults work for most users):
+
+| Env var | Default | Notes |
+|--------|---------|------|
+| `CHATGPT_TOKEN_DIR` | `~/.ouro/auth/chatgpt/` | Where `auth.json` is stored (also used by LiteLLM). |
+| `CHATGPT_AUTH_FILE` | `auth.json` | Override the auth filename under `CHATGPT_TOKEN_DIR`. |
+| `OURO_NO_BROWSER` | unset | Set to `1` to disable auto-opening the browser (URL is still printed). |
+| `OURO_CHATGPT_OAUTH_TIMEOUT_SECONDS` | `600` | How long to wait for the localhost callback before prompting for manual paste. |
+| `OURO_CHATGPT_OAUTH_CALLBACK_HOST` | `127.0.0.1` | Address to bind the local callback server to. The browser redirect is always `http://localhost:<port>/auth/callback`. |
+| `OURO_CHATGPT_OAUTH_CALLBACK_PORT` | `1455` | Port for the local callback server. Set to `0` to auto-pick an available port if 1455 is in use. |
+| `OURO_CHATGPT_OAUTH_ALLOW_NON_LOOPBACK` | unset | Set to `1` to allow binding callback server to a non-loopback address (not recommended). |
+| `OURO_CHATGPT_OAUTH_AUTHORIZE_URL` | `https://auth.openai.com/oauth/authorize` | Override authorization endpoint (enterprise proxies/SSO gateways). |
+| `OURO_CHATGPT_OAUTH_TOKEN_URL` | `https://auth.openai.com/oauth/token` | Override token/refresh endpoint. |
+| `OURO_CHATGPT_OAUTH_HTTP_TIMEOUT_SECONDS` | `30` | HTTP timeout for token/refresh requests. |
+| `OURO_CHATGPT_USER_AGENT` | `Mozilla/5.0 (compatible; ouro/1.0)` | Override User-Agent header for token/refresh requests. |
+| `OURO_CHATGPT_OAUTH_ORIGINATOR` | `codex_cli_rs` | OAuth `originator` query param (rarely needed). |
 
 Maintainer note: refresh the bundled OAuth model catalog with `python scripts/update_oauth_model_catalog.py`.
 

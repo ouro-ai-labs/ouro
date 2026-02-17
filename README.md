@@ -57,6 +57,7 @@ For `chatgpt/*` subscription models, run `ouro --login` (or `/login` in interact
 OAuth models shown in `/model` are seeded from ouro's bundled catalog (synced from pi-ai `openai-codex` model list).
 Maintainer note: refresh this catalog via `python scripts/update_oauth_model_catalog.py`.
 Login uses a browser-based OAuth (PKCE) flow with a localhost callback server. If browser auto-open fails, ouro prints a URL you can open manually (for remote machines, SSH port-forwarding may be required).
+Advanced OAuth overrides (rarely needed) are documented in `docs/configuration.md`.
 
 See [LiteLLM Providers](https://docs.litellm.ai/docs/providers) for the full list.
 
