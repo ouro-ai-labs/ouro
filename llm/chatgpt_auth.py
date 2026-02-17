@@ -400,9 +400,7 @@ async def _refresh_chatgpt_tokens(refresh_token: str) -> dict[str, str]:
     client = _oauth_client(redirect_uri="http://127.0.0.1/unused")
     try:
         try:
-            data = await client.refresh_token(
-                token_url, refresh_token=refresh_token, client_id=CHATGPT_OAUTH_CLIENT_ID
-            )
+            data = await client.refresh_token(token_url, refresh_token=refresh_token)
         except httpx.HTTPStatusError as exc:
             raise RuntimeError(f"ChatGPT token refresh failed: {_http_error_details(exc)}") from exc
         except httpx.RequestError as exc:
@@ -480,8 +478,6 @@ async def _exchange_chatgpt_oauth_code_for_tokens(
                 code=code,
                 grant_type="authorization_code",
                 code_verifier=code_verifier,
-                client_id=CHATGPT_OAUTH_CLIENT_ID,
-                redirect_uri=redirect_uri,
             )
         except httpx.HTTPStatusError as exc:
             raise RuntimeError(
