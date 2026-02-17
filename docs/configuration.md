@@ -75,13 +75,6 @@ Advanced environment overrides (rarely needed; defaults work for most users):
 | `OURO_CHATGPT_USER_AGENT` | `Mozilla/5.0 (compatible; ouro/1.0)` | Override User-Agent header for token/refresh requests. |
 | `OURO_CHATGPT_OAUTH_ORIGINATOR` | `codex_cli_rs` | OAuth `originator` query param (rarely needed). |
 
-Advanced environment overrides (rarely needed):
-- `OURO_CHATGPT_OAUTH_AUTHORIZE_URL`: override the authorization endpoint.
-- `OURO_CHATGPT_OAUTH_TOKEN_URL`: override the token/refresh endpoint.
-- `OURO_CHATGPT_OAUTH_HTTP_TIMEOUT_SECONDS`: HTTP timeout for token/refresh requests.
-- `OURO_CHATGPT_USER_AGENT`: override User-Agent header for token/refresh requests.
-- `OURO_CHATGPT_OAUTH_ALLOW_NON_LOOPBACK`: allow binding the localhost callback server to a non-loopback address (not recommended).
-
 Maintainer note: refresh the bundled OAuth model catalog with `python scripts/update_oauth_model_catalog.py`.
 
 ## Runtime Settings
