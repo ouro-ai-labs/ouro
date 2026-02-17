@@ -58,6 +58,10 @@ class ChatGPTAuthStatus:
     expired: bool | None
 
 
+class ChatGPTLoginRequiredError(RuntimeError):
+    """Raised when a non-interactive caller needs user login."""
+
+
 def normalize_auth_provider(provider: str | None) -> str | None:
     """Normalize provider aliases for auth commands.
 
@@ -727,7 +731,7 @@ async def ensure_chatgpt_access_token(*, interactive: bool) -> str:
         return record["access_token"]
 
     if not interactive:
-        raise RuntimeError("ChatGPT is not logged in.")
+        raise ChatGPTLoginRequiredError("ChatGPT is not logged in.")
 
     await _login_chatgpt_oauth_via_local_server()
     data_after = await _read_json(auth_file) or {}

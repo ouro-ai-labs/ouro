@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 
 def _load_module():
@@ -64,3 +66,29 @@ def test_render_catalog_module_maps_prefix():
 
     assert 'PI_AI_VERSION = "0.52.12"' in rendered
     assert '"chatgpt/gpt-5.2-codex"' in rendered
+
+
+def test_filter_model_ids_for_litellm_keeps_supported_only(monkeypatch):
+    m = _load_module()
+    monkeypatch.setitem(
+        sys.modules,
+        "litellm",
+        SimpleNamespace(chatgpt_models={"chatgpt/gpt-5.2-codex"}),
+    )
+
+    result = m._filter_model_ids_for_litellm(["gpt-5.2-codex", "gpt-5.3-codex"])
+
+    assert result == ["gpt-5.2-codex"]
+
+
+def test_filter_model_ids_for_litellm_can_return_empty(monkeypatch):
+    m = _load_module()
+    monkeypatch.setitem(
+        sys.modules,
+        "litellm",
+        SimpleNamespace(chatgpt_models={"chatgpt/gpt-5.2-codex"}),
+    )
+
+    result = m._filter_model_ids_for_litellm(["gpt-5.3-codex"])
+
+    assert result == []

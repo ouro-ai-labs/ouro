@@ -81,12 +81,16 @@ class LiteLLMAdapter:
         if self.provider != "chatgpt":
             return
 
-        from .chatgpt_auth import configure_chatgpt_auth_env, ensure_chatgpt_access_token
+        from .chatgpt_auth import (
+            ChatGPTLoginRequiredError,
+            configure_chatgpt_auth_env,
+            ensure_chatgpt_access_token,
+        )
 
         configure_chatgpt_auth_env()
         try:
             await ensure_chatgpt_access_token(interactive=False)
-        except Exception as e:
+        except ChatGPTLoginRequiredError as e:
             raise RuntimeError(
                 "ChatGPT is not logged in (or your session expired). Run `/login` to authenticate."
             ) from e

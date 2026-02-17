@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from llm.chatgpt_auth import ChatGPTLoginRequiredError
 from llm.content_utils import extract_text
 from llm.litellm_adapter import LiteLLMAdapter
 from llm.message_types import LLMMessage
@@ -267,7 +268,7 @@ async def test_chatgpt_adapter_errors_fast_when_not_logged_in(tmp_path, monkeypa
     monkeypatch.setenv("CHATGPT_TOKEN_DIR", str(auth_dir))
 
     async def fake_ensure_chatgpt_access_token(*, interactive: bool) -> str:  # noqa: ARG001
-        raise RuntimeError("not logged in")
+        raise ChatGPTLoginRequiredError("not logged in")
 
     monkeypatch.setattr(
         "llm.chatgpt_auth.ensure_chatgpt_access_token", fake_ensure_chatgpt_access_token
@@ -277,4 +278,23 @@ async def test_chatgpt_adapter_errors_fast_when_not_logged_in(tmp_path, monkeypa
     monkeypatch.setattr(adapter, "_get_litellm", lambda: (_ for _ in ()).throw(AssertionError()))
 
     with pytest.raises(RuntimeError, match=r"Run `/login`"):
+        await adapter.call_async([LLMMessage(role="user", content="hi")])
+
+
+async def test_chatgpt_adapter_preserves_non_login_auth_errors(tmp_path, monkeypatch):
+    auth_dir = tmp_path / "chatgpt-auth"
+    auth_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("CHATGPT_TOKEN_DIR", str(auth_dir))
+
+    async def fake_ensure_chatgpt_access_token(*, interactive: bool) -> str:  # noqa: ARG001
+        raise RuntimeError("refresh endpoint timeout")
+
+    monkeypatch.setattr(
+        "llm.chatgpt_auth.ensure_chatgpt_access_token", fake_ensure_chatgpt_access_token
+    )
+
+    adapter = LiteLLMAdapter(model="chatgpt/gpt-5.2")
+    monkeypatch.setattr(adapter, "_get_litellm", lambda: (_ for _ in ()).throw(AssertionError()))
+
+    with pytest.raises(RuntimeError, match="refresh endpoint timeout"):
         await adapter.call_async([LLMMessage(role="user", content="hi")])

@@ -205,7 +205,7 @@ def _filter_model_ids_for_litellm(model_ids: list[str]) -> list[str]:
 
     supported_ids = {str(x) for x in supported}
     filtered = [mid for mid in model_ids if f"{OURO_PROVIDER_ID}/{mid}" in supported_ids]
-    return filtered or model_ids
+    return filtered
 
 
 def main() -> None:
@@ -227,6 +227,10 @@ def main() -> None:
         raise RuntimeError("No model IDs extracted from openai-codex provider block")
 
     model_ids = _filter_model_ids_for_litellm(model_ids)
+    if not model_ids:
+        raise RuntimeError(
+            "No compatible ChatGPT model IDs found for the installed LiteLLM version."
+        )
     content = _render_catalog_module(version, model_ids)
 
     output = Path(args.output)
