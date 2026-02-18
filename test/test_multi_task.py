@@ -197,6 +197,67 @@ class TestMultiTaskTool:
         assert "Result 0" in context
         assert "Result 1" in context
 
+    def test_extract_structured_sections(self):
+        agent = MagicMock()
+        tool = MultiTaskTool(agent)
+        output = """SUMMARY: Best option found.
+KEY_FINDINGS:
+- price: $620
+- route: SFO->NRT
+ERRORS:
+- none
+"""
+        summary, key_findings, errors = tool._extract_structured_sections(output)
+        assert summary == "Best option found."
+        assert "price: $620" in key_findings
+        assert errors == "- none"
+
+    def test_build_task_context_prefers_summary(self):
+        agent = MagicMock()
+        tool = MultiTaskTool(agent)
+        noisy = "logline " * 200 + "SUMMARY: should not be used from raw"
+        previous = {
+            0: TaskExecutionResult(
+                status="success",
+                output=noisy,
+                summary="cheapest fare is $620",
+                key_findings="- SFO->NRT",
+                errors="none",
+            )
+        }
+        context = tool._build_task_context(previous)
+        assert "cheapest fare is $620" in context
+        assert "logline" not in context
+
+    def test_build_task_context_fallback_preserves_tail_when_no_summary(self):
+        agent = MagicMock()
+        tool = MultiTaskTool(agent)
+        output = ("A" * 700) + "TAIL-IMPORTANT"
+        previous = {
+            0: TaskExecutionResult(status="success", output=output),
+        }
+        context = tool._build_task_context(previous)
+        assert "TAIL-IMPORTANT" in context
+        assert "[truncated]" in context
+
+    def test_format_results_prefers_structured_summary_when_present(self):
+        agent = MagicMock()
+        tool = MultiTaskTool(agent)
+        tasks = ["Task"]
+        results = {
+            0: TaskExecutionResult(
+                status="success",
+                output="raw output",
+                summary="summary text",
+                key_findings="- finding",
+                errors="none",
+            )
+        }
+        formatted = tool._format_results(tasks, results)
+        assert "SUMMARY: summary text" in formatted
+        assert "KEY_FINDINGS" in formatted
+        assert "raw output" not in formatted
+
     # ------------------------------------------------------------------
     # Execution behavior
     # ------------------------------------------------------------------
@@ -277,3 +338,16 @@ class TestMultiTaskTool:
         )
 
         assert captured_dependencies[2] == [0, 1]
+
+    @pytest.mark.asyncio
+    async def test_long_output_tail_summary_is_used_for_dependency_context(self):
+        agent = MagicMock()
+        tool = MultiTaskTool(agent)
+        tail_summary = "SUMMARY: cheapest fare is $620"
+        output = ("verbose log line\n" * 200) + tail_summary + "\nERRORS:\n- none\n"
+
+        success_result = tool._build_success_result(output)
+        context = tool._build_task_context({0: success_result})
+
+        assert "cheapest fare is $620" in context
+        assert "verbose log line" not in context

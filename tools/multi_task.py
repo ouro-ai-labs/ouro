@@ -18,6 +18,9 @@ class TaskExecutionResult:
 
     status: str
     output: str
+    summary: str = ""
+    key_findings: str = ""
+    errors: str = ""
 
 
 class MultiTaskTool(BaseTool):
@@ -30,6 +33,8 @@ class MultiTaskTool(BaseTool):
 
     MAX_PARALLEL = 4
     MAX_RESULT_CHARS = 2000
+    SUMMARY_MAX_CHARS = 300
+    CONTEXT_FALLBACK_CHARS = 500
 
     def __init__(self, agent: "BaseAgent"):
         self.agent = agent
@@ -219,6 +224,7 @@ Input parameters:
                     results[idx] = TaskExecutionResult(
                         status="skipped",
                         output=f"Skipped: dependency tasks failed ({dep_list}).",
+                        errors=f"dependency tasks failed ({dep_list})",
                     )
                     blocked.append(idx)
 
@@ -247,6 +253,7 @@ Input parameters:
             results[idx] = TaskExecutionResult(
                 status="skipped",
                 output="Skipped: dependencies were not satisfied.",
+                errors="dependencies were not satisfied",
             )
 
         return results
@@ -267,11 +274,12 @@ Input parameters:
                     if dep in previous_results
                 }
                 output = await self._run_subtask(idx, tasks[idx], tools, dependency_results)
-                return idx, TaskExecutionResult(status="success", output=output)
+                return idx, self._build_success_result(output)
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                return idx, TaskExecutionResult(status="failed", output=f"Task failed: {str(e)}")
+                message = f"Task failed: {str(e)}"
+                return idx, TaskExecutionResult(status="failed", output=message, errors=str(e))
 
         results = {}
         async with asyncio.TaskGroup() as tg:
@@ -306,7 +314,13 @@ Task #{idx}: {task_desc}
 <instructions>
 1. Use available tools to accomplish the task
 2. Focus ONLY on this specific task
-3. Provide a clear summary of what was accomplished
+3. Final response MUST follow this exact structure:
+   SUMMARY: <concise summary, max 300 chars>
+   KEY_FINDINGS:
+   - <finding 1>
+   - <finding 2>
+   ERRORS:
+   - none (if no errors) OR list concrete errors
 </instructions>
 
 Execute the task now:"""
@@ -320,6 +334,73 @@ Execute the task now:"""
             save_to_memory=False,
         )
 
+    def _build_success_result(self, output: str) -> TaskExecutionResult:
+        summary, key_findings, errors = self._extract_structured_sections(output)
+        return TaskExecutionResult(
+            status="success",
+            output=output,
+            summary=summary or "",
+            key_findings=key_findings or "",
+            errors=errors or "",
+        )
+
+    def _extract_structured_sections(
+        self, output: str
+    ) -> tuple[str | None, str | None, str | None]:
+        section_aliases = {
+            "summary": "SUMMARY:",
+            "key_findings": "KEY_FINDINGS:",
+            "errors": "ERRORS:",
+        }
+        sections: Dict[str, List[str]] = {name: [] for name in section_aliases}
+        active_section: str | None = None
+
+        for raw_line in output.splitlines():
+            stripped = raw_line.strip()
+            matched_section = None
+
+            upper = stripped.upper()
+            for section_name, prefix in section_aliases.items():
+                if upper.startswith(prefix):
+                    matched_section = section_name
+                    active_section = section_name
+                    inline = stripped[len(prefix) :].strip()
+                    if inline:
+                        sections[section_name].append(inline)
+                    break
+
+            if matched_section is not None:
+                continue
+
+            if active_section is not None:
+                sections[active_section].append(stripped)
+
+        def _normalize(lines: List[str]) -> str | None:
+            cleaned = [line for line in lines if line.strip()]
+            if not cleaned:
+                return None
+            return "\n".join(cleaned).strip()
+
+        summary = _normalize(sections["summary"])
+        if summary and len(summary) > self.SUMMARY_MAX_CHARS:
+            summary = summary[: self.SUMMARY_MAX_CHARS] + "... [truncated]"
+
+        key_findings = _normalize(sections["key_findings"])
+        errors = _normalize(sections["errors"])
+        return summary, key_findings, errors
+
+    def _truncate_for_context_fallback(self, text: str) -> str:
+        if len(text) <= self.CONTEXT_FALLBACK_CHARS:
+            return text
+
+        head = int(self.CONTEXT_FALLBACK_CHARS * 0.65)
+        tail = self.CONTEXT_FALLBACK_CHARS - head
+        return f"{text[:head]}... [truncated] ...{text[-tail:]}"
+
+    def _has_meaningful_errors(self, errors: str) -> bool:
+        normalized = errors.strip().lower()
+        return normalized not in {"", "none", "- none", "n/a", "no errors"}
+
     # ------------------------------------------------------------------
     # Formatting helpers
     # ------------------------------------------------------------------
@@ -330,12 +411,12 @@ Execute the task now:"""
 
         parts = ["<dependency_results>"]
         for idx, result in sorted(dependency_results.items()):
-            truncated = (
-                result.output
-                if len(result.output) <= 500
-                else result.output[:500] + "... [truncated]"
-            )
-            parts.append(f"Task #{idx}:\n{truncated}\n")
+            summary = result.summary or self._truncate_for_context_fallback(result.output)
+            parts.append(f"Task #{idx} SUMMARY:\n{summary}\n")
+
+            if self._has_meaningful_errors(result.errors):
+                truncated_errors = self._truncate_for_context_fallback(result.errors)
+                parts.append(f"Task #{idx} ERRORS:\n{truncated_errors}\n")
         parts.append("</dependency_results>")
         return "\n".join(parts)
 
@@ -353,10 +434,18 @@ Execute the task now:"""
         for idx, task_desc in enumerate(tasks):
             result = results.get(idx)
             if result:
-                output = result.output
-                if len(output) > self.MAX_RESULT_CHARS:
-                    output = output[: self.MAX_RESULT_CHARS] + "... [truncated]"
                 status = status_map.get(result.status, result.status.title())
+                if result.summary:
+                    sections = [f"SUMMARY: {result.summary}"]
+                    if result.key_findings:
+                        sections.append(f"KEY_FINDINGS:\n{result.key_findings}")
+                    if self._has_meaningful_errors(result.errors):
+                        sections.append(f"ERRORS:\n{result.errors}")
+                    output = "\n".join(sections)
+                else:
+                    output = result.output
+                    if len(output) > self.MAX_RESULT_CHARS:
+                        output = output[: self.MAX_RESULT_CHARS] + "... [truncated]"
             else:
                 output = "Not executed"
                 status = "Failed"
