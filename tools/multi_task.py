@@ -1,6 +1,7 @@
 """Unified multi-task tool for parallel sub-agent execution."""
 
 import asyncio
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Set
 
 from llm import LLMMessage
@@ -9,6 +10,14 @@ from .base import BaseTool
 
 if TYPE_CHECKING:
     from agent.base import BaseAgent
+
+
+@dataclass
+class TaskExecutionResult:
+    """Structured result for a single subtask."""
+
+    status: str
+    output: str
 
 
 class MultiTaskTool(BaseTool):
@@ -41,7 +50,8 @@ Use this tool when you need to:
 Input parameters:
 - tasks (required): Array of task description strings
 - dependencies (optional): Object mapping task index to array of prerequisite indices
-  Example: {"2": ["0", "1"]} means task 2 waits for tasks 0 and 1"""
+  Example: {"2": ["0", "1"]} means task 2 waits for tasks 0 and 1
+- max_parallel (optional): Maximum concurrent subtasks (default: 4)"""
 
     @property
     def parameters(self) -> Dict[str, Any]:
@@ -60,6 +70,12 @@ Input parameters:
                 },
                 "default": {},
             },
+            "max_parallel": {
+                "type": "integer",
+                "description": "Maximum number of subtasks to run concurrently (default: 4)",
+                "minimum": 1,
+                "default": self.MAX_PARALLEL,
+            },
         }
 
     def to_anthropic_schema(self) -> Dict[str, Any]:
@@ -74,18 +90,29 @@ Input parameters:
             },
         }
 
-    async def execute(self, tasks: List[str], dependencies: Dict[str, List[str]] = None) -> str:
+    async def execute(
+        self,
+        tasks: List[str],
+        dependencies: Dict[str, List[str]] = None,
+        max_parallel: int | None = None,
+    ) -> str:
         if not tasks:
             return "Error: No tasks provided"
 
         dependencies = dependencies or {}
+
+        parallel_limit = self._resolve_parallel_limit(max_parallel)
+        if parallel_limit is None:
+            return "Error: max_parallel must be a positive integer"
 
         validation_error = self._validate_dependencies(tasks, dependencies)
         if validation_error:
             return validation_error
 
         subtask_tools = self._get_subtask_tools()
-        results = await self._execute_with_dependencies(tasks, dependencies, subtask_tools)
+        results = await self._execute_with_dependencies(
+            tasks, dependencies, subtask_tools, max_parallel=parallel_limit
+        )
         return self._format_results(tasks, results)
 
     # ------------------------------------------------------------------
@@ -150,6 +177,15 @@ Input parameters:
             if (t.get("name") or t.get("function", {}).get("name")) != self.name
         ]
 
+    def _resolve_parallel_limit(self, max_parallel: int | None) -> int | None:
+        if max_parallel is None:
+            return self.MAX_PARALLEL
+        try:
+            value = int(max_parallel)
+        except (TypeError, ValueError):
+            return None
+        return value if value > 0 else None
+
     # ------------------------------------------------------------------
     # Execution
     # ------------------------------------------------------------------
@@ -159,30 +195,59 @@ Input parameters:
         tasks: List[str],
         dependencies: Dict[str, List[str]],
         tools: List[Dict[str, Any]],
-    ) -> Dict[int, str]:
-        results: Dict[int, str] = {}
-        completed: Set[int] = set()
+        max_parallel: int,
+    ) -> Dict[int, TaskExecutionResult]:
+        results: Dict[int, TaskExecutionResult] = {}
+        successful: Set[int] = set()
         task_count = len(tasks)
+        pending: Set[int] = set(range(task_count))
 
         deps: Dict[int, Set[int]] = {}
         for task_idx, dep_list in dependencies.items():
             deps[int(task_idx)] = {int(d) for d in dep_list}
 
-        while len(completed) < task_count:
+        while pending:
+            blocked: List[int] = []
+            for idx in sorted(pending):
+                failed_deps = [
+                    dep
+                    for dep in sorted(deps.get(idx, set()))
+                    if dep in results and results[dep].status != "success"
+                ]
+                if failed_deps:
+                    dep_list = ", ".join(str(dep) for dep in failed_deps)
+                    results[idx] = TaskExecutionResult(
+                        status="skipped",
+                        output=f"Skipped: dependency tasks failed ({dep_list}).",
+                    )
+                    blocked.append(idx)
+
+            for idx in blocked:
+                pending.discard(idx)
+
             ready = [
                 i
                 for i in range(task_count)
-                if i not in completed and deps.get(i, set()).issubset(completed)
+                if i in pending and deps.get(i, set()).issubset(successful)
             ]
             if not ready:
                 break
 
-            batch = ready[: self.MAX_PARALLEL]
-            batch_results = await self._execute_batch(batch, tasks, tools, results)
+            batch = ready[:max_parallel]
+            batch_results = await self._execute_batch(batch, tasks, tools, deps, results)
 
             for idx, result in batch_results.items():
                 results[idx] = result
-                completed.add(idx)
+                pending.discard(idx)
+                if result.status == "success":
+                    successful.add(idx)
+
+        # Defensive fallback: mark any leftover tasks as skipped.
+        for idx in sorted(pending):
+            results[idx] = TaskExecutionResult(
+                status="skipped",
+                output="Skipped: dependencies were not satisfied.",
+            )
 
         return results
 
@@ -191,16 +256,22 @@ Input parameters:
         batch: List[int],
         tasks: List[str],
         tools: List[Dict[str, Any]],
-        previous_results: Dict[int, str],
-    ) -> Dict[int, str]:
+        deps: Dict[int, Set[int]],
+        previous_results: Dict[int, TaskExecutionResult],
+    ) -> Dict[int, TaskExecutionResult]:
         async def run_single(idx: int) -> tuple:
             try:
-                result = await self._run_subtask(idx, tasks[idx], tools, previous_results)
-                return idx, result
+                dependency_results = {
+                    dep: previous_results[dep]
+                    for dep in sorted(deps.get(idx, set()))
+                    if dep in previous_results
+                }
+                output = await self._run_subtask(idx, tasks[idx], tools, dependency_results)
+                return idx, TaskExecutionResult(status="success", output=output)
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                return idx, f"Task failed: {str(e)}"
+                return idx, TaskExecutionResult(status="failed", output=f"Task failed: {str(e)}")
 
         results = {}
         async with asyncio.TaskGroup() as tg:
@@ -217,9 +288,9 @@ Input parameters:
         idx: int,
         task_desc: str,
         tools: List[Dict[str, Any]],
-        previous_results: Dict[int, str],
+        dependency_results: Dict[int, TaskExecutionResult],
     ) -> str:
-        context = self._build_task_context(previous_results)
+        context = self._build_task_context(dependency_results)
 
         prompt = f"""<role>
 You are a sub-agent executing one task in a parallel plan.
@@ -253,27 +324,43 @@ Execute the task now:"""
     # Formatting helpers
     # ------------------------------------------------------------------
 
-    def _build_task_context(self, previous_results: Dict[int, str]) -> str:
-        if not previous_results:
+    def _build_task_context(self, dependency_results: Dict[int, TaskExecutionResult]) -> str:
+        if not dependency_results:
             return ""
 
-        parts = ["<previous_results>"]
-        for idx, result in sorted(previous_results.items()):
-            truncated = result if len(result) <= 500 else result[:500] + "... [truncated]"
+        parts = ["<dependency_results>"]
+        for idx, result in sorted(dependency_results.items()):
+            truncated = (
+                result.output
+                if len(result.output) <= 500
+                else result.output[:500] + "... [truncated]"
+            )
             parts.append(f"Task #{idx}:\n{truncated}\n")
-        parts.append("</previous_results>")
+        parts.append("</dependency_results>")
         return "\n".join(parts)
 
-    def _format_results(self, tasks: List[str], results: Dict[int, str]) -> str:
+    def _format_results(self, tasks: List[str], results: Dict[int, TaskExecutionResult]) -> str:
         if not results:
             return "No task results."
 
+        status_map = {
+            "success": "Completed",
+            "failed": "Failed",
+            "skipped": "Skipped",
+        }
+
         parts = ["# Multi-Task Results\n"]
         for idx, task_desc in enumerate(tasks):
-            result = results.get(idx, "Not executed")
-            if len(result) > self.MAX_RESULT_CHARS:
-                result = result[: self.MAX_RESULT_CHARS] + "... [truncated]"
-            status = "Completed" if idx in results else "Failed"
-            parts.append(f"## Task {idx}: {task_desc[:100]}\n**Status:** {status}\n{result}\n")
+            result = results.get(idx)
+            if result:
+                output = result.output
+                if len(output) > self.MAX_RESULT_CHARS:
+                    output = output[: self.MAX_RESULT_CHARS] + "... [truncated]"
+                status = status_map.get(result.status, result.status.title())
+            else:
+                output = "Not executed"
+                status = "Failed"
+
+            parts.append(f"## Task {idx}: {task_desc[:100]}\n**Status:** {status}\n{output}\n")
 
         return "\n".join(parts)
