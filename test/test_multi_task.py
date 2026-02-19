@@ -123,22 +123,53 @@ class TestMultiTaskTool:
         tool = MultiTaskTool(agent)
         tasks = ["Do task A", "Do task B"]
         results = {
-            0: TaskExecutionResult(status="success", output="Result A"),
-            1: TaskExecutionResult(status="success", output="Result B"),
+            0: TaskExecutionResult(
+                status="success",
+                output="Result A",
+                summary="Summary A",
+                key_findings="- finding A",
+                errors="- none",
+                artifact_path="/tmp/task_0.md",
+                fetch_hint="NONE",
+                template_conformant=True,
+            ),
+            1: TaskExecutionResult(
+                status="success",
+                output="Result B",
+                summary="Summary B",
+                key_findings="- finding B",
+                errors="- none",
+                artifact_path="/tmp/task_1.md",
+                fetch_hint="NONE",
+                template_conformant=True,
+            ),
         }
         formatted = tool._format_results(tasks, results)
         assert "Task 0" in formatted
         assert "Task 1" in formatted
-        assert "Result A" in formatted
-        assert "Result B" in formatted
+        assert "SUMMARY: Summary A" in formatted
+        assert "SUMMARY: Summary B" in formatted
+        assert "TEMPLATE_CONFORMANT: true" in formatted
+        assert "FETCH_HINT: NONE" in formatted
         assert "Completed" in formatted
 
     def test_format_results_truncates_long_results(self):
         agent = MagicMock()
         tool = MultiTaskTool(agent)
         tasks = ["Task"]
-        long_result = "x" * (tool.MAX_RESULT_CHARS + 1000)
-        results = {0: TaskExecutionResult(status="success", output=long_result)}
+        long_summary = "x" * (tool.MAX_RESULT_CHARS + 1000)
+        results = {
+            0: TaskExecutionResult(
+                status="success",
+                output="raw output",
+                summary=long_summary,
+                key_findings="- finding",
+                errors="- none",
+                artifact_path="/tmp/task_0.md",
+                fetch_hint="NONE",
+                template_conformant=True,
+            )
+        }
         formatted = tool._format_results(tasks, results)
         assert "truncated" in formatted.lower()
 
@@ -188,14 +219,31 @@ class TestMultiTaskTool:
         agent = MagicMock()
         tool = MultiTaskTool(agent)
         previous = {
-            0: TaskExecutionResult(status="success", output="Result 0"),
-            1: TaskExecutionResult(status="success", output="Result 1"),
+            0: TaskExecutionResult(
+                status="success",
+                output="Result 0",
+                summary="summary 0",
+                key_findings="- f0",
+                errors="- none",
+                artifact_path="/tmp/task_0.md",
+                fetch_hint="NONE",
+                template_conformant=True,
+            ),
+            1: TaskExecutionResult(
+                status="success",
+                output="Result 1",
+                non_conformant_context="non conformant preview",
+                artifact_path="UNAVAILABLE",
+                fetch_hint="REQUIRED",
+                template_conformant=False,
+            ),
         }
         context = tool._build_task_context(previous)
         assert "Task #0" in context
         assert "Task #1" in context
-        assert "Result 0" in context
-        assert "Result 1" in context
+        assert "Task #0 SUMMARY:\nsummary 0" in context
+        assert "Task #1 NON_CONFORMANT_CONTEXT:\nnon conformant preview" in context
+        assert "Task #1 FETCHED_ARTIFACT: UNAVAILABLE" in context
 
     def test_extract_structured_sections(self):
         agent = MagicMock()
@@ -223,22 +271,29 @@ ERRORS:
                 summary="cheapest fare is $620",
                 key_findings="- SFO->NRT",
                 errors="none",
+                fetch_hint="NONE",
+                template_conformant=True,
             )
         }
         context = tool._build_task_context(previous)
         assert "cheapest fare is $620" in context
         assert "logline" not in context
 
-    def test_build_task_context_fallback_preserves_tail_when_no_summary(self):
+    def test_build_task_context_non_conformant_preview_is_truncated(self):
         agent = MagicMock()
         tool = MultiTaskTool(agent)
-        output = ("A" * 700) + "TAIL-IMPORTANT"
+        output = "A" * (tool.NON_CONFORMANT_PREVIEW_CHARS + 100)
         previous = {
-            0: TaskExecutionResult(status="success", output=output),
+            0: TaskExecutionResult(
+                status="success",
+                output=output,
+                fetch_hint="REQUIRED",
+                template_conformant=False,
+            ),
         }
         context = tool._build_task_context(previous)
-        assert "TAIL-IMPORTANT" in context
-        assert "[truncated]" in context
+        assert "NON_CONFORMANT_CONTEXT" in context
+        assert "[truncated preview]" in context
 
     def test_format_results_prefers_structured_summary_when_present(self):
         agent = MagicMock()
@@ -251,6 +306,9 @@ ERRORS:
                 summary="summary text",
                 key_findings="- finding",
                 errors="none",
+                artifact_path="/tmp/task_0.md",
+                fetch_hint="NONE",
+                template_conformant=True,
             )
         }
         formatted = tool._format_results(tasks, results)
@@ -280,6 +338,7 @@ ERRORS:
             tasks=["t0", "t1"],
             dependencies={"1": ["0"]},
             tools=[],
+            artifact_root=None,
             max_parallel=2,
         )
 
@@ -294,7 +353,7 @@ ERRORS:
         batches: list[list[int]] = []
 
         async def fake_execute_batch(
-            batch, tasks, tools, deps, previous_results
+            batch, tasks, tools, deps, previous_results, artifact_root
         ):  # pragma: no cover - callback
             batches.append(list(batch))
             return {idx: TaskExecutionResult(status="success", output=f"ok-{idx}") for idx in batch}
@@ -305,6 +364,7 @@ ERRORS:
             tasks=["a", "b", "c"],
             dependencies={},
             tools=[],
+            artifact_root=None,
             max_parallel=2,
         )
 
@@ -330,6 +390,7 @@ ERRORS:
             tasks=["t0", "t1", "t2"],
             tools=[],
             deps={2: {0, 1}},
+            artifact_root=None,
             previous_results={
                 0: TaskExecutionResult(status="success", output="r0"),
                 1: TaskExecutionResult(status="success", output="r1"),
@@ -344,10 +405,194 @@ ERRORS:
         agent = MagicMock()
         tool = MultiTaskTool(agent)
         tail_summary = "SUMMARY: cheapest fare is $620"
-        output = ("verbose log line\n" * 200) + tail_summary + "\nERRORS:\n- none\n"
+        output = (
+            ("verbose log line\n" * 200)
+            + tail_summary
+            + "\nKEY_FINDINGS:\n- nonstop\nERRORS:\n- none\n"
+        )
 
-        success_result = tool._build_success_result(output)
+        success_result = tool._build_success_result(
+            idx=0,
+            task_desc="find flights",
+            output=output,
+            artifact_root=None,
+        )
         context = tool._build_task_context({0: success_result})
 
         assert "cheapest fare is $620" in context
         assert "verbose log line" not in context
+
+    def test_build_success_result_marks_non_conformant_and_required_fetch(self, tmp_path):
+        agent = MagicMock()
+        tool = MultiTaskTool(agent)
+        output = "SUMMARY: partial output only"
+
+        result = tool._build_success_result(
+            idx=0,
+            task_desc="task",
+            output=output,
+            artifact_root=tmp_path,
+        )
+
+        assert result.template_conformant is False
+        assert result.fetch_hint == "REQUIRED"
+        assert result.non_conformant_context
+        assert result.artifact_path.endswith("task_0.md")
+
+    def test_build_task_context_fetches_artifact_when_required(self, tmp_path):
+        agent = MagicMock()
+        tool = MultiTaskTool(agent)
+
+        artifact_path = tmp_path / "task_0.md"
+        artifact_path.write_text("artifact content", encoding="utf-8")
+
+        context = tool._build_task_context(
+            {
+                0: TaskExecutionResult(
+                    status="success",
+                    output="bad format output",
+                    fetch_hint="REQUIRED",
+                    template_conformant=False,
+                    non_conformant_context="preview",
+                    artifact_path=str(artifact_path),
+                )
+            }
+        )
+
+        assert "FETCH_HINT: REQUIRED" in context
+        assert "FETCHED_ARTIFACT:\nartifact content" in context
+
+    def test_build_task_context_required_fetch_without_artifact_keeps_non_empty_signal(self):
+        agent = MagicMock()
+        tool = MultiTaskTool(agent)
+
+        context = tool._build_task_context(
+            {
+                0: TaskExecutionResult(
+                    status="success",
+                    output="",
+                    fetch_hint="REQUIRED",
+                    template_conformant=False,
+                    artifact_path="UNAVAILABLE",
+                )
+            }
+        )
+
+        assert "NON_CONFORMANT_CONTEXT:\n(empty output)" in context
+        assert "FETCHED_ARTIFACT: UNAVAILABLE" in context
+
+    def test_write_dag_visualization_contains_dependencies(self, tmp_path):
+        agent = MagicMock()
+        tool = MultiTaskTool(agent)
+        tasks = ["collect flight data", "build travel plan"]
+        dependencies = {"1": ["0"]}
+        results = {
+            0: TaskExecutionResult(
+                status="success",
+                output="ok",
+                summary="flight data ready",
+                key_findings="- route",
+                errors="- none",
+                fetch_hint="NONE",
+                template_conformant=True,
+            ),
+            1: TaskExecutionResult(
+                status="success",
+                output="ok",
+                summary="plan ready",
+                key_findings="- itinerary",
+                errors="- none",
+                fetch_hint="NONE",
+                template_conformant=True,
+            ),
+        }
+
+        dag_path = tool._write_dag_visualization(tasks, dependencies, results, tmp_path)
+
+        assert dag_path == str(tmp_path / "dag.mmd")
+        content = (tmp_path / "dag.mmd").read_text(encoding="utf-8")
+        assert "flowchart TD" in content
+        assert "T0 --> T1" in content
+        assert "status=success" in content
+
+    @pytest.mark.asyncio
+    async def test_execute_cleans_artifacts_when_not_verbose(self, tmp_path, monkeypatch):
+        agent = MagicMock()
+        agent.tool_executor = MagicMock()
+        agent.tool_executor.get_tool_schemas.return_value = []
+        tool = MultiTaskTool(agent)
+
+        run_dir = tmp_path / "run_cleaned"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        artifact_path = run_dir / "task_0.md"
+        artifact_path.write_text("artifact content", encoding="utf-8")
+
+        monkeypatch.setenv("OURO_VERBOSE", "0")
+        monkeypatch.delenv("OURO_KEEP_MULTITASK_ARTIFACTS", raising=False)
+        tool._prepare_artifact_run_dir = lambda: run_dir  # type: ignore[method-assign]
+
+        async def fake_execute_with_dependencies(
+            tasks, dependencies, tools, artifact_root, max_parallel
+        ):
+            return {
+                0: TaskExecutionResult(
+                    status="success",
+                    output="ok",
+                    summary="done",
+                    key_findings="- finding",
+                    errors="- none",
+                    artifact_path=str(artifact_path),
+                    fetch_hint="NONE",
+                    template_conformant=True,
+                )
+            }
+
+        tool._execute_with_dependencies = fake_execute_with_dependencies  # type: ignore[method-assign]
+
+        output = await tool.execute(tasks=["single task"])
+
+        assert "DAG_PATH: CLEANED" in output
+        assert "ARTIFACT_PATH: CLEANED" in output
+        assert not run_dir.exists()
+
+    @pytest.mark.asyncio
+    async def test_execute_keeps_artifacts_when_verbose(self, tmp_path, monkeypatch):
+        agent = MagicMock()
+        agent.tool_executor = MagicMock()
+        agent.tool_executor.get_tool_schemas.return_value = []
+        tool = MultiTaskTool(agent)
+
+        run_dir = tmp_path / "run_kept"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        artifact_path = run_dir / "task_0.md"
+        artifact_path.write_text("artifact content", encoding="utf-8")
+
+        monkeypatch.setenv("OURO_VERBOSE", "1")
+        monkeypatch.delenv("OURO_KEEP_MULTITASK_ARTIFACTS", raising=False)
+        tool._prepare_artifact_run_dir = lambda: run_dir  # type: ignore[method-assign]
+
+        async def fake_execute_with_dependencies(
+            tasks, dependencies, tools, artifact_root, max_parallel
+        ):
+            return {
+                0: TaskExecutionResult(
+                    status="success",
+                    output="ok",
+                    summary="done",
+                    key_findings="- finding",
+                    errors="- none",
+                    artifact_path=str(artifact_path),
+                    fetch_hint="NONE",
+                    template_conformant=True,
+                )
+            }
+
+        tool._execute_with_dependencies = fake_execute_with_dependencies  # type: ignore[method-assign]
+
+        output = await tool.execute(tasks=["single task"])
+
+        dag_path = run_dir / "dag.mmd"
+        assert f"DAG_PATH: {dag_path}" in output
+        assert f"ARTIFACT_PATH: {artifact_path}" in output
+        assert run_dir.exists()
+        assert dag_path.exists()

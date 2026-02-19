@@ -38,9 +38,9 @@ Describe the observable behavior.
 - CLI / UX changes:
   - No new top-level CLI command.
   - `multi_task` outputs include artifact path metadata per task when available.
+  - `multi_task` outputs include `DAG_PATH` for the generated mermaid DAG file.
 - Config changes:
   - No global config required in v1.
-  - Add optional `multi_task` argument: `artifact_dir` (default local project path).
   - Default artifact root: `<cwd>/.ouro_artifacts/<run_id>/`.
 - Output / logging changes:
   - Each task result contains: `summary`, `key_findings`, `errors`, `artifact_path`, `fetch_hint`, and `template_conformant`.
@@ -48,6 +48,9 @@ Describe the observable behavior.
     - `FETCH_HINT: NONE | REQUIRED`.
     - When output is non-conformant, include a small best-effort `NON_CONFORMANT_CONTEXT` preview.
   - No raw-output truncation fallback is included in dependency context.
+  - Artifact retention policy:
+    - verbose/debug run: keep artifacts and DAG files for debugging.
+    - non-verbose run: cleanup run-scoped artifact directory after `multi_task` completes.
 
 ## Invariants (Must Not Regress)
 
@@ -56,6 +59,7 @@ Describe the observable behavior.
 - Default `max_parallel` remains `4` unless explicitly overridden.
 - Missing artifacts must not fail the whole run; execution continues with summary-first context.
 - Downstream tasks must not receive empty dependency context; at least one text signal is always passed (`SUMMARY` or `NON_CONFORMANT_CONTEXT`).
+- Cleanup policy must not affect dependency execution; cleanup happens only after all subtasks finish.
 
 ## Design Sketch (Minimal)
 
@@ -71,20 +75,25 @@ Describe the observable behavior.
    - `FETCH_HINT=REQUIRED` when `template_conformant=false`
    - otherwise `FETCH_HINT=NONE`
 5. Write task artifact markdown:
-   - path: `<cwd>/.ouro_artifacts/<run_id>/task_<idx>.md` by default, or `<artifact_dir>/<run_id>/task_<idx>.md` when provided
+   - path: `<cwd>/.ouro_artifacts/<run_id>/task_<idx>.md`
    - content: task metadata + structured fields + raw output.
-6. Build downstream dependency context as:
+6. Write DAG visualization:
+   - path: `<cwd>/.ouro_artifacts/<run_id>/dag.mmd`
+   - content: mermaid flowchart with task nodes + dependency edges + status/fetch metadata
+7. Build downstream dependency context as:
    - `SUMMARY` (when `template_conformant=true`)
    - `NON_CONFORMANT_CONTEXT` (when `template_conformant=false`, best-effort preview from raw output)
    - `ARTIFACT_PATH`
    - `FETCH_HINT`
    - `TEMPLATE_CONFORMANT`
    - (no full raw output and no char-truncated fallback)
-7. `FETCH_HINT=REQUIRED` is a hard runtime rule when `ARTIFACT_PATH` is available:
+8. `FETCH_HINT=REQUIRED` is a hard runtime rule when `ARTIFACT_PATH` is available:
    - orchestrator injects artifact content before dependent subtask execution.
-8. If `FETCH_HINT=REQUIRED` but artifact is unavailable:
+9. If `FETCH_HINT=REQUIRED` but artifact is unavailable:
    - do not fail the whole run;
    - continue with `NON_CONFORMANT_CONTEXT` and explicit `ARTIFACT_PATH=UNAVAILABLE`.
+10. Post-run cleanup:
+    - in non-verbose mode, remove `<run_id>` directory and mark output paths as cleaned.
 
 ## Alternatives Considered
 
@@ -103,6 +112,8 @@ Describe the observable behavior.
   - Dependency context generation has no raw-output truncation fallback and preserves a non-empty signal.
   - When `FETCH_HINT=REQUIRED` and artifact exists, orchestrator fetch is mandatory before downstream execution.
   - When `FETCH_HINT=REQUIRED` and artifact is unavailable, fallback path uses `NON_CONFORMANT_CONTEXT`.
+  - DAG file generation includes dependency edges.
+  - Verbose vs non-verbose retention behavior (`keep` vs `cleanup`).
   - Artifact writing success/failure behavior.
 - Targeted tests to run locally:
   - `./scripts/dev.sh test -q test/test_multi_task.py`
@@ -127,6 +138,8 @@ Describe the observable behavior.
   - Mitigation: keep prompt format explicit; ensure parser and tests cover common formatting variants.
 - Risk: Mandatory retrieval can add latency on dependency-heavy chains.
   - Mitigation: enforce retrieval only for `REQUIRED`; keep conformant path summary-first.
+- Risk: automatic cleanup can hinder postmortem debugging.
+  - Mitigation: preserve artifacts in verbose/debug runs.
 - Risk: Model output format drift.
   - Mitigation: local parser + artifact retrieval path when non-conformant.
 

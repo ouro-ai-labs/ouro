@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import importlib.metadata
+import os
 import warnings
 
 from rich.console import Console
@@ -218,6 +219,9 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # Expose runtime verbosity to tools that need debug retention behavior.
+    os.environ["OURO_VERBOSE"] = "1" if args.verbose else "0"
 
     # Initialize runtime directories (create logs dir only in verbose mode)
     ensure_runtime_dirs(create_logs=args.verbose)

@@ -1,7 +1,11 @@
 """Unified multi-task tool for parallel sub-agent execution."""
 
 import asyncio
+import os
+import shutil
+from datetime import datetime, timezone
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Set
 
 from llm import LLMMessage
@@ -21,6 +25,10 @@ class TaskExecutionResult:
     summary: str = ""
     key_findings: str = ""
     errors: str = ""
+    artifact_path: str = "UNAVAILABLE"
+    fetch_hint: str = "NONE"
+    template_conformant: bool = False
+    non_conformant_context: str = ""
 
 
 class MultiTaskTool(BaseTool):
@@ -33,8 +41,7 @@ class MultiTaskTool(BaseTool):
 
     MAX_PARALLEL = 4
     MAX_RESULT_CHARS = 2000
-    SUMMARY_MAX_CHARS = 300
-    CONTEXT_FALLBACK_CHARS = 500
+    NON_CONFORMANT_PREVIEW_CHARS = 500
 
     def __init__(self, agent: "BaseAgent"):
         self.agent = agent
@@ -115,10 +122,23 @@ Input parameters:
             return validation_error
 
         subtask_tools = self._get_subtask_tools()
+        artifact_root = self._prepare_artifact_run_dir()
         results = await self._execute_with_dependencies(
-            tasks, dependencies, subtask_tools, max_parallel=parallel_limit
+            tasks,
+            dependencies,
+            subtask_tools,
+            artifact_root=artifact_root,
+            max_parallel=parallel_limit,
         )
-        return self._format_results(tasks, results)
+        dag_path = self._write_dag_visualization(tasks, dependencies, results, artifact_root)
+
+        if not self._should_keep_artifacts():
+            self._cleanup_artifact_run_dir(artifact_root)
+            self._mark_artifacts_cleaned(results)
+            if dag_path != "UNAVAILABLE":
+                dag_path = "CLEANED"
+
+        return self._format_results(tasks, results, dag_path=dag_path)
 
     # ------------------------------------------------------------------
     # Dependency validation
@@ -200,6 +220,7 @@ Input parameters:
         tasks: List[str],
         dependencies: Dict[str, List[str]],
         tools: List[Dict[str, Any]],
+        artifact_root: Path | None,
         max_parallel: int,
     ) -> Dict[int, TaskExecutionResult]:
         results: Dict[int, TaskExecutionResult] = {}
@@ -240,7 +261,14 @@ Input parameters:
                 break
 
             batch = ready[:max_parallel]
-            batch_results = await self._execute_batch(batch, tasks, tools, deps, results)
+            batch_results = await self._execute_batch(
+                batch,
+                tasks,
+                tools,
+                deps,
+                results,
+                artifact_root=artifact_root,
+            )
 
             for idx, result in batch_results.items():
                 results[idx] = result
@@ -265,6 +293,7 @@ Input parameters:
         tools: List[Dict[str, Any]],
         deps: Dict[int, Set[int]],
         previous_results: Dict[int, TaskExecutionResult],
+        artifact_root: Path | None,
     ) -> Dict[int, TaskExecutionResult]:
         async def run_single(idx: int) -> tuple:
             try:
@@ -274,7 +303,12 @@ Input parameters:
                     if dep in previous_results
                 }
                 output = await self._run_subtask(idx, tasks[idx], tools, dependency_results)
-                return idx, self._build_success_result(output)
+                return idx, self._build_success_result(
+                    idx=idx,
+                    task_desc=tasks[idx],
+                    output=output,
+                    artifact_root=artifact_root,
+                )
             except asyncio.CancelledError:
                 raise
             except Exception as e:
@@ -334,14 +368,41 @@ Execute the task now:"""
             save_to_memory=False,
         )
 
-    def _build_success_result(self, output: str) -> TaskExecutionResult:
+    def _build_success_result(
+        self,
+        idx: int,
+        task_desc: str,
+        output: str,
+        artifact_root: Path | None,
+    ) -> TaskExecutionResult:
         summary, key_findings, errors = self._extract_structured_sections(output)
+        template_conformant = all([summary, key_findings, errors])
+        fetch_hint = "NONE" if template_conformant else "REQUIRED"
+        non_conformant_context = (
+            ""
+            if template_conformant
+            else self._build_non_conformant_context(output)
+        )
+        artifact_path = self._write_task_artifact(
+            artifact_root=artifact_root,
+            idx=idx,
+            task_desc=task_desc,
+            output=output,
+            summary=summary or "",
+            key_findings=key_findings or "",
+            errors=errors or "",
+        )
+
         return TaskExecutionResult(
             status="success",
             output=output,
             summary=summary or "",
             key_findings=key_findings or "",
             errors=errors or "",
+            artifact_path=artifact_path,
+            fetch_hint=fetch_hint,
+            template_conformant=template_conformant,
+            non_conformant_context=non_conformant_context,
         )
 
     def _extract_structured_sections(
@@ -382,24 +443,140 @@ Execute the task now:"""
             return "\n".join(cleaned).strip()
 
         summary = _normalize(sections["summary"])
-        if summary and len(summary) > self.SUMMARY_MAX_CHARS:
-            summary = summary[: self.SUMMARY_MAX_CHARS] + "... [truncated]"
-
         key_findings = _normalize(sections["key_findings"])
         errors = _normalize(sections["errors"])
         return summary, key_findings, errors
 
-    def _truncate_for_context_fallback(self, text: str) -> str:
-        if len(text) <= self.CONTEXT_FALLBACK_CHARS:
-            return text
-
-        head = int(self.CONTEXT_FALLBACK_CHARS * 0.65)
-        tail = self.CONTEXT_FALLBACK_CHARS - head
-        return f"{text[:head]}... [truncated] ...{text[-tail:]}"
+    def _build_non_conformant_context(self, text: str) -> str:
+        trimmed = text.strip()
+        if not trimmed:
+            return "(empty output)"
+        if len(trimmed) <= self.NON_CONFORMANT_PREVIEW_CHARS:
+            return trimmed
+        return trimmed[: self.NON_CONFORMANT_PREVIEW_CHARS] + "... [truncated preview]"
 
     def _has_meaningful_errors(self, errors: str) -> bool:
         normalized = errors.strip().lower()
         return normalized not in {"", "none", "- none", "n/a", "no errors"}
+
+    def _prepare_artifact_run_dir(self) -> Path | None:
+        run_id = datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+        run_dir = Path.cwd() / ".ouro_artifacts" / run_id
+        try:
+            run_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return None
+        return run_dir
+
+    def _write_task_artifact(
+        self,
+        artifact_root: Path | None,
+        idx: int,
+        task_desc: str,
+        output: str,
+        summary: str,
+        key_findings: str,
+        errors: str,
+    ) -> str:
+        if artifact_root is None:
+            return "UNAVAILABLE"
+
+        artifact_path = artifact_root / f"task_{idx}.md"
+        content = "\n".join(
+            [
+                "# Task Artifact",
+                "",
+                f"task_idx: {idx}",
+                f"task_desc: {task_desc}",
+                "",
+                "## SUMMARY",
+                summary or "(missing)",
+                "",
+                "## KEY_FINDINGS",
+                key_findings or "(missing)",
+                "",
+                "## ERRORS",
+                errors or "(missing)",
+                "",
+                "## RAW_OUTPUT",
+                output,
+            ]
+        )
+        try:
+            artifact_path.write_text(content, encoding="utf-8")
+        except OSError:
+            return "UNAVAILABLE"
+        return str(artifact_path)
+
+    def _read_artifact_content(self, artifact_path: str) -> str | None:
+        if not artifact_path or artifact_path == "UNAVAILABLE":
+            return None
+
+        try:
+            return Path(artifact_path).read_text(encoding="utf-8")
+        except OSError:
+            return None
+
+    def _should_keep_artifacts(self) -> bool:
+        keep_flag = os.getenv("OURO_KEEP_MULTITASK_ARTIFACTS")
+        if keep_flag is not None:
+            return keep_flag.strip().lower() in {"1", "true", "yes", "on"}
+
+        verbose_flag = os.getenv("OURO_VERBOSE", "0")
+        return verbose_flag.strip().lower() in {"1", "true", "yes", "on"}
+
+    def _cleanup_artifact_run_dir(self, artifact_root: Path | None) -> None:
+        if artifact_root is None:
+            return
+        try:
+            shutil.rmtree(artifact_root)
+        except OSError:
+            return
+
+    def _mark_artifacts_cleaned(self, results: Dict[int, TaskExecutionResult]) -> None:
+        for result in results.values():
+            if result.artifact_path and result.artifact_path != "UNAVAILABLE":
+                result.artifact_path = "CLEANED"
+
+    def _sanitize_mermaid_label(self, value: str) -> str:
+        text = value.replace("\n", " ").replace('"', "'").strip()
+        text = text.replace("[", "(").replace("]", ")")
+        return text if text else "(empty task)"
+
+    def _write_dag_visualization(
+        self,
+        tasks: List[str],
+        dependencies: Dict[str, List[str]],
+        results: Dict[int, TaskExecutionResult],
+        artifact_root: Path | None,
+    ) -> str:
+        if artifact_root is None:
+            return "UNAVAILABLE"
+
+        dag_path = artifact_root / "dag.mmd"
+        lines = ["flowchart TD"]
+
+        for idx, task in enumerate(tasks):
+            result = results.get(idx)
+            status = result.status if result else "not_executed"
+            fetch_hint = result.fetch_hint if result else "NONE"
+            template_conformant = (
+                "true" if result and result.template_conformant else "false"
+            )
+            task_label = self._sanitize_mermaid_label(task)[:80]
+            lines.append(
+                f'    T{idx}["#{idx} {task_label}<br/>status={status}<br/>fetch={fetch_hint}<br/>conformant={template_conformant}"]'
+            )
+
+        for task_idx in sorted(dependencies.keys(), key=int):
+            for dep_idx in sorted(dependencies[task_idx], key=int):
+                lines.append(f"    T{int(dep_idx)} --> T{int(task_idx)}")
+
+        try:
+            dag_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        except OSError:
+            return "UNAVAILABLE"
+        return str(dag_path)
 
     # ------------------------------------------------------------------
     # Formatting helpers
@@ -411,16 +588,47 @@ Execute the task now:"""
 
         parts = ["<dependency_results>"]
         for idx, result in sorted(dependency_results.items()):
-            summary = result.summary or self._truncate_for_context_fallback(result.output)
-            parts.append(f"Task #{idx} SUMMARY:\n{summary}\n")
+            parts.append(
+                f"Task #{idx} TEMPLATE_CONFORMANT: "
+                f"{'true' if result.template_conformant else 'false'}"
+            )
+            parts.append(f"Task #{idx} FETCH_HINT: {result.fetch_hint}")
+
+            if result.template_conformant:
+                summary = result.summary.strip() or "(empty summary)"
+                parts.append(f"Task #{idx} SUMMARY:\n{summary}\n")
+            else:
+                preview = result.non_conformant_context or self._build_non_conformant_context(
+                    result.output
+                )
+                parts.append(f"Task #{idx} NON_CONFORMANT_CONTEXT:\n{preview}\n")
+
+            artifact_path = result.artifact_path or "UNAVAILABLE"
+            fetched_artifact = None
+            if result.fetch_hint == "REQUIRED":
+                fetched_artifact = self._read_artifact_content(artifact_path)
+                if fetched_artifact is None:
+                    artifact_path = "UNAVAILABLE"
+
+            parts.append(f"Task #{idx} ARTIFACT_PATH: {artifact_path}")
+
+            if result.fetch_hint == "REQUIRED":
+                if fetched_artifact is None:
+                    parts.append(f"Task #{idx} FETCHED_ARTIFACT: UNAVAILABLE")
+                else:
+                    parts.append(f"Task #{idx} FETCHED_ARTIFACT:\n{fetched_artifact}\n")
 
             if self._has_meaningful_errors(result.errors):
-                truncated_errors = self._truncate_for_context_fallback(result.errors)
-                parts.append(f"Task #{idx} ERRORS:\n{truncated_errors}\n")
+                parts.append(f"Task #{idx} ERRORS:\n{result.errors}\n")
         parts.append("</dependency_results>")
         return "\n".join(parts)
 
-    def _format_results(self, tasks: List[str], results: Dict[int, TaskExecutionResult]) -> str:
+    def _format_results(
+        self,
+        tasks: List[str],
+        results: Dict[int, TaskExecutionResult],
+        dag_path: str = "UNAVAILABLE",
+    ) -> str:
         if not results:
             return "No task results."
 
@@ -431,21 +639,41 @@ Execute the task now:"""
         }
 
         parts = ["# Multi-Task Results\n"]
+        if dag_path:
+            parts.append(f"DAG_PATH: {dag_path}\n")
         for idx, task_desc in enumerate(tasks):
             result = results.get(idx)
             if result:
                 status = status_map.get(result.status, result.status.title())
-                if result.summary:
+                if result.template_conformant and result.summary:
                     sections = [f"SUMMARY: {result.summary}"]
                     if result.key_findings:
                         sections.append(f"KEY_FINDINGS:\n{result.key_findings}")
                     if self._has_meaningful_errors(result.errors):
                         sections.append(f"ERRORS:\n{result.errors}")
-                    output = "\n".join(sections)
                 else:
-                    output = result.output
-                    if len(output) > self.MAX_RESULT_CHARS:
-                        output = output[: self.MAX_RESULT_CHARS] + "... [truncated]"
+                    preview = result.non_conformant_context or self._build_non_conformant_context(
+                        result.output
+                    )
+                    sections = [f"NON_CONFORMANT_CONTEXT:\n{preview}"]
+                    if result.key_findings:
+                        sections.append(f"KEY_FINDINGS:\n{result.key_findings}")
+                    if self._has_meaningful_errors(result.errors):
+                        sections.append(f"ERRORS:\n{result.errors}")
+
+                if result.status == "success":
+                    sections.append(
+                        "TEMPLATE_CONFORMANT: "
+                        + ("true" if result.template_conformant else "false")
+                    )
+                    sections.append(f"FETCH_HINT: {result.fetch_hint}")
+                    sections.append(
+                        f"ARTIFACT_PATH: {result.artifact_path or 'UNAVAILABLE'}"
+                    )
+
+                output = "\n".join(sections)
+                if len(output) > self.MAX_RESULT_CHARS:
+                    output = output[: self.MAX_RESULT_CHARS] + "... [truncated]"
             else:
                 output = "Not executed"
                 status = "Failed"
