@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from tools.multi_task import MultiTaskTool
+from tools.multi_task import MultiTaskTool, TaskExecutionResult
 
 
 class TestMultiTaskTool:
@@ -28,6 +28,8 @@ class TestMultiTaskTool:
         assert params["tasks"]["type"] == "array"
         assert "dependencies" in params
         assert params["dependencies"]["type"] == "object"
+        assert "max_parallel" in params
+        assert params["max_parallel"]["type"] == "integer"
 
     def test_to_anthropic_schema(self):
         agent = MagicMock()
@@ -44,6 +46,13 @@ class TestMultiTaskTool:
         tool = MultiTaskTool(agent)
         result = await tool.execute(tasks=[])
         assert "error" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_execute_invalid_max_parallel(self):
+        agent = MagicMock()
+        tool = MultiTaskTool(agent)
+        result = await tool.execute(tasks=["task"], max_parallel=0)
+        assert "max_parallel" in result
 
     # ------------------------------------------------------------------
     # Dependency validation
@@ -113,7 +122,10 @@ class TestMultiTaskTool:
         agent = MagicMock()
         tool = MultiTaskTool(agent)
         tasks = ["Do task A", "Do task B"]
-        results = {0: "Result A", 1: "Result B"}
+        results = {
+            0: TaskExecutionResult(status="success", output="Result A"),
+            1: TaskExecutionResult(status="success", output="Result B"),
+        }
         formatted = tool._format_results(tasks, results)
         assert "Task 0" in formatted
         assert "Task 1" in formatted
@@ -126,9 +138,17 @@ class TestMultiTaskTool:
         tool = MultiTaskTool(agent)
         tasks = ["Task"]
         long_result = "x" * (tool.MAX_RESULT_CHARS + 1000)
-        results = {0: long_result}
+        results = {0: TaskExecutionResult(status="success", output=long_result)}
         formatted = tool._format_results(tasks, results)
         assert "truncated" in formatted.lower()
+
+    def test_format_results_shows_skipped_status(self):
+        agent = MagicMock()
+        tool = MultiTaskTool(agent)
+        tasks = ["Task"]
+        results = {0: TaskExecutionResult(status="skipped", output="dependency failed")}
+        formatted = tool._format_results(tasks, results)
+        assert "Skipped" in formatted
 
     def test_format_results_empty(self):
         agent = MagicMock()
@@ -167,9 +187,167 @@ class TestMultiTaskTool:
     def test_build_task_context_with_results(self):
         agent = MagicMock()
         tool = MultiTaskTool(agent)
-        previous = {0: "Result 0", 1: "Result 1"}
+        previous = {
+            0: TaskExecutionResult(status="success", output="Result 0"),
+            1: TaskExecutionResult(status="success", output="Result 1"),
+        }
         context = tool._build_task_context(previous)
         assert "Task #0" in context
         assert "Task #1" in context
         assert "Result 0" in context
         assert "Result 1" in context
+
+    def test_extract_structured_sections(self):
+        agent = MagicMock()
+        tool = MultiTaskTool(agent)
+        output = """SUMMARY: Best option found.
+KEY_FINDINGS:
+- price: $620
+- route: SFO->NRT
+ERRORS:
+- none
+"""
+        summary, key_findings, errors = tool._extract_structured_sections(output)
+        assert summary == "Best option found."
+        assert "price: $620" in key_findings
+        assert errors == "- none"
+
+    def test_build_task_context_prefers_summary(self):
+        agent = MagicMock()
+        tool = MultiTaskTool(agent)
+        noisy = "logline " * 200 + "SUMMARY: should not be used from raw"
+        previous = {
+            0: TaskExecutionResult(
+                status="success",
+                output=noisy,
+                summary="cheapest fare is $620",
+                key_findings="- SFO->NRT",
+                errors="none",
+            )
+        }
+        context = tool._build_task_context(previous)
+        assert "cheapest fare is $620" in context
+        assert "logline" not in context
+
+    def test_build_task_context_fallback_preserves_tail_when_no_summary(self):
+        agent = MagicMock()
+        tool = MultiTaskTool(agent)
+        output = ("A" * 700) + "TAIL-IMPORTANT"
+        previous = {
+            0: TaskExecutionResult(status="success", output=output),
+        }
+        context = tool._build_task_context(previous)
+        assert "TAIL-IMPORTANT" in context
+        assert "[truncated]" in context
+
+    def test_format_results_prefers_structured_summary_when_present(self):
+        agent = MagicMock()
+        tool = MultiTaskTool(agent)
+        tasks = ["Task"]
+        results = {
+            0: TaskExecutionResult(
+                status="success",
+                output="raw output",
+                summary="summary text",
+                key_findings="- finding",
+                errors="none",
+            )
+        }
+        formatted = tool._format_results(tasks, results)
+        assert "SUMMARY: summary text" in formatted
+        assert "KEY_FINDINGS" in formatted
+        assert "raw output" not in formatted
+
+    # ------------------------------------------------------------------
+    # Execution behavior
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_execute_with_dependencies_skips_on_failed_dependency(self):
+        agent = MagicMock()
+        tool = MultiTaskTool(agent)
+
+        async def fake_run_subtask(
+            idx, task_desc, tools, dependency_results
+        ):  # pragma: no cover - callback
+            if idx == 0:
+                raise RuntimeError("boom")
+            return f"ok-{idx}"
+
+        tool._run_subtask = fake_run_subtask  # type: ignore[method-assign]
+
+        results = await tool._execute_with_dependencies(
+            tasks=["t0", "t1"],
+            dependencies={"1": ["0"]},
+            tools=[],
+            max_parallel=2,
+        )
+
+        assert results[0].status == "failed"
+        assert results[1].status == "skipped"
+        assert "dependency tasks failed" in results[1].output
+
+    @pytest.mark.asyncio
+    async def test_execute_with_dependencies_respects_max_parallel(self):
+        agent = MagicMock()
+        tool = MultiTaskTool(agent)
+        batches: list[list[int]] = []
+
+        async def fake_execute_batch(
+            batch, tasks, tools, deps, previous_results
+        ):  # pragma: no cover - callback
+            batches.append(list(batch))
+            return {idx: TaskExecutionResult(status="success", output=f"ok-{idx}") for idx in batch}
+
+        tool._execute_batch = fake_execute_batch  # type: ignore[method-assign]
+
+        results = await tool._execute_with_dependencies(
+            tasks=["a", "b", "c"],
+            dependencies={},
+            tools=[],
+            max_parallel=2,
+        )
+
+        assert batches == [[0, 1], [2]]
+        assert all(result.status == "success" for result in results.values())
+
+    @pytest.mark.asyncio
+    async def test_execute_batch_passes_only_direct_dependency_results(self):
+        agent = MagicMock()
+        tool = MultiTaskTool(agent)
+        captured_dependencies = {}
+
+        async def fake_run_subtask(
+            idx, task_desc, tools, dependency_results
+        ):  # pragma: no cover - callback
+            captured_dependencies[idx] = sorted(dependency_results.keys())
+            return "done"
+
+        tool._run_subtask = fake_run_subtask  # type: ignore[method-assign]
+
+        await tool._execute_batch(
+            batch=[2],
+            tasks=["t0", "t1", "t2"],
+            tools=[],
+            deps={2: {0, 1}},
+            previous_results={
+                0: TaskExecutionResult(status="success", output="r0"),
+                1: TaskExecutionResult(status="success", output="r1"),
+                99: TaskExecutionResult(status="success", output="noise"),
+            },
+        )
+
+        assert captured_dependencies[2] == [0, 1]
+
+    @pytest.mark.asyncio
+    async def test_long_output_tail_summary_is_used_for_dependency_context(self):
+        agent = MagicMock()
+        tool = MultiTaskTool(agent)
+        tail_summary = "SUMMARY: cheapest fare is $620"
+        output = ("verbose log line\n" * 200) + tail_summary + "\nERRORS:\n- none\n"
+
+        success_result = tool._build_success_result(output)
+        context = tool._build_task_context({0: success_result})
+
+        assert "cheapest fare is $620" in context
+        assert "verbose log line" not in context

@@ -50,6 +50,9 @@ When you have enough information, provide your final answer directly without usi
 - Use smart_edit for precise changes (fuzzy match, auto backup, diff preview)
 - Use write_file only for creating new files or complete rewrites
 - Use multi_task for parallelizable tasks
+- With multi_task, use dependencies only when needed; keep independent tasks dependency-free
+- For pure acceleration, do NOT force an extra comparison/synthesis step
+- Only run a second synthesis/comparison pass when the user explicitly asks for consolidated comparison, ranking, or summary
 - Use manage_todo_list to track progress for complex tasks
 </tool_usage_guidelines>
 
