@@ -89,7 +89,12 @@ class TestMemoryCompression:
     """Test compression triggering and behavior."""
 
     async def test_compression_on_short_term_full(self, set_memory_config, mock_llm):
-        """Test compression triggers when short-term memory is full."""
+        """Test compression is flagged when short-term memory is full.
+
+        With cache-safe forking, add_message() defers compression (sets a flag)
+        instead of compressing immediately. The actual compression happens in
+        the react loop via apply_compression().
+        """
         set_memory_config(
             MEMORY_SHORT_TERM_SIZE=5,
             MEMORY_COMPRESSION_THRESHOLD=200000,  # Very high to avoid hard limit
@@ -100,14 +105,22 @@ class TestMemoryCompression:
         for i in range(5):
             await manager.add_message(LLMMessage(role="user", content=f"Message {i}"))
 
-        # After 5 messages, compression should have been triggered and short-term cleared
+        # Compression is now deferred — flag should be set
+        assert manager.needs_compression()
+
+        # Simulate what the react loop does: call compress() to complete the cycle
+        await manager.compress()
+
         assert manager.compression_count == 1
         assert manager.was_compressed_last_iteration
-        # After compression, short-term is cleared so it's not full
+        assert not manager.needs_compression()
         assert not manager.short_term.is_full()
 
     async def test_compression_on_hard_limit(self, set_memory_config, mock_llm):
-        """Test compression triggers on hard limit (compression threshold)."""
+        """Test compression is flagged on hard limit (compression threshold).
+
+        With cache-safe forking, compression is deferred to the react loop.
+        """
         set_memory_config(
             MEMORY_COMPRESSION_THRESHOLD=100,  # Very low to trigger easily
             MEMORY_SHORT_TERM_SIZE=100,
@@ -118,6 +131,11 @@ class TestMemoryCompression:
         long_message = "This is a very long message. " * 100
         await manager.add_message(LLMMessage(role="user", content=long_message))
 
+        # Compression is deferred — flag should be set
+        assert manager.needs_compression()
+
+        # Complete the compression cycle
+        await manager.compress()
         assert manager.compression_count >= 1
 
     async def test_compression_creates_summary(self, set_memory_config, mock_llm, simple_messages):
@@ -608,3 +626,140 @@ class TestMemoryManagerRollback:
 
         # Tokens should be recalculated (should be same as initial since only assistant removed)
         assert manager.current_tokens == initial_tokens
+
+
+class TestDeferredCompression:
+    """Test the cache-safe deferred compression API."""
+
+    async def test_needs_compression_initially_false(self, mock_llm):
+        """Test that needs_compression() is False on fresh manager."""
+        manager = MemoryManager(mock_llm)
+        assert not manager.needs_compression()
+
+    async def test_needs_compression_set_on_threshold(self, set_memory_config, mock_llm):
+        """Test that needs_compression() is True after exceeding threshold."""
+        set_memory_config(MEMORY_COMPRESSION_THRESHOLD=100, MEMORY_SHORT_TERM_SIZE=100)
+        manager = MemoryManager(mock_llm)
+
+        long_message = "This is a very long message. " * 100
+        await manager.add_message(LLMMessage(role="user", content=long_message))
+
+        assert manager.needs_compression()
+
+    async def test_needs_compression_set_on_full(self, set_memory_config, mock_llm):
+        """Test that needs_compression() is True when short-term is full."""
+        set_memory_config(MEMORY_SHORT_TERM_SIZE=3, MEMORY_COMPRESSION_THRESHOLD=200000)
+        manager = MemoryManager(mock_llm)
+
+        for i in range(3):
+            await manager.add_message(LLMMessage(role="user", content=f"Message {i}"))
+
+        assert manager.needs_compression()
+
+    async def test_needs_compression_cleared_after_compress(self, set_memory_config, mock_llm):
+        """Test that needs_compression() is cleared after compress()."""
+        set_memory_config(MEMORY_SHORT_TERM_SIZE=3, MEMORY_COMPRESSION_THRESHOLD=200000)
+        manager = MemoryManager(mock_llm)
+
+        for i in range(3):
+            await manager.add_message(LLMMessage(role="user", content=f"Message {i}"))
+
+        assert manager.needs_compression()
+        await manager.compress()
+        assert not manager.needs_compression()
+
+    async def test_needs_compression_cleared_after_reset(self, set_memory_config, mock_llm):
+        """Test that needs_compression() is cleared after reset()."""
+        set_memory_config(MEMORY_SHORT_TERM_SIZE=3, MEMORY_COMPRESSION_THRESHOLD=200000)
+        manager = MemoryManager(mock_llm)
+
+        for i in range(3):
+            await manager.add_message(LLMMessage(role="user", content=f"Message {i}"))
+
+        assert manager.needs_compression()
+        manager.reset()
+        assert not manager.needs_compression()
+
+    async def test_get_compaction_prompt(self, mock_llm, simple_messages):
+        """Test get_compaction_prompt() returns a user message with instruction."""
+        manager = MemoryManager(mock_llm)
+
+        for msg in simple_messages:
+            await manager.add_message(msg)
+
+        prompt = manager.get_compaction_prompt()
+
+        assert prompt.role == "user"
+        assert "Summarize the conversation above" in prompt.content
+
+    async def test_get_compaction_prompt_with_todo(self, mock_llm, simple_messages):
+        """Test get_compaction_prompt() includes todo context."""
+        manager = MemoryManager(mock_llm)
+        manager.set_todo_context_provider(lambda: "1. [pending] Test task")
+
+        for msg in simple_messages:
+            await manager.add_message(msg)
+
+        prompt = manager.get_compaction_prompt()
+
+        assert "[Current Tasks]" in prompt.content
+        assert "Test task" in prompt.content
+
+    async def test_apply_compression(self, set_memory_config, mock_llm, simple_messages):
+        """Test apply_compression() updates memory state correctly."""
+        set_memory_config(MEMORY_SHORT_TERM_SIZE=10, MEMORY_COMPRESSION_THRESHOLD=200000)
+        manager = MemoryManager(mock_llm)
+
+        for msg in simple_messages:
+            await manager.add_message(msg)
+
+        original_count = manager.short_term.count()
+        assert original_count == len(simple_messages)
+
+        # Simulate the react loop: apply a summary
+        summary = "User and assistant exchanged greetings."
+        usage = {"input_tokens": 200, "output_tokens": 30}
+        await manager.apply_compression(summary, usage=usage)
+
+        # Should have compressed
+        assert manager.compression_count == 1
+        assert manager.was_compressed_last_iteration
+        assert not manager.needs_compression()
+
+        # Summary should be in context
+        context = manager.get_context_for_llm()
+        has_summary = any(
+            isinstance(m.content, str) and "[Previous conversation summary]" in m.content
+            for m in context
+        )
+        assert has_summary
+
+        # Usage should be tracked
+        stats = manager.get_stats()
+        assert stats["total_input_tokens"] >= 200
+
+    async def test_apply_compression_with_todo_context(
+        self, set_memory_config, mock_llm, simple_messages
+    ):
+        """Test apply_compression() injects todo context."""
+        set_memory_config(MEMORY_SHORT_TERM_SIZE=10, MEMORY_COMPRESSION_THRESHOLD=200000)
+        manager = MemoryManager(mock_llm)
+        manager.set_todo_context_provider(lambda: "1. [pending] Important task")
+
+        for msg in simple_messages:
+            await manager.add_message(msg)
+
+        await manager.apply_compression("Summary of conversation.")
+
+        context = manager.get_context_for_llm()
+        summary_msg = next(
+            (
+                m
+                for m in context
+                if isinstance(m.content, str) and "[Previous conversation summary]" in m.content
+            ),
+            None,
+        )
+        assert summary_msg is not None
+        assert "[Current Tasks]" in summary_msg.content
+        assert "Important task" in summary_msg.content

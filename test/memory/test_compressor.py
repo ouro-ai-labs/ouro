@@ -544,3 +544,165 @@ class TestCompressionErrors:
 
         # Should fallback to sliding window
         assert result is not None
+
+
+class TestBuildCompactionPrompt:
+    """Test cache-safe compaction prompt generation."""
+
+    async def test_sliding_window_prompt(self, mock_llm, simple_messages):
+        """Test compaction prompt for sliding window strategy."""
+        compressor = WorkingMemoryCompressor(mock_llm)
+
+        prompt = compressor.build_compaction_prompt(
+            simple_messages, CompressionStrategy.SLIDING_WINDOW, target_tokens=200
+        )
+
+        assert "Summarize the conversation above" in prompt
+        assert "200 tokens" in prompt
+        # Should NOT contain the messages themselves (they're in the LLM context)
+        assert "Hello" not in prompt
+        assert "Hi there" not in prompt
+
+    async def test_selective_prompt_includes_preserved_count(
+        self, set_memory_config, mock_llm, tool_use_messages
+    ):
+        """Test compaction prompt for selective strategy includes preserved message count."""
+        set_memory_config(MEMORY_SHORT_TERM_MIN_SIZE=2)
+        compressor = WorkingMemoryCompressor(mock_llm)
+
+        prompt = compressor.build_compaction_prompt(
+            tool_use_messages, CompressionStrategy.SELECTIVE, target_tokens=200
+        )
+
+        assert "Summarize the conversation above" in prompt
+        assert "kept verbatim" in prompt
+
+    async def test_prompt_with_todo_context(self, mock_llm, simple_messages):
+        """Test compaction prompt includes todo context instruction."""
+        compressor = WorkingMemoryCompressor(mock_llm)
+        todo_context = "1. [pending] Fix bug\n2. [completed] Write docs"
+
+        prompt = compressor.build_compaction_prompt(
+            simple_messages,
+            CompressionStrategy.SLIDING_WINDOW,
+            target_tokens=200,
+            todo_context=todo_context,
+        )
+
+        assert "[Current Tasks]" in prompt
+        assert "Fix bug" in prompt
+
+    async def test_prompt_without_todo_context(self, mock_llm, simple_messages):
+        """Test compaction prompt without todo context."""
+        compressor = WorkingMemoryCompressor(mock_llm)
+
+        prompt = compressor.build_compaction_prompt(
+            simple_messages,
+            CompressionStrategy.SLIDING_WINDOW,
+            target_tokens=200,
+            todo_context=None,
+        )
+
+        assert "[Current Tasks]" not in prompt
+
+
+class TestApplySummary:
+    """Test applying LLM-generated summary to build CompressedMemory."""
+
+    async def test_apply_summary_sliding_window(self, mock_llm, simple_messages):
+        """Test apply_summary with sliding window strategy."""
+        compressor = WorkingMemoryCompressor(mock_llm)
+        summary_text = "User greeted assistant. They exchanged pleasantries."
+
+        result = compressor.apply_summary(
+            simple_messages, summary_text, CompressionStrategy.SLIDING_WINDOW
+        )
+
+        assert result is not None
+        assert result.original_message_count == len(simple_messages)
+        assert result.metadata["strategy"] == CompressionStrategy.SLIDING_WINDOW
+        # Should have exactly one summary message (no system messages in simple_messages)
+        assert len(result.messages) == 1
+        assert "[Previous conversation summary]" in result.messages[0].content
+        assert summary_text in result.messages[0].content
+        assert result.compressed_tokens < result.original_tokens
+
+    async def test_apply_summary_selective(self, set_memory_config, mock_llm, tool_use_messages):
+        """Test apply_summary with selective strategy preserves messages."""
+        set_memory_config(MEMORY_SHORT_TERM_MIN_SIZE=2)
+        compressor = WorkingMemoryCompressor(mock_llm)
+        summary_text = "User asked for a calculation."
+
+        result = compressor.apply_summary(
+            tool_use_messages, summary_text, CompressionStrategy.SELECTIVE
+        )
+
+        assert result is not None
+        assert result.metadata["strategy"] == CompressionStrategy.SELECTIVE
+        assert "preserved_count" in result.metadata
+        # Should have summary + preserved messages
+        assert len(result.messages) > 1
+        # First non-system message should be the summary
+        has_summary = any(
+            "[Previous conversation summary]" in (m.content or "") for m in result.messages
+        )
+        assert has_summary
+
+    async def test_apply_summary_with_todo_context(self, mock_llm, simple_messages):
+        """Test that apply_summary injects todo context."""
+        compressor = WorkingMemoryCompressor(mock_llm)
+        summary_text = "Conversation summary here."
+        todo_context = "1. [pending] Test task"
+
+        result = compressor.apply_summary(
+            simple_messages,
+            summary_text,
+            CompressionStrategy.SLIDING_WINDOW,
+            todo_context=todo_context,
+        )
+
+        summary_content = result.messages[0].content
+        assert "[Current Tasks]" in summary_content
+        assert "Test task" in summary_content
+
+    async def test_apply_summary_preserves_system_messages(self, set_memory_config, mock_llm):
+        """Test that apply_summary preserves system messages."""
+        set_memory_config(MEMORY_PRESERVE_SYSTEM_PROMPTS=True, MEMORY_SHORT_TERM_MIN_SIZE=0)
+        compressor = WorkingMemoryCompressor(mock_llm)
+
+        messages = [
+            LLMMessage(role="system", content="System prompt"),
+            LLMMessage(role="user", content="Hello"),
+            LLMMessage(role="assistant", content="Hi"),
+        ]
+        summary_text = "Brief exchange."
+
+        result = compressor.apply_summary(
+            messages, summary_text, CompressionStrategy.SLIDING_WINDOW
+        )
+
+        assert result.messages[0].role == "system"
+        assert result.messages[0].content == "System prompt"
+
+    async def test_apply_summary_empty_messages(self, mock_llm):
+        """Test apply_summary with empty messages."""
+        compressor = WorkingMemoryCompressor(mock_llm)
+
+        result = compressor.apply_summary([], "summary", CompressionStrategy.SLIDING_WINDOW)
+
+        assert len(result.messages) == 0
+
+    async def test_apply_summary_metrics(self, mock_llm, simple_messages):
+        """Test that apply_summary calculates correct metrics."""
+        compressor = WorkingMemoryCompressor(mock_llm)
+        summary_text = "Brief."
+
+        result = compressor.apply_summary(
+            simple_messages, summary_text, CompressionStrategy.SLIDING_WINDOW
+        )
+
+        assert result.original_tokens > 0
+        assert result.compressed_tokens > 0
+        assert result.compressed_tokens < result.original_tokens
+        assert 0 < result.compression_ratio < 1.0
+        assert result.token_savings > 0

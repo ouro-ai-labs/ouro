@@ -41,6 +41,24 @@ Original messages ({count} messages, ~{tokens} tokens):
 
     Provide a concise but comprehensive summary that captures the essential information. Be specific and include concrete details. Target length: {target_tokens} tokens."""
 
+    # Prompt for cache-safe forking: messages are already in the LLM context,
+    # so we only need the summarization instruction (no message dump).
+    COMPACTION_PROMPT = (
+        "Summarize the conversation above while preserving:\n"
+        "1. Key decisions and outcomes\n"
+        "2. Important facts, data, and findings\n"
+        "3. Tool usage patterns and results\n"
+        "4. User intent and goals\n"
+        "5. Critical context needed for future interactions\n"
+        "\n"
+        "Target length: {target_tokens} tokens. Be concise but include concrete details."
+    )
+
+    COMPACTION_PROMPT_SELECTIVE_SUFFIX = (
+        "\nFocus on summarizing earlier messages. The most recent {preserved_count} messages "
+        "will be kept verbatim and don't need to be in your summary."
+    )
+
     def __init__(self, llm: "LiteLLMAdapter"):
         """Initialize compressor.
 
@@ -85,6 +103,113 @@ Original messages ({count} messages, ~{tokens} tokens):
         else:
             logger.warning(f"Unknown strategy {strategy}, using sliding window")
             return await self._compress_sliding_window(messages, target_tokens, todo_context)
+
+    def build_compaction_prompt(
+        self,
+        messages: List[LLMMessage],
+        strategy: str,
+        target_tokens: int,
+        todo_context: Optional[str] = None,
+    ) -> str:
+        """Build the compaction instruction text for cache-safe forking.
+
+        Unlike the legacy COMPRESSION_PROMPT, this does NOT include the messages
+        themselves — they are already in the LLM context. Only the instruction
+        is returned, so the LLM call reuses the cached prefix.
+
+        Args:
+            messages: Messages being compressed (used for selective strategy counting)
+            strategy: Compression strategy
+            target_tokens: Target token count for the summary
+            todo_context: Optional current todo list state
+
+        Returns:
+            Compaction instruction text
+        """
+        prompt = self.COMPACTION_PROMPT.format(target_tokens=target_tokens)
+
+        if strategy == CompressionStrategy.SELECTIVE:
+            preserved, _ = self._separate_messages(messages)
+            non_system_preserved = [m for m in preserved if m.role != "system"]
+            if non_system_preserved:
+                prompt += self.COMPACTION_PROMPT_SELECTIVE_SUFFIX.format(
+                    preserved_count=len(non_system_preserved)
+                )
+
+        if todo_context:
+            prompt += (
+                f"\n\nIMPORTANT: Include the following current task state in your summary "
+                f"under a [Current Tasks] section:\n{todo_context}"
+            )
+
+        return prompt
+
+    def apply_summary(
+        self,
+        messages: List[LLMMessage],
+        summary_text: str,
+        strategy: str,
+        todo_context: Optional[str] = None,
+    ) -> CompressedMemory:
+        """Build a CompressedMemory from an LLM-generated summary.
+
+        This is the counterpart to build_compaction_prompt(): after the LLM
+        produces a summary, this method wraps it into the correct message
+        structure with compression metrics.
+
+        Args:
+            messages: Original messages that were compressed
+            summary_text: The LLM's summary text
+            strategy: Compression strategy used
+            todo_context: Optional current todo list state to inject
+
+        Returns:
+            CompressedMemory object
+        """
+        if not messages:
+            return CompressedMemory(messages=[])
+
+        original_tokens = self._estimate_tokens(messages)
+
+        # Append todo context if available and not already in the summary
+        if todo_context and "[Current Tasks]" not in summary_text:
+            summary_text = f"{summary_text}\n\n[Current Tasks]\n{todo_context}"
+
+        # Build summary message
+        summary_message = LLMMessage(
+            role="user",
+            content=f"{self.SUMMARY_PREFIX}{summary_text}",
+        )
+
+        # Extract system messages
+        system_msgs = [m for m in messages if m.role == "system"]
+
+        if strategy == CompressionStrategy.SELECTIVE:
+            # Selective: system + summary + preserved non-system messages
+            preserved, _ = self._separate_messages(messages)
+            other_preserved = [m for m in preserved if m.role != "system"]
+            result_messages = system_msgs + [summary_message] + other_preserved
+        else:
+            # Sliding window: system + summary
+            result_messages = system_msgs + [summary_message]
+
+        # Calculate metrics
+        compressed_tokens = self._estimate_tokens(result_messages)
+        compression_ratio = compressed_tokens / original_tokens if original_tokens > 0 else 0
+
+        metadata = {"strategy": strategy}
+        if strategy == CompressionStrategy.SELECTIVE:
+            preserved, _ = self._separate_messages(messages)
+            metadata["preserved_count"] = len(preserved)
+
+        return CompressedMemory(
+            messages=result_messages,
+            original_message_count=len(messages),
+            compressed_tokens=compressed_tokens,
+            original_tokens=original_tokens,
+            compression_ratio=compression_ratio,
+            metadata=metadata,
+        )
 
     async def _compress_sliding_window(
         self,

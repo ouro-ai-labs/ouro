@@ -72,6 +72,10 @@ class MemoryManager:
         self.last_compression_savings = 0
         self.compression_count = 0
 
+        # Deferred compression: set by add_message(), consumed by _react_loop()
+        self._compression_needed = False
+        self._compression_reason: Optional[str] = None
+
         # Tool schema token overhead (counted once per session)
         self._tool_schema_tokens: int = 0
 
@@ -227,12 +231,13 @@ class MemoryManager:
             f"full={self.short_term.is_full()}"
         )
 
-        # Check if compression is needed
+        # Check if compression is needed (deferred to _react_loop for cache-safe forking)
         self.was_compressed_last_iteration = False
         should_compress, reason = self._should_compress()
         if should_compress:
-            logger.info(f"🗜️  Triggering compression: {reason}")
-            await self.compress()
+            self._compression_needed = True
+            self._compression_reason = reason
+            logger.info(f"🗜️  Compression needed: {reason} (deferred to react loop)")
         else:
             # Log compression check details
             logger.debug(
@@ -299,6 +304,101 @@ class MemoryManager:
             self._tool_schema_tokens = 0
 
         logger.info(f"Tool schema token overhead: {self._tool_schema_tokens}")
+
+    def needs_compression(self) -> bool:
+        """Check if compression is needed (called by _react_loop).
+
+        Returns:
+            True if compression should be performed on the next loop iteration
+        """
+        return self._compression_needed
+
+    def get_compaction_prompt(self) -> LLMMessage:
+        """Build the compaction instruction as a user message.
+
+        Delegates to the compressor for prompt generation. The resulting prompt
+        does NOT include the conversation messages (they are already in the LLM
+        context), so the LLM call reuses the cached prefix.
+
+        Returns:
+            LLMMessage with role="user" containing the compaction instruction
+        """
+        messages = self.short_term.get_messages()
+        strategy = self._select_strategy(messages)
+        target_tokens = self._calculate_target_tokens()
+        todo_context = self._todo_context_provider() if self._todo_context_provider else None
+
+        prompt_text = self.compressor.build_compaction_prompt(
+            messages, strategy, target_tokens, todo_context
+        )
+        return LLMMessage(role="user", content=prompt_text)
+
+    async def apply_compression(
+        self, summary_text: str, usage: Optional[Dict[str, int]] = None
+    ) -> None:
+        """Apply the LLM's summary to compress memory.
+
+        Uses the compressor to build CompressedMemory from the summary,
+        then replaces short-term memory contents. This is the counterpart
+        to get_compaction_prompt() — called after the LLM produces the summary.
+
+        Args:
+            summary_text: The LLM-generated summary text
+            usage: Optional token usage from the compression LLM call
+        """
+        messages = self.short_term.get_messages()
+        message_count = len(messages)
+        strategy = self._select_strategy(messages)
+        todo_context = self._todo_context_provider() if self._todo_context_provider else None
+
+        logger.info(
+            f"🗜️  Applying compression to {message_count} messages using {strategy} strategy"
+        )
+
+        compressed = self.compressor.apply_summary(messages, summary_text, strategy, todo_context)
+
+        # Track usage from compression LLM call
+        if usage:
+            self.token_tracker.record_usage(usage)
+
+        # Track compression results
+        self.compression_count += 1
+        self.was_compressed_last_iteration = True
+        self.last_compression_savings = compressed.token_savings
+
+        # Update token tracker
+        self.token_tracker.add_compression_savings(compressed.token_savings)
+        self.token_tracker.add_compression_cost(compressed.compressed_tokens)
+
+        # Remove compressed messages from short-term memory
+        self.short_term.remove_first(message_count)
+
+        # Get any remaining messages (added after compression started)
+        remaining_messages = self.short_term.get_messages()
+        self.short_term.clear()
+
+        # Add compressed messages (summary + preserved)
+        for msg in compressed.messages:
+            self.short_term.add_message(msg)
+
+        # Add any remaining messages
+        for msg in remaining_messages:
+            self.short_term.add_message(msg)
+
+        # Update current token count
+        old_tokens = self.current_tokens
+        self.current_tokens = self._recalculate_current_tokens()
+
+        # Clear the deferred flag
+        self._compression_needed = False
+        self._compression_reason = None
+
+        logger.info(
+            f"✅ Compression complete: {compressed.original_tokens} → {compressed.compressed_tokens} tokens "
+            f"({compressed.savings_percentage:.1f}% saved, ratio: {compressed.compression_ratio:.2f}), "
+            f"context: {old_tokens} → {self.current_tokens} tokens, "
+            f"short_term now has {self.short_term.count()} messages"
+        )
 
     async def compress(self, strategy: str = None) -> Optional[CompressedMemory]:
         """Compress current short-term memory.
@@ -367,6 +467,10 @@ class MemoryManager:
             # Update current token count
             old_tokens = self.current_tokens
             self.current_tokens = self._recalculate_current_tokens()
+
+            # Clear the deferred compression flag
+            self._compression_needed = False
+            self._compression_reason = None
 
             # Log compression results
             logger.info(
@@ -551,6 +655,8 @@ class MemoryManager:
         self.was_compressed_last_iteration = False
         self.last_compression_savings = 0
         self.compression_count = 0
+        self._compression_needed = False
+        self._compression_reason = None
 
     def rollback_incomplete_exchange(self) -> None:
         """Rollback the last incomplete assistant response with tool_calls.

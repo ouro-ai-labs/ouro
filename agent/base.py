@@ -175,6 +175,29 @@ class BaseAgent(ABC):
         while True:
             iteration += 1
 
+            # === Compaction turn (cache-safe fork) ===
+            # When memory needs compression, do the LLM summarization call here
+            # (not in the compressor) so it shares the same prefix as normal turns
+            # and gets cache hits on the system prompt + tools + conversation.
+            if use_memory and save_to_memory and self.memory.needs_compression():
+                context = self.memory.get_context_for_llm()
+                compaction_prompt = self.memory.get_compaction_prompt()
+                context.append(compaction_prompt)
+
+                response = await self._call_llm(
+                    messages=context,
+                    tools=tools,  # same tools = cache prefix match
+                    spinner_message="Compressing memory...",
+                )
+                summary = self._extract_text(response)
+                await self.memory.apply_compression(summary, usage=response.usage)
+
+                logger.debug(
+                    f"Memory compressed (cache-safe): "
+                    f"saved {self.memory.last_compression_savings} tokens"
+                )
+                continue  # re-enter loop with compressed context
+
             # Get context (either from memory or local messages)
             context = self.memory.get_context_for_llm() if use_memory else messages
 
