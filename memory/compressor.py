@@ -148,23 +148,23 @@ Original messages ({count} messages, ~{tokens} tokens):
         self,
         messages: List[LLMMessage],
         summary_text: str,
-        strategy: str,
         todo_context: Optional[str] = None,
     ) -> CompressedMemory:
-        """Build a CompressedMemory from an LLM-generated summary.
+        """Build a summary message from an LLM-generated summary.
 
         This is the counterpart to build_compaction_prompt(): after the LLM
-        produces a summary, this method wraps it into the correct message
-        structure with compression metrics.
+        produces a summary, this method wraps it into a summary message.
+        Strategy-specific message list assembly (e.g. preserving recent
+        messages for selective strategy) is handled by the caller
+        (MemoryManager.apply_compression).
 
         Args:
-            messages: Original messages that were compressed
+            messages: Original messages that were compressed (for token counting)
             summary_text: The LLM's summary text
-            strategy: Compression strategy used
             todo_context: Optional current todo list state to inject
 
         Returns:
-            CompressedMemory object
+            CompressedMemory with a single summary message and original token count
         """
         if not messages:
             return CompressedMemory(messages=[])
@@ -181,34 +181,14 @@ Original messages ({count} messages, ~{tokens} tokens):
             content=f"{self.SUMMARY_PREFIX}{summary_text}",
         )
 
-        # Extract system messages
-        system_msgs = [m for m in messages if m.role == "system"]
-
-        if strategy == CompressionStrategy.SELECTIVE:
-            # Selective: system + summary + preserved non-system messages
-            preserved, _ = self._separate_messages(messages)
-            other_preserved = [m for m in preserved if m.role != "system"]
-            result_messages = system_msgs + [summary_message] + other_preserved
-        else:
-            # Sliding window: system + summary
-            result_messages = system_msgs + [summary_message]
-
-        # Calculate metrics
-        compressed_tokens = self._estimate_tokens(result_messages)
-        compression_ratio = compressed_tokens / original_tokens if original_tokens > 0 else 0
-
-        metadata = {"strategy": strategy}
-        if strategy == CompressionStrategy.SELECTIVE:
-            preserved, _ = self._separate_messages(messages)
-            metadata["preserved_count"] = len(preserved)
+        compressed_tokens = self._estimate_tokens([summary_message])
 
         return CompressedMemory(
-            messages=result_messages,
+            messages=[summary_message],
             original_message_count=len(messages),
             compressed_tokens=compressed_tokens,
             original_tokens=original_tokens,
-            compression_ratio=compression_ratio,
-            metadata=metadata,
+            compression_ratio=compressed_tokens / original_tokens if original_tokens > 0 else 0,
         )
 
     async def _compress_sliding_window(

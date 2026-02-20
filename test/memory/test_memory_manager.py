@@ -763,3 +763,36 @@ class TestDeferredCompression:
         assert summary_msg is not None
         assert "[Current Tasks]" in summary_msg.content
         assert "Important task" in summary_msg.content
+
+    async def test_apply_compression_selective_preserves_messages(
+        self, set_memory_config, mock_llm, tool_use_messages
+    ):
+        """Test apply_compression() with selective strategy preserves recent messages."""
+        set_memory_config(
+            MEMORY_SHORT_TERM_SIZE=20,
+            MEMORY_SHORT_TERM_MIN_SIZE=2,
+            MEMORY_COMPRESSION_THRESHOLD=200000,
+        )
+        manager = MemoryManager(mock_llm)
+
+        for msg in tool_use_messages:
+            await manager.add_message(msg)
+
+        original_count = manager.short_term.count()
+        assert original_count == len(tool_use_messages)
+
+        await manager.apply_compression("User asked for a calculation.")
+
+        # Should have compressed
+        assert manager.compression_count == 1
+        assert not manager.needs_compression()
+
+        # Context should have summary + preserved messages
+        context = manager.get_context_for_llm()
+        has_summary = any(
+            isinstance(m.content, str) and "[Previous conversation summary]" in m.content
+            for m in context
+        )
+        assert has_summary
+        # With selective strategy and tool messages, should preserve more than just the summary
+        assert len(context) > 1
