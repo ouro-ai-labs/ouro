@@ -7,7 +7,13 @@ import json
 import pytest
 
 from agent.tasks import TaskStore
-from tools.task_tools import TaskCreateTool, TaskGetTool, TaskListTool, TaskUpdateTool
+from tools.task_tools import (
+    TaskCreateTool,
+    TaskDumpMdTool,
+    TaskGetTool,
+    TaskListTool,
+    TaskUpdateTool,
+)
 
 
 @pytest.mark.asyncio
@@ -82,3 +88,34 @@ async def test_task_update_add_and_remove_blocked_by_edits_dependencies():
     await update.execute(id=b_id, removeBlockedBy=[a_id])
     got_b2 = json.loads(await tget.execute(id=b_id))
     assert got_b2["task"]["blockedBy"] == []
+
+
+@pytest.mark.asyncio
+async def test_task_dump_md_writes_tasks_md_and_optional_debug(tmp_path):
+    store = TaskStore()
+    create = TaskCreateTool(store)
+    update = TaskUpdateTool(store)
+    dump = TaskDumpMdTool(store)
+
+    created_a = json.loads(await create.execute(content="Do A", activeForm="Doing A"))
+    a_id = created_a["task"]["id"]
+    created_b = json.loads(
+        await create.execute(content="Do B", activeForm="Doing B", blockedBy=[a_id])
+    )
+    b_id = created_b["task"]["id"]
+
+    await update.execute(id=a_id, status="completed")
+
+    tasks_path = tmp_path / "tasks.md"
+    result = json.loads(await dump.execute(path=str(tasks_path), includeDebug=True))
+    assert result["ok"] is True
+    assert result["taskCount"] == 2
+
+    tasks_text = tasks_path.read_text(encoding="utf-8")
+    assert f"- [x] {a_id}: Do A" in tasks_text
+    assert f"- [ ] {b_id}: Do B" in tasks_text
+    assert "blockedBy:" in tasks_text
+
+    debug_path = tmp_path / "tasks.debug.md"
+    debug_text = debug_path.read_text(encoding="utf-8")
+    assert "# tasks.md (debug)" in debug_text

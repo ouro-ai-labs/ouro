@@ -6,8 +6,13 @@ These tools manage an in-memory task graph (session-scoped). Persistence to
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 from typing import Any
+
+import aiofiles
+import aiofiles.os
 
 from agent.tasks import TaskStore, _normalize_task_id
 from tools.base import BaseTool
@@ -21,6 +26,83 @@ def _normalize_id_list(values: list[str | int | float] | None) -> list[str]:
     if not values:
         return []
     return [_normalize_task_id(v) for v in values]
+
+
+class TaskDumpMdTool(BaseTool):
+    """Persist a human-readable tasks.md snapshot to disk."""
+
+    def __init__(self, store: TaskStore):
+        self._store = store
+        self._dump_lock = asyncio.Lock()
+
+    @property
+    def name(self) -> str:
+        return "TaskDumpMd"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Render the current task graph as a human-readable tasks.md and write it to disk. "
+            "Uses an atomic replace to avoid partial writes."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "path": {
+                "type": "string",
+                "description": "File path to write (default: tasks.md)",
+                "default": "tasks.md",
+            },
+            "includeDebug": {
+                "type": "boolean",
+                "description": "Also write tasks.debug.md alongside the main file (default: false)",
+                "default": False,
+            },
+        }
+
+    async def execute(self, path: str = "tasks.md", includeDebug: bool = False, **kwargs) -> str:
+        if not path or not str(path).strip():
+            return _json({"ok": False, "error": "path must be a non-empty string"})
+
+        target_path = os.path.abspath(path)
+        target_dir = os.path.dirname(target_path) or "."
+        base_name = os.path.basename(target_path)
+        tmp_path = os.path.join(target_dir, f".{base_name}.tmp")
+
+        debug_path = None
+        debug_tmp_path = None
+        if includeDebug:
+            root, ext = os.path.splitext(base_name)
+            debug_base = f"{root}.debug{ext}" if ext else f"{root}.debug"
+            debug_path = os.path.join(target_dir, debug_base)
+            debug_tmp_path = os.path.join(target_dir, f".{debug_base}.tmp")
+
+        async with self._dump_lock:
+            tasks_md = await self._store.render_tasks_md()
+            tasks = await self._store.list_tasks()
+            task_count = len(tasks)
+
+            await aiofiles.os.makedirs(target_dir, exist_ok=True)
+            async with aiofiles.open(tmp_path, "w", encoding="utf-8") as f:
+                await f.write(tasks_md)
+            os.replace(tmp_path, target_path)
+
+            if includeDebug and debug_path and debug_tmp_path:
+                debug_md = await self._store.render_debug_tasks_md()
+                async with aiofiles.open(debug_tmp_path, "w", encoding="utf-8") as f:
+                    await f.write(debug_md)
+                os.replace(debug_tmp_path, debug_path)
+
+        return _json(
+            {
+                "ok": True,
+                "path": target_path,
+                "taskCount": task_count,
+                "bytesWritten": len(tasks_md.encode("utf-8")),
+                "debugPath": debug_path,
+            }
+        )
 
 
 class TaskCreateTool(BaseTool):

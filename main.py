@@ -28,7 +28,13 @@ from tools.file_ops import FileReadTool, FileWriteTool
 from tools.multi_task import MultiTaskTool
 from tools.shell import ShellTool
 from tools.smart_edit import SmartEditTool
-from tools.task_tools import TaskCreateTool, TaskGetTool, TaskListTool, TaskUpdateTool
+from tools.task_tools import (
+    TaskCreateTool,
+    TaskDumpMdTool,
+    TaskGetTool,
+    TaskListTool,
+    TaskUpdateTool,
+)
 from tools.web_fetch import WebFetchTool
 from tools.web_search import WebSearchTool
 from utils import setup_logger, terminal_ui
@@ -68,6 +74,7 @@ def create_agent(
         TaskUpdateTool(task_store),
         TaskListTool(task_store),
         TaskGetTool(task_store),
+        TaskDumpMdTool(task_store),
     ]
 
     # Initialize model manager
