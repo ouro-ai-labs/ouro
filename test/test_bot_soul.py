@@ -66,5 +66,5 @@ def test_load_soul_creates_default_if_missing(tmp_path, monkeypatch):
 
     result = load_soul()
     assert result is not None
-    assert "Identity" in result
+    assert "Core Truths" in result
     assert soul_path.exists()
