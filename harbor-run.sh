@@ -18,7 +18,7 @@ MODEL="anthropic/kimi-k2-5-latest"
 DATASET="terminal-bench-sample@2.0"
 
 # ouro version to install in container (empty = latest from PyPI)
-AGENT_VERSION="0.2.3"
+AGENT_VERSION="0.2.4"
 
 # ouro git branch to install from (overrides AGENT_VERSION if set)
 AGENT_BRANCH=""

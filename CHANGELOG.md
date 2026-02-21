@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-02-21
+
+### Added
+
+- Cache-safe forking for memory compaction — compaction reuses the main conversation's prefix for prompt cache hits, reducing compaction cost by ~90% (#117)
+- Run-scoped `reasoning_effort` control via CLI (`--reasoning-effort`) and interactive `/reasoning` menu (#105)
+- LLM cache token tracking & display with cache read/write breakdown in statistics panel (#106)
+- Parallel execution for same-turn readonly tool calls via `asyncio.TaskGroup` (#103)
+- `--verify` CLI flag to explicitly enable Ralph Loop self-verification in `--task` mode (#98)
+- ChatGPT OAuth PKCE login with browser-based auth flow and manual paste fallback (#111)
+- OAuth provider picker login/logout for ChatGPT/Codex with catalog-sync model list (#92)
+- Token counting accuracy improvement with `litellm.token_counter`, fixing 40–57% underestimation for CJK text (#108)
+- Support installing ouro from git branch in Harbor (`AGENT_BRANCH` config) (#95)
+
+### Changed
+
+- Simplify tool design: 12 → 10 tools — merged `explore_context` + `parallel_execute` into `multi_task` with DAG-based dependency scheduling, removed background shell mechanism (#100)
+- Improve `multi_task` dependency semantics: structured sub-agent results (`SUMMARY` / `KEY_FINDINGS` / `ERRORS`), strict dependency satisfaction (#113)
+- Improve slash autocomplete engine with fuzzy ranking, boundary bonus, and gap penalty (#97)
+- `--task` mode no longer runs Ralph Loop by default (use `--verify` to enable) (#98)
+
+### Fixed
+
+- TUI: single-line spinner to eliminate ghost `╭─ Thinking ─╮` artifacts left by Rich's multi-line `Live(transient=True)` (#118)
+- TUI: correct spinner titles and messages across agent lifecycle (was hardcoded to "Thinking") (#116)
+- Pin ouro version in `harbor-run.sh` to prevent container version drift (#94)
+
 ## [0.2.3] - 2026-02-14
 
 ### Added
