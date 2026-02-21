@@ -14,12 +14,7 @@ List installed skills:
 ls -la ~/.ouro/skills/
 ```
 
-Install from GitHub (ouro has built-in support):
-```
-$install <git-url>
-```
-
-Or use the helper script:
+Install from GitHub via the `/skills` menu or `/skills call skill-installer`:
 ```bash
 python scripts/install_skill.py --url https://github.com/owner/repo
 python scripts/install_skill.py --url https://github.com/owner/repo#path/to/skill
@@ -77,7 +72,7 @@ python scripts/list_skills.py --repo owner/repo --path skills
 - Skills are installed to `~/.ouro/skills/<skill-name>`
 - Installation fails if the destination already exists (no overwrite)
 - Git clone uses `--depth 1` for efficiency
-- After installation, restart ouro to pick up new skills
+- After installation, skills are available immediately (no restart needed)
 
 ## Notes
 

@@ -28,7 +28,8 @@ def test_render_skills_section_single() -> None:
     assert "- code-review: Review code for style and correctness." in result
     assert "/home/user/.ouro/skills/code-review/SKILL.md" in result
     assert "### How to use skills" in result
-    assert "Trigger rules:" in result
+    assert "Trigger:" in result
+    assert "$SkillName" not in result
 
 
 def test_render_skills_section_multiple_sorted() -> None:

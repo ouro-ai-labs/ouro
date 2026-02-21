@@ -18,21 +18,12 @@ import json
 import os
 import sys
 import urllib.request
-from pathlib import Path
+
+from _common import parse_skill_metadata, skills_dir
 
 
 class ListError(Exception):
     """List error."""
-
-
-def ouro_home() -> Path:
-    """Get ouro home directory."""
-    return Path(os.environ.get("OURO_HOME", Path.home() / ".ouro"))
-
-
-def skills_dir() -> Path:
-    """Get skills installation directory."""
-    return ouro_home() / "skills"
 
 
 def list_installed_skills() -> list[dict[str, str]]:
@@ -43,27 +34,17 @@ def list_installed_skills() -> list[dict[str, str]]:
 
     results = []
     for entry in sorted(root.iterdir()):
-        if not entry.is_dir():
-            continue
-        if entry.name.startswith("."):
+        if not entry.is_dir() or entry.name.startswith("."):
             continue
 
         skill_md = entry / "SKILL.md"
         if not skill_md.exists():
             continue
 
-        content = skill_md.read_text()
-        name = entry.name
-        description = ""
-
-        if content.startswith("---"):
-            parts = content.split("---", 2)
-            if len(parts) >= 3:
-                for line in parts[1].strip().split("\n"):
-                    if line.startswith("name:"):
-                        name = line.split(":", 1)[1].strip().strip("\"'")
-                    elif line.startswith("description:"):
-                        description = line.split(":", 1)[1].strip().strip("\"'")
+        try:
+            name, description = parse_skill_metadata(entry)
+        except ValueError:
+            name, description = entry.name, ""
 
         results.append(
             {

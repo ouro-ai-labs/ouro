@@ -347,9 +347,6 @@ def main():
             # Inject skills section into agent's system prompt
             skills_section = render_skills_section(list(skills_registry.skills.values()))
             agent.set_skills_section(skills_section)
-            # Resolve explicit skill/command invocations
-            resolved = await skills_registry.resolve_user_input(task)
-            task = resolved.rendered
         except Exception as e:
             terminal_ui.print_warning(f"Failed to load skills registry: {e}")
 
