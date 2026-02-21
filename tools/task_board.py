@@ -611,7 +611,8 @@ def _resolve_store_path(
       `~/.ouro/tasks/<task_list_id>/`.
     """
     store_norm = (store or _DEFAULT_STORE).strip().lower() or _DEFAULT_STORE
-    tid = (task_list_id or "").strip() or None
+    env_tid = os.getenv("OURO_TASK_LIST_ID", "").strip()
+    tid = (task_list_id or env_tid or "").strip() or None
 
     if tid:
         root = Path.home() / ".ouro" / "tasks" / tid

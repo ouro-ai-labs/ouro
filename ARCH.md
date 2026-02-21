@@ -87,6 +87,7 @@ Claude Code Tasks appears to back a "task list" with a directory containing one 
 To apply the same implementation property to Ouro, `task_board` supports an optional "dir" store:
 
 - Use `task_list_id=<id>` to store in `~/.ouro/tasks/<id>/` (cross-session / multi-process friendly).
+- Or set `OURO_TASK_LIST_ID=<id>` in the environment to make it the default.
 - Use `store="dir"` + `path=<dir>` to store in an arbitrary directory (useful for tests).
 
 Directory layout:
