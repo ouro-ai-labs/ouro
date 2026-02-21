@@ -495,33 +495,6 @@ class InteractiveSession:
                 return
             args = await self.input_handler.prompt_async("Arguments (optional): ")
             await self._call_skill(name.strip(), args.strip())
-            return
-
-        if action == SkillsAction.INSTALL:
-            source = await self.input_handler.prompt_async("Install path or URL: ")
-            if not source:
-                terminal_ui.print_warning("Install cancelled")
-                return
-            result = await self.skills_registry.install_skill(source)
-            if result:
-                terminal_ui.print_success(f"Installed skill: {result.name}")
-                self._notify_skill_change(
-                    f"Skill '{result.name}' installed: {result.description}. "
-                    "It is now available for use."
-                )
-            return
-
-        if action == SkillsAction.UNINSTALL:
-            name = await self.input_handler.prompt_async("Uninstall skill name: ")
-            if not name:
-                terminal_ui.print_warning("Uninstall cancelled")
-                return
-            ok = await self.skills_registry.uninstall_skill(name)
-            if ok:
-                terminal_ui.print_success(f"Removed skill: {name}")
-                self._notify_skill_change(
-                    f"Skill '{name}' has been uninstalled and is no longer available."
-                )
 
     async def _call_skill(self, name: str, args: str) -> None:
         """Invoke a skill explicitly and run the agent with the rendered prompt."""
@@ -566,12 +539,6 @@ class InteractiveSession:
             terminal_ui.print_error(str(e))
             if Config.TUI_STATUS_BAR:
                 self.status_bar.update(is_processing=False)
-
-    def _notify_skill_change(self, message: str) -> None:
-        """Notify the LLM about a skill change via a system message."""
-        from llm.message_types import LLMMessage
-
-        self.agent.memory.short_term.add_message(LLMMessage(role="system", content=message))
 
     def _show_skills_list(self) -> None:
         colors = Theme.get_colors()

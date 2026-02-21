@@ -16,15 +16,11 @@ from utils.tui.theme import Theme
 class SkillsAction:
     LIST = "list"
     CALL = "call"
-    INSTALL = "install"
-    UNINSTALL = "uninstall"
 
 
 _ACTIONS: list[tuple[str, str]] = [
     (SkillsAction.LIST, "List skills"),
     (SkillsAction.CALL, "Call a skill"),
-    (SkillsAction.INSTALL, "Install skill"),
-    (SkillsAction.UNINSTALL, "Uninstall skill"),
 ]
 
 
@@ -68,10 +64,6 @@ async def pick_skills_action(title: str = "Skills") -> str | None:
                 hint = "  Show all installed skills."
             elif idx == 2:
                 hint = "  Run a skill by name. Tip: /skills call <name>"
-            elif idx == 3:
-                hint = "  Install from local path or git URL."
-            elif idx == 4:
-                hint = "  Remove an installed skill."
 
             text = f"{prefix}{idx}. {label}{hint}\n"
             style = "class:selected" if is_selected else "class:item"
