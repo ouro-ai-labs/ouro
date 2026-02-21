@@ -216,6 +216,12 @@ def main():
         default="default",
         help="Run-scoped reasoning level (LiteLLM/OpenAI-style). Use 'default' to omit the parameter, or 'off' as an alias for 'none'.",
     )
+    parser.add_argument(
+        "--bot",
+        action="store_true",
+        default=False,
+        help="Start as a bot server, receiving messages via IM channels (Feishu, Slack, etc.)",
+    )
 
     args = parser.parse_args()
 
@@ -225,6 +231,21 @@ def main():
     # Initialize logging only in verbose mode
     if args.verbose:
         setup_logger()
+
+    # Bot mode: start webhook server (before login/logout/task checks)
+    if args.bot:
+        terminal_ui.console = Console(quiet=True)
+
+        try:
+            Config.validate()
+        except ValueError as e:
+            terminal_ui.print_error(str(e), title="Configuration Error")
+            return
+
+        from bot.server import run_bot
+
+        asyncio.run(run_bot(model_id=args.model))
+        return
 
     if args.login and args.logout:
         terminal_ui.print_error("Use only one of --login or --logout.", title="Invalid Arguments")

@@ -63,6 +63,9 @@ dev = [
     "types-PyYAML>=6.0",
 ]
 
+bot-feishu = ["aiohttp>=3.9.0", "lark-oapi>=1.4.0"]
+bot-slack = ["aiohttp>=3.9.0", "slack-sdk>=3.27.0"]
+bot-all = ["aiohttp>=3.9.0", "lark-oapi>=1.4.0", "slack-sdk>=3.27.0"]
 harbor = ["harbor>=0.1.0"]
 
 [project.urls]
@@ -76,7 +79,7 @@ ouro = "cli:main"
 
 [tool.setuptools]
 # Use current flat structure
-packages = ["agent", "agent.prompts", "agent.skills", "llm", "memory", "memory.long_term", "memory.store", "ouro_harbor", "tools", "utils", "utils.tui"]
+packages = ["agent", "agent.prompts", "agent.skills", "bot", "bot.channel", "llm", "memory", "memory.long_term", "memory.store", "ouro_harbor", "tools", "utils", "utils.tui"]
 py-modules = ["main", "interactive", "config", "cli"]
 
 [tool.setuptools.package-data]

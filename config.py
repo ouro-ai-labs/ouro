@@ -118,6 +118,20 @@ class Config:
     RESEND_API_KEY = _cfg.get("RESEND_API_KEY") or ""
     NOTIFY_EMAIL_FROM = _cfg.get("NOTIFY_EMAIL_FROM") or ""
 
+    # Bot Mode
+    BOT_HOST = _cfg.get("BOT_HOST", "0.0.0.0")
+    BOT_PORT = int(_cfg.get("BOT_PORT", "8080"))
+
+    # Feishu/Lark Channel (env vars take precedence over config file)
+    FEISHU_APP_ID = os.environ.get("OURO_FEISHU_APP_ID") or _cfg.get("FEISHU_APP_ID", "")
+    FEISHU_APP_SECRET = os.environ.get("OURO_FEISHU_APP_SECRET") or _cfg.get(
+        "FEISHU_APP_SECRET", ""
+    )
+
+    # Slack Channel (env vars take precedence over config file)
+    SLACK_BOT_TOKEN = os.environ.get("OURO_SLACK_BOT_TOKEN") or _cfg.get("SLACK_BOT_TOKEN", "")
+    SLACK_APP_TOKEN = os.environ.get("OURO_SLACK_APP_TOKEN") or _cfg.get("SLACK_APP_TOKEN", "")
+
     @classmethod
     def get_retry_delay(cls, attempt: int) -> float:
         """Calculate delay for a given retry attempt using exponential backoff.
