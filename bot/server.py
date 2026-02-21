@@ -90,7 +90,7 @@ class BotServer:
             return True
 
         if cmd == "/compact":
-            agent = self._router.get_or_create_agent(msg.channel, msg.conversation_id)
+            agent = await self._router.get_or_create_agent(msg.channel, msg.conversation_id)
             try:
                 result = await agent.memory.compress()
             except Exception:
@@ -172,7 +172,7 @@ class BotServer:
             if await self._handle_command(channel, msg):
                 return
 
-            agent = self._router.get_or_create_agent(msg.channel, msg.conversation_id)
+            agent = await self._router.get_or_create_agent(msg.channel, msg.conversation_id)
             lock = self._router.get_lock(msg.channel, msg.conversation_id)
 
             async with lock:
@@ -332,21 +332,26 @@ async def run_bot(model_id: str | None = None) -> None:
     # Load bot personality (once, shared across all sessions)
     soul_content = load_soul()
 
-    # Bootstrap bundled skills and render skills section (once, shared across sessions)
-    skills_section: str | None = None
-    skills_registry = SkillsRegistry()
+    # Bootstrap bundled skills (copies defaults to ~/.ouro/skills/ if needed)
     try:
-        await skills_registry.load()
-        skills_section = render_skills_section(list(skills_registry.skills.values()))
+        bootstrap_registry = SkillsRegistry()
+        await bootstrap_registry.load()
     except Exception as e:
-        logger.warning("Failed to load skills registry: %s", e)
+        logger.warning("Failed to bootstrap skills registry: %s", e)
 
-    def agent_factory() -> LoopAgent:
+    async def agent_factory() -> LoopAgent:
         agent = create_agent(model_id=model_id)
         if soul_content:
             agent.set_soul_section(soul_content)
-        if skills_section:
-            agent.set_skills_section(skills_section)
+        # Reload skills from disk each time so new sessions see newly installed skills
+        try:
+            registry = SkillsRegistry()
+            await registry.load()
+            section = render_skills_section(list(registry.skills.values()))
+            if section:
+                agent.set_skills_section(section)
+        except Exception as e:
+            logger.warning("Failed to load skills for new session: %s", e)
         return agent
 
     router = SessionRouter(agent_factory=agent_factory)

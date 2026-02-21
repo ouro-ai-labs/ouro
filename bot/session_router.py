@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 from agent.agent import LoopAgent
 
@@ -25,12 +25,12 @@ class SessionRouter:
 
     def __init__(
         self,
-        agent_factory: Callable[[], LoopAgent],
+        agent_factory: Callable[[], LoopAgent] | Callable[[], Awaitable[LoopAgent]],
         idle_timeout: float = _DEFAULT_IDLE_TIMEOUT,
     ) -> None:
         """
         Args:
-            agent_factory: Callable that returns a new LoopAgent instance.
+            agent_factory: Callable that returns a (possibly awaitable) LoopAgent.
             idle_timeout: Seconds of inactivity before a session is cleaned up.
         """
         self._agent_factory = agent_factory
@@ -42,7 +42,7 @@ class SessionRouter:
     def _session_key(self, channel: str, conversation_id: str) -> str:
         return f"{channel}:{conversation_id}"
 
-    def get_or_create_agent(self, channel: str, conversation_id: str) -> LoopAgent:
+    async def get_or_create_agent(self, channel: str, conversation_id: str) -> LoopAgent:
         """Get an existing agent or create a new one for the conversation.
 
         Args:
@@ -55,7 +55,10 @@ class SessionRouter:
         key = self._session_key(channel, conversation_id)
         if key not in self._sessions:
             logger.info("Creating new session for %s", key)
-            self._sessions[key] = self._agent_factory()
+            result = self._agent_factory()
+            if asyncio.isfuture(result) or asyncio.iscoroutine(result):
+                result = await result
+            self._sessions[key] = result
             self._locks[key] = asyncio.Lock()
         self._last_active[key] = time.time()
         return self._sessions[key]
