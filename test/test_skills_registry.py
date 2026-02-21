@@ -61,7 +61,7 @@ async def test_user_skill_overrides_system_skill(tmp_path, monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_call_skill(tmp_path, monkeypatch) -> None:
-    """Test call_skill renders prompt for known skill, returns None for unknown."""
+    """Test call_skill returns lightweight prompt for known skill, None for unknown."""
     monkeypatch.setenv("HOME", str(tmp_path))
     skills_root = tmp_path / ".ouro" / "skills" / "lint"
     skills_root.mkdir(parents=True)
@@ -81,20 +81,22 @@ async def test_call_skill(tmp_path, monkeypatch) -> None:
     registry = SkillsRegistry()
     await registry.load()
 
-    # Known skill
-    rendered = await registry.call_skill("lint", "src/")
+    # Known skill with args
+    rendered = registry.call_skill("lint", "src/")
     assert rendered is not None
-    assert "SKILL: lint" in rendered
-    assert "Run lint and report issues." in rendered
-    assert "ARGUMENTS: src/" in rendered
+    assert "lint" in rendered
+    assert "src/" in rendered
+    # Should NOT contain the full body (progressive disclosure)
+    assert "Run lint and report issues." not in rendered
 
     # Without args
-    rendered_no_args = await registry.call_skill("lint")
+    rendered_no_args = registry.call_skill("lint")
     assert rendered_no_args is not None
-    assert "ARGUMENTS" not in rendered_no_args
+    assert "lint" in rendered_no_args
+    assert "Arguments" not in rendered_no_args
 
     # Unknown skill
-    result = await registry.call_skill("nonexistent")
+    result = registry.call_skill("nonexistent")
     assert result is None
 
 

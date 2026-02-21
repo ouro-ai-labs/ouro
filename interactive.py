@@ -525,7 +525,7 @@ class InteractiveSession:
 
     async def _call_skill(self, name: str, args: str) -> None:
         """Invoke a skill explicitly and run the agent with the rendered prompt."""
-        rendered = await self.skills_registry.call_skill(name, args)
+        rendered = self.skills_registry.call_skill(name, args)
         if rendered is None:
             terminal_ui.print_error(f"Skill '{name}' not found")
             return

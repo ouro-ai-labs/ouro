@@ -19,7 +19,6 @@ from .installer import (
 from .parser import (
     list_skill_files,
     read_text,
-    render_skill_prompt,
     split_frontmatter,
 )
 from .types import SkillInfo
@@ -70,26 +69,26 @@ class SkillsRegistry:
             )
         return results
 
-    async def load_skill_body(self, skill: SkillInfo) -> str:
-        content = await read_text(skill.path / "SKILL.md")
-        _, body = split_frontmatter(content)
-        return body.strip()
+    def call_skill(self, name: str, args: str = "") -> str | None:
+        """Build a lightweight prompt for explicit skill invocation.
 
-    async def call_skill(self, name: str, args: str = "") -> str | None:
-        """Render a skill prompt for explicit invocation.
+        Does NOT read the skill body — the LLM will open the SKILL.md
+        itself via progressive disclosure (read_file tool).
 
         Args:
             name: Skill name to invoke.
             args: Optional arguments string.
 
         Returns:
-            Rendered prompt string, or None if skill not found.
+            Short prompt string, or None if skill not found.
         """
         skill = self.skills.get(name)
         if not skill:
             return None
-        body = await self.load_skill_body(skill)
-        return render_skill_prompt(skill.name, body, args)
+        prompt = f"Use skill '{skill.name}'."
+        if args:
+            prompt += f" Arguments: {args}"
+        return prompt
 
     async def install_skill(self, source: str) -> SkillInfo | None:
         source = source.strip()
