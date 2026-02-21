@@ -118,6 +118,18 @@ class Config:
     RESEND_API_KEY = _cfg.get("RESEND_API_KEY") or ""
     NOTIFY_EMAIL_FROM = _cfg.get("NOTIFY_EMAIL_FROM") or ""
 
+    # Bot Mode
+    BOT_HOST = _cfg.get("BOT_HOST", "0.0.0.0")
+    BOT_PORT = int(_cfg.get("BOT_PORT", "8080"))
+
+    # Lark Channel
+    LARK_APP_ID = _cfg.get("LARK_APP_ID", "")
+    LARK_APP_SECRET = _cfg.get("LARK_APP_SECRET", "")
+
+    # Slack Channel
+    SLACK_BOT_TOKEN = _cfg.get("SLACK_BOT_TOKEN", "")
+    SLACK_APP_TOKEN = _cfg.get("SLACK_APP_TOKEN", "")
+
     @classmethod
     def get_retry_delay(cls, attempt: int) -> float:
         """Calculate delay for a given retry attempt using exponential backoff.
