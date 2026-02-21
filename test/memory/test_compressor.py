@@ -544,3 +544,63 @@ class TestCompressionErrors:
 
         # Should fallback to sliding window
         assert result is not None
+
+
+class TestBuildCompactionPrompt:
+    """Test cache-safe compaction prompt generation."""
+
+    async def test_sliding_window_prompt(self, mock_llm, simple_messages):
+        """Test compaction prompt for sliding window strategy."""
+        compressor = WorkingMemoryCompressor(mock_llm)
+
+        prompt = compressor.build_compaction_prompt(
+            simple_messages, CompressionStrategy.SLIDING_WINDOW, target_tokens=200
+        )
+
+        assert "Summarize the conversation above" in prompt
+        assert "200 tokens" in prompt
+        # Should NOT contain the messages themselves (they're in the LLM context)
+        assert "Hello" not in prompt
+        assert "Hi there" not in prompt
+
+    async def test_selective_prompt_includes_preserved_count(
+        self, set_memory_config, mock_llm, tool_use_messages
+    ):
+        """Test compaction prompt for selective strategy includes preserved message count."""
+        set_memory_config(MEMORY_SHORT_TERM_MIN_SIZE=2)
+        compressor = WorkingMemoryCompressor(mock_llm)
+
+        prompt = compressor.build_compaction_prompt(
+            tool_use_messages, CompressionStrategy.SELECTIVE, target_tokens=200
+        )
+
+        assert "Summarize the conversation above" in prompt
+        assert "kept verbatim" in prompt
+
+    async def test_prompt_with_todo_context(self, mock_llm, simple_messages):
+        """Test compaction prompt includes todo context instruction."""
+        compressor = WorkingMemoryCompressor(mock_llm)
+        todo_context = "1. [pending] Fix bug\n2. [completed] Write docs"
+
+        prompt = compressor.build_compaction_prompt(
+            simple_messages,
+            CompressionStrategy.SLIDING_WINDOW,
+            target_tokens=200,
+            todo_context=todo_context,
+        )
+
+        assert "[Current Tasks]" in prompt
+        assert "Fix bug" in prompt
+
+    async def test_prompt_without_todo_context(self, mock_llm, simple_messages):
+        """Test compaction prompt without todo context."""
+        compressor = WorkingMemoryCompressor(mock_llm)
+
+        prompt = compressor.build_compaction_prompt(
+            simple_messages,
+            CompressionStrategy.SLIDING_WINDOW,
+            target_tokens=200,
+            todo_context=None,
+        )
+
+        assert "[Current Tasks]" not in prompt

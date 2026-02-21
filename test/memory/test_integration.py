@@ -54,9 +54,13 @@ class TestToolCallResultIntegration:
                 ]
             )
 
-        # Add messages and trigger compression
+        # Add messages (compression is deferred with cache-safe forking)
         for msg in messages:
             await manager.add_message(msg)
+
+        # Drain deferred compressions
+        while manager.needs_compression():
+            await manager.compress()
 
         # Verify no mismatches in context
         context = manager.get_context_for_llm()
@@ -247,12 +251,16 @@ class TestCompressionIntegration:
         )
         manager = MemoryManager(mock_llm)
 
-        # Simulate a long conversation
+        # Simulate a long conversation, draining deferred compressions
         for i in range(20):
             await manager.add_message(LLMMessage(role="user", content=f"User message {i} " * 20))
+            while manager.needs_compression():
+                await manager.compress()
             await manager.add_message(
                 LLMMessage(role="assistant", content=f"Assistant response {i} " * 20)
             )
+            while manager.needs_compression():
+                await manager.compress()
 
         stats = manager.get_stats()
 
@@ -363,9 +371,11 @@ class TestEdgeCaseIntegration:
         )
         manager = MemoryManager(mock_llm)
 
-        # Add messages rapidly, triggering many compressions
+        # Add messages rapidly, draining deferred compressions
         for i in range(20):
             await manager.add_message(LLMMessage(role="user", content=f"Message {i}" * 10))
+            while manager.needs_compression():
+                await manager.compress()
 
         stats = manager.get_stats()
 
@@ -449,7 +459,11 @@ class TestEdgeCaseIntegration:
         long_content = "This is a very long message. " * 500
         await manager.add_message(LLMMessage(role="user", content=long_content))
 
-        # Should trigger compression
+        # Compression is deferred — flag should be set
+        assert manager.needs_compression()
+
+        # Complete the compression cycle
+        await manager.compress()
         assert manager.compression_count >= 1
 
 
