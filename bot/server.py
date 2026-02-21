@@ -313,6 +313,7 @@ async def run_bot(model_id: str | None = None) -> None:
     Args:
         model_id: Optional model ID to use for agents.
     """
+    from agent.skills import SkillsRegistry, render_skills_section
     from bot.soul import load_soul
     from main import create_agent
 
@@ -331,10 +332,21 @@ async def run_bot(model_id: str | None = None) -> None:
     # Load bot personality (once, shared across all sessions)
     soul_content = load_soul()
 
+    # Bootstrap bundled skills and render skills section (once, shared across sessions)
+    skills_section: str | None = None
+    skills_registry = SkillsRegistry()
+    try:
+        await skills_registry.load()
+        skills_section = render_skills_section(list(skills_registry.skills.values()))
+    except Exception as e:
+        logger.warning("Failed to load skills registry: %s", e)
+
     def agent_factory() -> LoopAgent:
         agent = create_agent(model_id=model_id)
         if soul_content:
             agent.set_soul_section(soul_content)
+        if skills_section:
+            agent.set_skills_section(skills_section)
         return agent
 
     router = SessionRouter(agent_factory=agent_factory)
