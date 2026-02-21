@@ -11,6 +11,7 @@ while the runtime only needs mechanical scheduling rules.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -27,6 +28,7 @@ _DEFAULT_STORE = "markdown"  # markdown|dir
 _DIR_META = "_meta.json"
 _DIR_GROUPS = "_groups.json"  # Reserved for future grouping/UI metadata
 _DIR_LOCK = ".lock"
+_DIR_HIGHWATERMARK = ".highwatermark"
 
 
 @dataclass
@@ -167,6 +169,7 @@ class TaskBoardTool(BaseTool):
         self._store: str = _DEFAULT_STORE
         self._path: str = _DEFAULT_TASKS_PATH
         self._task_list_id: str | None = None
+        self._mutex = asyncio.Lock()
 
     async def execute(
         self,
@@ -176,136 +179,169 @@ class TaskBoardTool(BaseTool):
         task_list_id: str | None = None,
         **kwargs,
     ) -> str:
-        op = (operation or "").strip().lower()
-        if not op:
-            return "Error: operation is required"
+        async with self._mutex:
+            op = (operation or "").strip().lower()
+            if not op:
+                return "Error: operation is required"
 
-        self._store, self._path, self._task_list_id = _resolve_store_path(
-            path=path,
-            store=store,
-            task_list_id=task_list_id,
-        )
+            # Accept Claude-style camelCase aliases (best-effort).
+            if "activeForm" in kwargs and kwargs.get("active_form") is None:
+                kwargs["active_form"] = kwargs.get("activeForm")
+            if "blockedBy" in kwargs and kwargs.get("blocked_by") is None:
+                kwargs["blocked_by"] = kwargs.get("blockedBy")
+            if "addBlockedBy" in kwargs and kwargs.get("add_blocked_by") is None:
+                kwargs["add_blocked_by"] = kwargs.get("addBlockedBy")
+            if "removeBlockedBy" in kwargs and kwargs.get("remove_blocked_by") is None:
+                kwargs["remove_blocked_by"] = kwargs.get("removeBlockedBy")
+            if "addBlocks" in kwargs and kwargs.get("add_blocks") is None:
+                kwargs["add_blocks"] = kwargs.get("addBlocks")
+            if "removeBlocks" in kwargs and kwargs.get("remove_blocks") is None:
+                kwargs["remove_blocks"] = kwargs.get("removeBlocks")
 
-        # In "dir" mode we assume multiple sessions may share state. Always re-hydrate
-        # on entry to avoid stale in-memory state.
-        if self._store == "dir" and op not in {"hydrate"}:
-            hydrate_out = self._hydrate(goal="")
-            if hydrate_out.startswith("Error:"):
-                return hydrate_out
-
-        if op == "hydrate":
-            goal = (kwargs.get("goal") or "").strip()
-            return self._hydrate(goal=goal)
-
-        if op == "sync":
-            return self._sync()
-
-        if op == "create":
-            subject = (kwargs.get("subject") or "").strip()
-            description = (kwargs.get("description") or "").strip()
-            active_form = (kwargs.get("active_form") or "").strip()
-            blocked_by = kwargs.get("blocked_by") or []
-            metadata = kwargs.get("metadata") or {}
-            if not subject or not description:
-                return "Error: create requires subject and description"
-            task_id = self._alloc_id()
-            rec = TaskRecord(
-                id=task_id,
-                subject=subject,
-                description=description,
-                active_form=active_form,
-                blocked_by=[str(x).strip() for x in blocked_by if str(x).strip()],
-                metadata=metadata if isinstance(metadata, dict) else {},
+            self._store, self._path, self._task_list_id = _resolve_store_path(
+                path=path,
+                store=store,
+                task_list_id=task_list_id,
             )
-            self._plan.tasks[task_id] = rec
-            self._sync_best_effort()
-            return json.dumps({"id": task_id}, ensure_ascii=True)
 
-        if op == "list":
-            limit = _to_pos_int(kwargs.get("limit"), default=50)
-            items = []
-            for _id, t in sorted(self._plan.tasks.items(), key=lambda kv: kv[0])[:limit]:
-                items.append(
-                    {
-                        "id": t.id,
-                        "status": t.status,
-                        "owner": t.owner,
-                        "blocked_by": t.blocked_by,
-                        "subject": t.subject,
-                    }
+            # In "dir" mode we assume multiple sessions may share state. Always re-hydrate
+            # on entry to avoid stale in-memory state.
+            if self._store == "dir" and op not in {"hydrate"}:
+                hydrate_out = self._hydrate(goal="")
+                if hydrate_out.startswith("Error:"):
+                    return hydrate_out
+
+            if op == "hydrate":
+                goal = (kwargs.get("goal") or "").strip()
+                return self._hydrate(goal=goal)
+
+            if op == "sync":
+                return self._sync()
+
+            if op == "create":
+                subject = (kwargs.get("subject") or "").strip()
+                description = (kwargs.get("description") or "").strip()
+                active_form = (kwargs.get("active_form") or "").strip()
+                blocked_by = kwargs.get("blocked_by") or []
+                metadata = kwargs.get("metadata") or {}
+                if not subject or not description:
+                    return "Error: create requires subject and description"
+
+                if self._store == "dir":
+                    return self._dir_create(
+                        subject=subject,
+                        description=description,
+                        active_form=active_form,
+                        blocked_by=blocked_by,
+                        metadata=metadata,
+                    )
+
+                task_id = self._alloc_id()
+                rec = TaskRecord(
+                    id=task_id,
+                    subject=subject,
+                    description=description,
+                    active_form=active_form,
+                    blocked_by=[str(x).strip() for x in blocked_by if str(x).strip()],
+                    metadata=metadata if isinstance(metadata, dict) else {},
                 )
-            return json.dumps({"goal": self._plan.goal, "tasks": items}, ensure_ascii=True)
+                self._plan.tasks[task_id] = rec
+                self._sync_best_effort()
+                return json.dumps({"id": task_id}, ensure_ascii=True)
 
-        if op == "get":
-            task_id = (kwargs.get("id") or "").strip()
-            if not task_id:
-                return "Error: get requires id"
-            t = self._plan.tasks.get(task_id)
-            if not t:
-                return "Error: task not found"
-            return json.dumps(t.to_dict(), ensure_ascii=True)
+            if op == "list":
+                limit = _to_pos_int(kwargs.get("limit"), default=50)
+                items = []
+                for _id, t in sorted(self._plan.tasks.items(), key=lambda kv: kv[0])[:limit]:
+                    items.append(
+                        {
+                            "id": t.id,
+                            "status": t.status,
+                            "owner": t.owner,
+                            "blocked_by": t.blocked_by,
+                            "subject": t.subject,
+                        }
+                    )
+                return json.dumps({"goal": self._plan.goal, "tasks": items}, ensure_ascii=True)
 
-        if op == "update":
-            task_id = (kwargs.get("id") or "").strip()
-            if not task_id:
-                return "Error: update requires id"
-            t = self._plan.tasks.get(task_id)
-            if not t:
-                return "Error: task not found"
+            if op == "get":
+                task_id = (kwargs.get("id") or "").strip()
+                if not task_id:
+                    return "Error: get requires id"
+                t = self._plan.tasks.get(task_id)
+                if not t:
+                    return "Error: task not found"
+                return json.dumps(t.to_dict(), ensure_ascii=True)
 
-            # Claude-style lifecycle: "deleted" means remove the task record.
-            status_in = kwargs.get("status")
-            if status_in is not None and str(status_in).strip().lower() == "deleted":
+            if op == "update":
+                task_id = (kwargs.get("id") or "").strip()
+                if not task_id:
+                    return "Error: update requires id"
+
+                if self._store == "dir":
+                    return self._dir_update(task_id=task_id, **kwargs)
+
+                t = self._plan.tasks.get(task_id)
+                if not t:
+                    return "Error: task not found"
+
+                # Claude-style lifecycle: "deleted" means remove the task record.
+                status_in = kwargs.get("status")
+                if status_in is not None and str(status_in).strip().lower() == "deleted":
+                    self._plan.tasks.pop(task_id, None)
+                    self._sync_best_effort()
+                    return "OK"
+
+                for field_name in [
+                    "status",
+                    "owner",
+                    "subject",
+                    "description",
+                    "active_form",
+                    "summary",
+                    "errors",
+                ]:
+                    if field_name in kwargs and kwargs[field_name] is not None:
+                        setattr(t, field_name, str(kwargs[field_name]).strip())
+
+                if "blocked_by" in kwargs and kwargs["blocked_by"] is not None:
+                    raw = kwargs["blocked_by"]
+                    if isinstance(raw, list):
+                        t.blocked_by = [str(x).strip() for x in raw if str(x).strip()]
+
+                if "artifacts" in kwargs and kwargs["artifacts"] is not None:
+                    raw = kwargs["artifacts"]
+                    if isinstance(raw, list):
+                        t.artifacts = [str(x).strip() for x in raw if str(x).strip()]
+
+                if "metadata" in kwargs and kwargs["metadata"] is not None:
+                    raw = kwargs["metadata"]
+                    if isinstance(raw, dict):
+                        t.metadata = raw
+
+                self._sync_best_effort()
+                return "OK"
+
+            if op == "delete":
+                task_id = (kwargs.get("id") or "").strip()
+                if not task_id:
+                    return "Error: delete requires id"
+
+                if self._store == "dir":
+                    return self._dir_delete(task_id=task_id)
+
+                if task_id not in self._plan.tasks:
+                    return "Error: task not found"
                 self._plan.tasks.pop(task_id, None)
                 self._sync_best_effort()
                 return "OK"
 
-            for field_name in [
-                "status",
-                "owner",
-                "subject",
-                "description",
-                "active_form",
-                "summary",
-                "errors",
-            ]:
-                if field_name in kwargs and kwargs[field_name] is not None:
-                    setattr(t, field_name, str(kwargs[field_name]).strip())
+            if op == "runnable":
+                limit = _to_pos_int(kwargs.get("limit"), default=50)
+                runnable = self._runnable_ids()
+                return json.dumps({"runnable": runnable[:limit]}, ensure_ascii=True)
 
-            if "blocked_by" in kwargs and kwargs["blocked_by"] is not None:
-                raw = kwargs["blocked_by"]
-                if isinstance(raw, list):
-                    t.blocked_by = [str(x).strip() for x in raw if str(x).strip()]
-
-            if "artifacts" in kwargs and kwargs["artifacts"] is not None:
-                raw = kwargs["artifacts"]
-                if isinstance(raw, list):
-                    t.artifacts = [str(x).strip() for x in raw if str(x).strip()]
-
-            if "metadata" in kwargs and kwargs["metadata"] is not None:
-                raw = kwargs["metadata"]
-                if isinstance(raw, dict):
-                    t.metadata = raw
-
-            self._sync_best_effort()
-            return "OK"
-
-        if op == "delete":
-            task_id = (kwargs.get("id") or "").strip()
-            if not task_id:
-                return "Error: delete requires id"
-            if task_id not in self._plan.tasks:
-                return "Error: task not found"
-            self._plan.tasks.pop(task_id, None)
-            self._sync_best_effort()
-            return "OK"
-
-        if op == "runnable":
-            limit = _to_pos_int(kwargs.get("limit"), default=50)
-            runnable = self._runnable_ids()
-            return json.dumps({"runnable": runnable[:limit]}, ensure_ascii=True)
-
-        return f"Error: unknown operation '{op}'"
+            return f"Error: unknown operation '{op}'"
 
     # ------------------------------------------------------------------
     # Internal state / persistence
@@ -443,8 +479,8 @@ class TaskBoardTool(BaseTool):
             if goal:
                 plan.goal = goal
             self._plan = plan
-            # Ensure meta exists even if empty (avoid re-locking).
-            self._sync_dir_unlocked(root)
+            # Ensure infra files exist (meta/groups/highwatermark). Do not rewrite tasks here.
+            self._dir_ensure_infra_unlocked(root)
 
         return "OK"
 
@@ -459,51 +495,269 @@ class TaskBoardTool(BaseTool):
         _touch(lock_path)
 
         with _file_lock(lock_path):
-            self._sync_dir_unlocked(root)
+            # Re-read from disk under lock and repair inverse edges (`blocks`) if needed.
+            objs: dict[str, dict[str, Any]] = {}
+            for p in sorted(root.glob("*.json")):
+                if p.name.startswith("_"):
+                    continue
+                try:
+                    obj = json.loads(p.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+                tid = str(obj.get("id") or "").strip() or p.stem
+                obj["id"] = tid
+                objs[tid] = obj
 
+            blocked_by = {
+                tid: [str(x).strip() for x in (obj.get("blockedBy") or []) if str(x).strip()]
+                for tid, obj in objs.items()
+            }
+            blocks = _compute_blocks_from_blocked_by(blocked_by)
+            for tid, obj in objs.items():
+                expected = sorted(blocks.get(tid, set()), key=_dir_sort_key)
+                current = [str(x).strip() for x in (obj.get("blocks") or []) if str(x).strip()]
+                if sorted(current, key=_dir_sort_key) != expected:
+                    obj["blocks"] = expected
+                    self._dir_write_task_json_unlocked(root, obj)
+
+            self._dir_ensure_infra_unlocked(root)
+
+        out = self._hydrate_dir(goal="")
+        return "OK" if not out.startswith("Error:") else out
+
+    def _dir_create(
+        self,
+        *,
+        subject: str,
+        description: str,
+        active_form: str,
+        blocked_by: list[Any],
+        metadata: Any,
+    ) -> str:
+        root = Path(self._path)
+        try:
+            root.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return "Error: failed to create task list dir"
+
+        lock_path = root / _DIR_LOCK
+        _touch(lock_path)
+
+        blocked_by_ids = [str(x).strip() for x in (blocked_by or []) if str(x).strip()]
+        meta_obj = metadata if isinstance(metadata, dict) else {}
+
+        with _file_lock(lock_path):
+            task_id = self._dir_alloc_id_unlocked(root)
+
+            obj = {
+                "id": task_id,
+                "status": "pending",
+                "owner": None,
+                "blockedBy": blocked_by_ids,
+                "blocks": [],
+                "subject": subject,
+                "description": description,
+                "activeForm": active_form,
+                "metadata": dict(meta_obj),
+                "summary": "",
+                "artifacts": [],
+                "errors": "",
+            }
+
+            # Update inverse edges on dependencies.
+            for dep_id in blocked_by_ids:
+                dep = self._dir_read_task_json_unlocked(root, dep_id)
+                if dep is None:
+                    continue
+                blocks = _normalize_id_list(dep.get("blocks"))
+                if task_id not in blocks:
+                    dep["blocks"] = sorted({*blocks, task_id}, key=_dir_sort_key)
+                    self._dir_write_task_json_unlocked(root, dep)
+
+            self._dir_write_task_json_unlocked(root, obj)
+            self._dir_ensure_infra_unlocked(root)
+
+        self._hydrate_dir(goal="")
+        return json.dumps({"id": task_id}, ensure_ascii=True)
+
+    def _dir_update(self, *, task_id: str, **kwargs) -> str:
+        root = Path(self._path)
+        lock_path = root / _DIR_LOCK
+        _touch(lock_path)
+
+        with _file_lock(lock_path):
+            obj = self._dir_read_task_json_unlocked(root, task_id)
+            if obj is None:
+                return "Error: task not found"
+
+            status_in = kwargs.get("status")
+            if status_in is not None and str(status_in).strip().lower() == "deleted":
+                self._dir_delete_unlocked(root, task_id)
+                self._dir_ensure_infra_unlocked(root)
+                return "OK"
+
+            for key, field in [
+                ("status", "status"),
+                ("owner", "owner"),
+                ("subject", "subject"),
+                ("description", "description"),
+                ("active_form", "activeForm"),
+                ("summary", "summary"),
+                ("errors", "errors"),
+            ]:
+                if key in kwargs and kwargs[key] is not None:
+                    obj[field] = str(kwargs[key]).strip()
+
+            if "artifacts" in kwargs and kwargs["artifacts"] is not None:
+                raw = kwargs["artifacts"]
+                if isinstance(raw, list):
+                    obj["artifacts"] = [str(x).strip() for x in raw if str(x).strip()]
+
+            if "metadata" in kwargs and kwargs["metadata"] is not None:
+                raw = kwargs["metadata"]
+                if isinstance(raw, dict):
+                    obj["metadata"] = raw
+
+            old_blocked_by = set(_normalize_id_list(obj.get("blockedBy")))
+
+            if "blocked_by" in kwargs and kwargs["blocked_by"] is not None:
+                base = _normalize_id_list(kwargs["blocked_by"])
+            else:
+                base = list(old_blocked_by)
+
+            add_blocked_by = _normalize_id_list(kwargs.get("add_blocked_by"))
+            remove_blocked_by = set(_normalize_id_list(kwargs.get("remove_blocked_by")))
+
+            new_blocked_by = {str(x).strip() for x in base if str(x).strip()}
+            new_blocked_by |= set(add_blocked_by)
+            new_blocked_by -= remove_blocked_by
+
+            added = new_blocked_by - old_blocked_by
+            removed = old_blocked_by - new_blocked_by
+
+            for dep_id in sorted(removed, key=_dir_sort_key):
+                dep = self._dir_read_task_json_unlocked(root, dep_id)
+                if dep is None:
+                    continue
+                blocks = set(_normalize_id_list(dep.get("blocks")))
+                if task_id in blocks:
+                    blocks.discard(task_id)
+                    dep["blocks"] = sorted(blocks, key=_dir_sort_key)
+                    self._dir_write_task_json_unlocked(root, dep)
+
+            for dep_id in sorted(added, key=_dir_sort_key):
+                dep = self._dir_read_task_json_unlocked(root, dep_id)
+                if dep is None:
+                    continue
+                blocks = set(_normalize_id_list(dep.get("blocks")))
+                if task_id not in blocks:
+                    blocks.add(task_id)
+                    dep["blocks"] = sorted(blocks, key=_dir_sort_key)
+                    self._dir_write_task_json_unlocked(root, dep)
+
+            obj["blockedBy"] = sorted(new_blocked_by, key=_dir_sort_key)
+
+            blocks_set = set(_normalize_id_list(obj.get("blocks")))
+            add_blocks = _normalize_id_list(kwargs.get("add_blocks"))
+            remove_blocks = set(_normalize_id_list(kwargs.get("remove_blocks")))
+
+            for target_id in add_blocks:
+                tgt = self._dir_read_task_json_unlocked(root, target_id)
+                if tgt is None:
+                    continue
+                bby = set(_normalize_id_list(tgt.get("blockedBy")))
+                if task_id not in bby:
+                    bby.add(task_id)
+                    tgt["blockedBy"] = sorted(bby, key=_dir_sort_key)
+                    self._dir_write_task_json_unlocked(root, tgt)
+                blocks_set.add(target_id)
+
+            for target_id in remove_blocks:
+                tgt = self._dir_read_task_json_unlocked(root, target_id)
+                if tgt is None:
+                    blocks_set.discard(target_id)
+                    continue
+                bby = set(_normalize_id_list(tgt.get("blockedBy")))
+                if task_id in bby:
+                    bby.discard(task_id)
+                    tgt["blockedBy"] = sorted(bby, key=_dir_sort_key)
+                    self._dir_write_task_json_unlocked(root, tgt)
+                blocks_set.discard(target_id)
+
+            obj["blocks"] = sorted(blocks_set, key=_dir_sort_key)
+
+            self._dir_write_task_json_unlocked(root, obj)
+            self._dir_ensure_infra_unlocked(root)
+
+        self._hydrate_dir(goal="")
         return "OK"
 
-    def _sync_dir_unlocked(self, root: Path) -> None:
-        """Write dir backend files assuming caller already holds the list lock."""
-        blocks = _compute_blocks(self._plan.tasks)
+    def _dir_delete(self, *, task_id: str) -> str:
+        root = Path(self._path)
+        lock_path = root / _DIR_LOCK
+        _touch(lock_path)
+        with _file_lock(lock_path):
+            if self._dir_read_task_json_unlocked(root, task_id) is None:
+                return "Error: task not found"
+            self._dir_delete_unlocked(root, task_id)
+            self._dir_ensure_infra_unlocked(root)
 
-        meta_path = root / _DIR_META
-        meta_obj = {"version": int(self._plan.version), "goal": self._plan.goal}
-        _atomic_write_json(meta_path, meta_obj)
+        self._hydrate_dir(goal="")
+        return "OK"
 
-        desired_files = set()
-        for tid, t in self._plan.tasks.items():
-            fname = _safe_task_filename(tid)
-            desired_files.add(fname)
-            obj = {
-                "id": t.id,
-                "status": t.status,
-                "owner": t.owner,
-                "blockedBy": list(t.blocked_by or []),
-                "blocks": sorted(blocks.get(tid, [])),
-                "subject": t.subject,
-                "description": t.description,
-                "activeForm": t.active_form,
-                "metadata": dict(t.metadata or {}),
-                # Ouro extensions (not part of Claude's minimal fields).
-                "summary": t.summary,
-                "artifacts": list(t.artifacts or []),
-                "errors": t.errors,
-            }
-            _atomic_write_json(root / fname, obj)
+    def _dir_delete_unlocked(self, root: Path, task_id: str) -> None:
+        # Remove the task ticket.
+        with suppress(OSError):
+            (root / _safe_task_filename(task_id)).unlink()
 
-        for p in root.glob("*.json"):
+        # Remove edges from remaining tickets.
+        for p in sorted(root.glob("*.json")):
             if p.name.startswith("_"):
                 continue
-            if p.name not in desired_files:
-                with suppress(OSError):
-                    p.unlink()
+            try:
+                obj = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            changed = False
+            bby = set(_normalize_id_list(obj.get("blockedBy")))
+            if task_id in bby:
+                bby.discard(task_id)
+                obj["blockedBy"] = sorted(bby, key=_dir_sort_key)
+                changed = True
+            bl = set(_normalize_id_list(obj.get("blocks")))
+            if task_id in bl:
+                bl.discard(task_id)
+                obj["blocks"] = sorted(bl, key=_dir_sort_key)
+                changed = True
+            if changed:
+                self._dir_write_task_json_unlocked(root, obj)
 
-        # Reserve groups file path (some implementations keep this).
-        _touch(root / _DIR_GROUPS)
+    def _dir_ensure_infra_unlocked(self, root: Path) -> None:
+        meta_path = root / _DIR_META
+        _atomic_write_json(
+            meta_path,
+            {"version": int(self._plan.version), "goal": self._plan.goal},
+        )
 
-        # Optional Claude-like behavior: clear completed task tickets once everything is done.
-        # Disabled by default because Ouro generally prefers auditability.
+        groups_path = root / _DIR_GROUPS
+        try:
+            if not groups_path.exists() or groups_path.stat().st_size == 0:
+                raise ValueError("missing")
+            json.loads(groups_path.read_text(encoding="utf-8"))
+        except Exception:
+            _atomic_write_json(groups_path, [])
+
+        max_id = _dir_max_numeric_task_id(root)
+        hwm_path = root / _DIR_HIGHWATERMARK
+        next_id = max_id + 1 if max_id > 0 else 1
+        try:
+            existing = int(hwm_path.read_text(encoding="utf-8").strip())
+        except Exception:
+            existing = None
+        if existing is None or existing <= max_id:
+            with suppress(OSError):
+                hwm_path.write_text(f"{next_id}\n", encoding="utf-8")
+
         cleanup = os.getenv("OURO_TASKS_AUTO_CLEANUP", "0").strip().lower() in {
             "1",
             "true",
@@ -520,6 +774,43 @@ class TaskBoardTool(BaseTool):
                     continue
                 with suppress(OSError):
                     p.unlink()
+            with suppress(OSError):
+                (root / _DIR_HIGHWATERMARK).unlink()
+
+    def _dir_task_path(self, root: Path, task_id: str) -> Path:
+        return root / _safe_task_filename(task_id)
+
+    def _dir_read_task_json_unlocked(self, root: Path, task_id: str) -> dict[str, Any] | None:
+        path = self._dir_task_path(root, task_id)
+        if not path.exists():
+            return None
+        try:
+            obj = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        obj["id"] = str(obj.get("id") or task_id).strip() or task_id
+        return obj
+
+    def _dir_write_task_json_unlocked(self, root: Path, obj: dict[str, Any]) -> None:
+        tid = str(obj.get("id") or "").strip()
+        if not tid:
+            return
+        _atomic_write_json(root / _safe_task_filename(tid), obj)
+
+    def _dir_alloc_id_unlocked(self, root: Path) -> str:
+        max_id = _dir_max_numeric_task_id(root)
+        hwm_path = root / _DIR_HIGHWATERMARK
+        try:
+            next_id = int(hwm_path.read_text(encoding="utf-8").strip())
+        except Exception:
+            next_id = max_id + 1 if max_id > 0 else 1
+        if next_id <= max_id:
+            next_id = max_id + 1
+
+        with suppress(OSError):
+            hwm_path.write_text(f"{next_id + 1}\n", encoding="utf-8")
+
+        return str(next_id)
 
     def _alloc_id(self) -> str:
         max_n = -1
@@ -631,6 +922,63 @@ def _safe_task_filename(task_id: str) -> str:
     return f"{safe}.json"
 
 
+def _normalize_id_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        items = value
+    else:
+        return []
+    out: list[str] = []
+    for x in items:
+        s = str(x).strip()
+        if s:
+            out.append(s)
+    return out
+
+
+def _dir_sort_key(value: Any) -> tuple[int, int | str]:
+    s = str(value).strip()
+    if s.isdigit():
+        return (0, int(s))
+    return (1, s)
+
+
+def _dir_max_numeric_task_id(root: Path) -> int:
+    max_id = 0
+    for p in root.glob("*.json"):
+        if p.name.startswith("_"):
+            continue
+        stem = p.stem
+        if stem.isdigit():
+            try:
+                max_id = max(max_id, int(stem))
+                continue
+            except ValueError:
+                pass
+        # Fallback to reading the id field (slower, but robust).
+        try:
+            obj = json.loads(p.read_text(encoding="utf-8"))
+            tid = str(obj.get("id") or "").strip()
+            if tid.isdigit():
+                max_id = max(max_id, int(tid))
+        except Exception:
+            continue
+    return max_id
+
+
+def _compute_blocks_from_blocked_by(blocked_by: dict[str, list[str]]) -> dict[str, set[str]]:
+    blocks: dict[str, set[str]] = {}
+    for tid in blocked_by:
+        blocks.setdefault(tid, set())
+    for tid, deps in blocked_by.items():
+        for dep in deps:
+            if not dep:
+                continue
+            blocks.setdefault(dep, set()).add(tid)
+    return blocks
+
+
 def _compute_blocks(tasks: dict[str, TaskRecord]) -> dict[str, set[str]]:
     blocks: dict[str, set[str]] = {tid: set() for tid in tasks}
     for tid, t in tasks.items():
@@ -640,7 +988,7 @@ def _compute_blocks(tasks: dict[str, TaskRecord]) -> dict[str, set[str]]:
     return blocks
 
 
-def _atomic_write_json(path: Path, obj: dict[str, Any]) -> None:
+def _atomic_write_json(path: Path, obj: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     data = json.dumps(obj, indent=2, ensure_ascii=True) + "\n"

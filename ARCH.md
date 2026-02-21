@@ -95,6 +95,7 @@ Directory layout:
 ```
 ~/.ouro/tasks/<task_list_id>/
   .lock
+  .highwatermark
   _meta.json
   _groups.json
   <task_id>.json
@@ -103,6 +104,11 @@ Directory layout:
 
 Each task file includes `blockedBy` plus a derived `blocks` list, mirroring the dependency metadata
 style used by Claude Code Tasks. Ouro also persists `summary/artifacts/errors` alongside those fields.
+
+Implementation notes:
+- In the `dir` store, `create/update/delete` operate on per-task JSON tickets (not a full rewrite of
+  the directory). This is important for multi-session correctness.
+- `.highwatermark` provides monotonic task id allocation under concurrent creators.
 
 Optional cleanup:
 - Set `OURO_TASKS_AUTO_CLEANUP=1` to delete per-task JSON tickets once all tasks are `completed`,
