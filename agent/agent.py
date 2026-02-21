@@ -17,8 +17,9 @@ logger = logging.getLogger(__name__)
 class LoopAgent(BaseAgent):
     """Primary agent implementation — one unified loop for all tasks."""
 
-    # Skills section to inject into system prompt (set by caller)
+    # Optional sections injected into system prompt (set by caller)
     _skills_section: Optional[str] = None
+    _soul_section: Optional[str] = None
 
     def set_skills_section(self, skills_section: Optional[str]) -> None:
         """Set the skills section to inject into system prompt.
@@ -28,6 +29,14 @@ class LoopAgent(BaseAgent):
                            or None to disable skills injection.
         """
         self._skills_section = skills_section
+
+    def set_soul_section(self, soul_section: Optional[str]) -> None:
+        """Set the soul/personality section to prepend to the system prompt.
+
+        Args:
+            soul_section: Content from ~/.ouro/bot/soul.md, or None to skip.
+        """
+        self._soul_section = soul_section
 
     SYSTEM_PROMPT = """<role>
 You are a helpful AI assistant that uses tools to accomplish tasks efficiently and reliably.
@@ -81,6 +90,9 @@ AGENTS.md is optional. If not found, proceed normally.
         # This allows multi-turn conversations to reuse the same system message
         if not self.memory.system_messages:
             system_content = self.SYSTEM_PROMPT
+            # Prepend soul/personality section when running in bot mode
+            if self._soul_section:
+                system_content = self._soul_section + "\n\n" + system_content
             try:
                 context = await format_context_prompt()
                 system_content = system_content + "\n" + context
