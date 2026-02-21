@@ -4,6 +4,7 @@ import asyncio
 import shlex
 import signal
 
+from rich.markdown import Markdown
 from rich.table import Table
 
 from agent.skills import SkillsRegistry, render_skills_section
@@ -72,6 +73,7 @@ class InteractiveSession:
                     "Set run-scoped reasoning effort (LiteLLM) (menu)",
                 ),
                 CommandSpec("compact", "Compress conversation memory"),
+                CommandSpec("memory", "Show or clear long-term memory", args_hint="[clear]"),
                 CommandSpec("skills", "Manage skills (list/install/uninstall)"),
                 CommandSpec(
                     "model",
@@ -315,6 +317,38 @@ class InteractiveSession:
             )
         self._update_status_bar()
 
+    async def _show_memory(self, args: str | None = None) -> None:
+        """Show or clear long-term memory."""
+        ltm = self.agent.memory.long_term
+        if ltm is None:
+            terminal_ui.print_warning(
+                "Long-term memory is disabled. "
+                "Set LONG_TERM_MEMORY_ENABLED=true in ~/.ouro/config"
+            )
+            return
+
+        if args == "clear":
+            terminal_ui.print_warning("This will clear all long-term memories.")
+            confirm = await self.input_handler.prompt_async("Type 'yes' to confirm: ")
+            if confirm.strip().lower() == "yes":
+                await ltm.store.save(
+                    "",
+                )
+                terminal_ui.print_success("Long-term memory cleared.")
+            else:
+                terminal_ui.print_info("Cancelled.")
+            return
+
+        content = await ltm.store.load()
+        if not content.strip():
+            terminal_ui.print_info(f"Long-term memory is empty. ({ltm.memory_dir}/memory.md)")
+            return
+
+        terminal_ui.print_info(f"Long-term memory — {ltm.memory_dir}/memory.md")
+        terminal_ui.console.print()
+        terminal_ui.console.print(Markdown(content))
+        terminal_ui.console.print()
+
     def _update_status_bar(self) -> None:
         """Update status bar with current stats."""
         stats = self.agent.memory.get_stats()
@@ -395,6 +429,10 @@ class InteractiveSession:
 
         elif command == "/compact":
             await self._compact_memory()
+
+        elif command == "/memory":
+            args = command_parts[1] if len(command_parts) >= 2 else None
+            await self._show_memory(args)
 
         elif command == "/model":
             await self._handle_model_command(user_input)

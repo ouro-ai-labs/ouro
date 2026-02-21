@@ -4,7 +4,7 @@ import pytest
 import pytest_asyncio
 
 from llm.message_types import LLMResponse, StopReason
-from memory.long_term.store import GitMemoryStore, MemoryCategory
+from memory.long_term.store import MemoryStore
 
 
 class MockLTMLLM:
@@ -33,18 +33,20 @@ def mock_ltm_llm():
 
 
 @pytest_asyncio.fixture
-async def git_store(tmp_path):
-    """Create a GitMemoryStore backed by a temp directory."""
-    store = GitMemoryStore(memory_dir=str(tmp_path / "memory"))
-    await store.ensure_repo()
-    return store
+async def memory_store(tmp_path):
+    """Create a MemoryStore backed by a temp directory."""
+    return MemoryStore(memory_dir=str(tmp_path / "memory"))
 
 
 @pytest.fixture
-def sample_memories():
-    """Sample memories for testing."""
-    return {
-        MemoryCategory.DECISIONS: "- Use async-first architecture\n- Choose YAML over SQLite\n",
-        MemoryCategory.PREFERENCES: "- Prefer type hints everywhere\n",
-        MemoryCategory.FACTS: "- Project uses Python 3.12+\n",
-    }
+def sample_content():
+    """Sample memory content for testing."""
+    return (
+        "## Decisions\n\n"
+        "- Use async-first architecture\n"
+        "- Choose YAML over SQLite\n\n"
+        "## Preferences\n\n"
+        "- Prefer type hints everywhere\n\n"
+        "## Facts\n\n"
+        "- Project uses Python 3.12+\n"
+    )

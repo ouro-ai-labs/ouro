@@ -88,6 +88,9 @@ class MemoryManager:
 
             self._long_term = LongTermMemoryManager(llm)
 
+        # Pre-compression flush hint (injected once when nearing threshold)
+        self._flush_hint_injected = False
+
     @classmethod
     async def from_session(
         cls,
@@ -257,6 +260,22 @@ class MemoryManager:
 
         # 2. Add short-term memory (includes summary messages and recent messages)
         context.extend(self.short_term.get_messages())
+
+        # 3. Pre-compression flush hint: remind agent to save durable memories
+        if self._should_inject_flush_hint():
+            ltm_dir = self._long_term.memory_dir if self._long_term else "~/.ouro/memory"
+            context.append(
+                LLMMessage(
+                    role="user",
+                    content=(
+                        "[System] Context window is filling up and will be compressed soon. "
+                        "If you learned important information this session that should persist "
+                        "across sessions, save it to long-term memory now "
+                        f"(edit {ltm_dir}/memory.md)."
+                    ),
+                )
+            )
+            self._flush_hint_injected = True
 
         return context
 
@@ -527,6 +546,21 @@ class MemoryManager:
 
         return False, None
 
+    def _should_inject_flush_hint(self) -> bool:
+        """Check if we should inject a pre-compression flush hint.
+
+        Returns True once when context exceeds 85% of the compression threshold
+        and long-term memory is enabled.
+        """
+        if self._flush_hint_injected:
+            return False
+        if self._long_term is None:
+            return False
+        if not Config.MEMORY_ENABLED:
+            return False
+        soft_threshold = int(Config.MEMORY_COMPRESSION_THRESHOLD * 0.85)
+        return self.current_tokens > soft_threshold
+
     def _select_strategy(self, messages: List[LLMMessage]) -> str:
         """Auto-select compression strategy based on message characteristics.
 
@@ -614,7 +648,7 @@ class MemoryManager:
         Returns:
             Dict with statistics
         """
-        return {
+        stats: Dict[str, Any] = {
             "current_tokens": self.current_tokens,
             "total_input_tokens": self.token_tracker.total_input_tokens,
             "total_output_tokens": self.token_tracker.total_output_tokens,
@@ -628,7 +662,9 @@ class MemoryManager:
             "short_term_count": self.short_term.count(),
             "tool_schema_tokens": self._tool_schema_tokens,
             "total_cost": self.token_tracker.get_total_cost(self.llm.model),
+            "ltm_enabled": self._long_term is not None,
         }
+        return stats
 
     async def save_memory(self):
         """Save current memory state to store.
@@ -669,6 +705,7 @@ class MemoryManager:
         self.last_compression_savings = 0
         self.compression_count = 0
         self._compression_needed = False
+        self._flush_hint_injected = False
 
     def rollback_incomplete_exchange(self) -> None:
         """Rollback the last incomplete assistant response with tool_calls.

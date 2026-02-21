@@ -280,6 +280,10 @@ def print_memory_stats(stats: Dict[str, Any]) -> None:
     table.add_row("Total Cost", f"${stats['total_cost']:.4f}")
     table.add_row("Messages", f"{stats['short_term_count']} in memory")
 
+    # Long-term memory
+    if stats.get("ltm_enabled"):
+        table.add_row("Long-term Memory", "enabled")
+
     console.print(table)
 
 
