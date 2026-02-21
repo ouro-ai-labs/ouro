@@ -2,15 +2,49 @@
 
 import time
 from contextlib import contextmanager
-from typing import Generator, Optional
+from typing import TYPE_CHECKING, Generator, Optional
 
 from rich import box
 from rich.console import Console
 from rich.live import Live
 from rich.panel import Panel
 from rich.spinner import Spinner as RichSpinner
+from rich.text import Text
 
 from utils.tui.theme import Theme
+
+if TYPE_CHECKING:
+    from rich.console import ConsoleOptions, RenderResult
+
+
+class _SpinnerLine:
+    """Single-line spinner renderable with dynamic text.
+
+    Recomputes title, message, and elapsed time on every render cycle so
+    that ``Live`` always shows current values.  Uses ``Text.from_markup``
+    for proper Rich styling and keeps output to a single line — avoiding
+    the ``Live(transient=True)`` ghost-line artifacts that multi-line
+    ``Panel`` renderables can trigger (Rich #1320).
+    """
+
+    def __init__(self, owner: "Spinner | AsyncSpinner") -> None:
+        self._owner = owner
+        self._spinner = RichSpinner("dots")
+
+    def __rich_console__(self, console: "Console", options: "ConsoleOptions") -> "RenderResult":
+        colors = Theme.get_colors()
+        parts = (
+            f"  [bold {colors.thinking_accent}]{self._owner.title}[/]"
+            f" [{colors.text_muted}]›[/{colors.text_muted}]"
+            f" {self._owner.message}"
+        )
+        start = self._owner._start_time
+        if start is not None:
+            elapsed = time.time() - start
+            parts += f"  [{colors.text_muted}]({elapsed:.1f}s)[/{colors.text_muted}]"
+        self._spinner.text = Text.from_markup(parts)
+        self._spinner.style = colors.primary
+        yield from self._spinner.__rich_console__(console, options)
 
 
 class Spinner:
@@ -24,6 +58,7 @@ class Spinner:
         console: Console,
         message: str = "Processing...",
         show_duration: bool = True,
+        title: str = "Thinking",
     ):
         """Initialize spinner.
 
@@ -31,38 +66,14 @@ class Spinner:
             console: Rich console instance
             message: Message to display with spinner
             show_duration: Whether to show elapsed time
+            title: Spinner title (e.g. "Thinking", "Working")
         """
         self.console = console
         self.message = message
         self.show_duration = show_duration
+        self.title = title
         self._start_time: Optional[float] = None
         self._live: Optional[Live] = None
-
-    def _render(self) -> Panel:
-        """Render the spinner panel.
-
-        Returns:
-            Rich Panel with spinner content
-        """
-        colors = Theme.get_colors()
-
-        # Build spinner text with optional duration
-        text = f"  {self.message}"
-        if self.show_duration and self._start_time is not None:
-            elapsed = time.time() - self._start_time
-            text += f"\n  └─ Duration: {elapsed:.1f}s"
-
-        # Create spinner with message
-        spinner = RichSpinner("dots", text=text, style=colors.primary)
-
-        return Panel(
-            spinner,
-            title=f"[{colors.thinking_accent}]Thinking[/{colors.thinking_accent}]",
-            title_align="left",
-            border_style=colors.text_muted,
-            box=box.ROUNDED,
-            padding=(0, 1),
-        )
 
     @contextmanager
     def __call__(self, message: Optional[str] = None) -> Generator[None, None, None]:
@@ -79,7 +90,7 @@ class Spinner:
 
         self._start_time = time.time()
         self._live = Live(
-            self._render(),
+            _SpinnerLine(self),
             console=self.console,
             refresh_per_second=10,
             transient=True,
@@ -99,8 +110,6 @@ class Spinner:
             message: New message to display
         """
         self.message = message
-        if self._live is not None:
-            self._live.update(self._render())
 
 
 class ProgressContext:
@@ -237,7 +246,7 @@ class AsyncSpinner:
         Args:
             console: Rich console instance
             message: Message to display
-            title: Panel title (e.g. "Thinking", "Working", "Verifying")
+            title: Spinner title (e.g. "Thinking", "Working", "Verifying")
         """
         self.console = console
         self.message = message
@@ -246,21 +255,6 @@ class AsyncSpinner:
         self._live: Optional[Live] = None
         self._running = False
 
-    def _render(self) -> Panel:
-        """Render the spinner panel."""
-        colors = Theme.get_colors()
-
-        spinner = RichSpinner("dots", text=f"  {self.message}", style=colors.primary)
-
-        return Panel(
-            spinner,
-            title=f"[{colors.thinking_accent}]{self.title}[/{colors.thinking_accent}]",
-            title_align="left",
-            border_style=colors.text_muted,
-            box=box.ROUNDED,
-            padding=(0, 1),
-        )
-
     async def __aenter__(self) -> "AsyncSpinner":
         """Async context manager entry."""
         if self.console.quiet:
@@ -268,7 +262,7 @@ class AsyncSpinner:
         self._start_time = time.time()
         self._running = True
         self._live = Live(
-            self._render(),
+            _SpinnerLine(self),
             console=self.console,
             refresh_per_second=10,
             transient=True,
@@ -291,5 +285,3 @@ class AsyncSpinner:
             message: New message
         """
         self.message = message
-        if self._live is not None and self._running:
-            self._live.update(self._render())
