@@ -32,6 +32,98 @@ Orchestration should be composed from small primitives in the manager ReAct loop
 
 Avoid a monolithic `orchestrate` tool that runs a second "manager agent loop" inside a tool.
 
+## End-to-End Flow (Manager Loop)
+
+This section answers the practical questions: "is task_board a tool?", "how does it update tasks.md?",
+"how is tasks.md constructed?", and "what is the full prompt -> plan -> execute -> update loop?"
+
+### 1) Is `task_board` a tool?
+
+Yes. `task_board` is a **tool** whose output is a persistent, machine-readable task graph.
+It is not a second agent loop. The manager (main) ReAct loop uses it as a control-plane state store.
+
+### 2) How to call `task_board` to record progress
+
+The manager is responsible for recording progress. Sub-agents SHOULD NOT mutate the task board
+to avoid multi-writer concurrency; they return summaries + artifact paths, and the manager writes them.
+
+Typical calls (markdown store, persisting to `tasks.md`):
+
+```json
+{"operation":"hydrate","path":"tasks.md","goal":"Plan a trip to Osaka"}
+```
+
+```json
+{"operation":"create","path":"tasks.md","subject":"Find flights","description":"Search GZ -> Osaka flights between 2026-02-20 and 2026-02-30. Return 3 options with prices.","active_form":"Finding flights"}
+```
+
+```json
+{"operation":"create","path":"tasks.md","subject":"Build itinerary","description":"Create a 5-day itinerary using the chosen flight. Include day-by-day schedule.","blocked_by":["T0"],"active_form":"Building itinerary"}
+```
+
+```json
+{"operation":"runnable","path":"tasks.md","limit":50}
+```
+
+```json
+{"operation":"update","path":"tasks.md","id":"T0","status":"in_progress","owner":"round_0"}
+```
+
+```json
+{"operation":"update","path":"tasks.md","id":"T0","status":"completed","summary":"Found 3 flight options. Cheapest is ...","artifacts":[".ouro_artifacts/20260221_.../task_0.md"],"errors":""}
+```
+
+Notes:
+- `create/update/delete` do best-effort persistence. You can still call `sync` explicitly at fanout
+  barriers for clarity.
+- `status="deleted"` in `update` is a lifecycle shortcut that removes the task record.
+
+### 3) How `tasks.md` is built
+
+`tasks.md` is a deterministic, machine-written file with exactly one fenced JSON block.
+
+Construction rules (markdown store):
+- `hydrate` is idempotent. If `tasks.md` does not exist, it creates a new plan (with optional `goal`)
+  and writes it immediately.
+- `create/update/delete` mutate the in-memory plan and write a new `tasks.md` snapshot (best-effort).
+- `sync` forces a write.
+
+If you prefer `task.md` as a filename, use `path="task.md"`. The tool does not care about the name.
+
+### 4) Full loop: prompt -> plan -> fanout -> update -> repeat
+
+The loop is intentionally mechanical. Dependencies live in `task_board`, and parallelism is done via
+`multi_task` fanout. There is no DAG compiler.
+
+```mermaid
+flowchart TD
+  U["User prompt"] --> M["Manager ReAct loop (main agent)"]
+  M -->|task_board.hydrate/create/update| S["Task store (tasks.md or task-list dir)"]
+  M -->|task_board.runnable| R["Runnable task ids"]
+  M -->|multi_task fanout (one round)| W["N worker ReAct loops"]
+  W -->|summary + artifact path per task| M
+  M -->|task_board.update (status/summary/artifacts/errors)| S
+  M -->|repeat until done/deadlock| M
+```
+
+Round-based execution protocol:
+1. `task_board.hydrate(goal=...)`
+2. Planning step: create tasks + set `blocked_by` dependencies.
+3. For each round:
+   - `task_board.runnable()` to get runnable tasks.
+   - If none:
+     - If all tasks are terminal (`completed|failed`): stop (done).
+     - Else: stop (deadlock), and either repair the graph (update deps) or split tasks further.
+   - Mark runnable tasks `in_progress` + set `owner`.
+   - Call `multi_task(tasks=[...])` once (fanout barrier).
+   - For each result: `task_board.update(status, summary, artifacts, errors)`.
+4. Optional: `task_board.sync()` at the end of each round or before exiting.
+
+Dynamic fanout (unknown N at the start) is handled by multiple runs/rounds:
+- Round 0: ingest (e.g., extract PDF headings).
+- Manager creates derived tasks based on output.
+- Next rounds: run the derived fanout, then a reduce task that depends on all fanout tasks.
+
 ## `tasks.md` (Minimal IR)
 
 `tasks.md` is the persistent blueprint and audit trail.
@@ -182,6 +274,7 @@ runtime SHOULD offer a simple cleanup policy (manual or time-based) to prevent s
 
 ## References (External)
 
-- ClaudeLog: "What are Tasks in Claude Code?" (2026-01-22)
-- Rick Hightower: "Claude Code Todos to Tasks" (2026-01-26)
-- Community notes on on-disk storage and cleanup behavior for `~/.claude/tasks`
+- ClaudeLog: "What are Tasks in Claude Code?" (2026-01-22) https://claudelog.com/faqs/what-are-tasks-in-claude-code/
+- Rick Hightower: "Claude Code Todos to Tasks" (2026-01-26) https://pub.spillwave.com/claude-code-todos-to-tasks-5a1b0e351a1c
+- Community notes on on-disk storage and cleanup behavior for `~/.claude/tasks` (e.g., `.highwatermark`, `_groups.json`)
+- Qiita: "Claude CodeのTask定義が「todo」から「task」へ変更されてたので調べてみた" (2026-01-25) https://qiita.com/yoshitake_1209/items/ae983de96a0f89b7d37b

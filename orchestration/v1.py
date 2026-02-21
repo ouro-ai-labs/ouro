@@ -51,11 +51,15 @@ class RoundOrchestratorV1:
         task_board: TaskBoardTool,
         multi_task: Any,
         tasks_path: str = "tasks.md",
+        store: str = "markdown",
+        task_list_id: str | None = None,
         artifact_root: str = ".ouro_artifacts/orchestrations",
     ) -> None:
         self.task_board = task_board
         self.multi_task = multi_task
         self.tasks_path = tasks_path
+        self.store = store
+        self.task_list_id = task_list_id
         self.artifact_root = Path(artifact_root)
 
     async def run(
@@ -67,7 +71,13 @@ class RoundOrchestratorV1:
         cleanup_artifacts: bool | None = None,
         owner: str = "orchestrator_v1",
     ) -> OrchestrationRun:
-        await self.task_board.execute(operation="hydrate", path=self.tasks_path, goal=goal)
+        await self.task_board.execute(
+            operation="hydrate",
+            path=self.tasks_path,
+            store=self.store,
+            task_list_id=self.task_list_id,
+            goal=goal,
+        )
 
         completed: list[str] = []
         failed: list[str] = []
@@ -77,7 +87,11 @@ class RoundOrchestratorV1:
         for r in range(max_rounds):
             rounds_executed = r + 1
             runnable_raw = await self.task_board.execute(
-                operation="runnable", path=self.tasks_path, limit=50
+                operation="runnable",
+                path=self.tasks_path,
+                store=self.store,
+                task_list_id=self.task_list_id,
+                limit=50,
             )
             runnable = json.loads(runnable_raw).get("runnable") or []
             runnable = [str(x).strip() for x in runnable if str(x).strip()]
@@ -85,7 +99,11 @@ class RoundOrchestratorV1:
             if not runnable:
                 # Decide if we're done or deadlocked.
                 all_raw = await self.task_board.execute(
-                    operation="list", path=self.tasks_path, limit=200
+                    operation="list",
+                    path=self.tasks_path,
+                    store=self.store,
+                    task_list_id=self.task_list_id,
+                    limit=200,
                 )
                 all_tasks = json.loads(all_raw).get("tasks") or []
                 statuses = {t.get("id"): t.get("status") for t in all_tasks if isinstance(t, dict)}
@@ -99,6 +117,8 @@ class RoundOrchestratorV1:
                 await self.task_board.execute(
                     operation="update",
                     path=self.tasks_path,
+                    store=self.store,
+                    task_list_id=self.task_list_id,
                     id=tid,
                     status="in_progress",
                     owner=owner,
@@ -106,12 +126,22 @@ class RoundOrchestratorV1:
 
             prompts: list[str] = []
             for tid in runnable:
-                t_raw = await self.task_board.execute(operation="get", path=self.tasks_path, id=tid)
+                t_raw = await self.task_board.execute(
+                    operation="get",
+                    path=self.tasks_path,
+                    store=self.store,
+                    task_list_id=self.task_list_id,
+                    id=tid,
+                )
                 t = json.loads(t_raw)
                 deps: list[dict[str, Any]] = []
                 for dep_id in t.get("blocked_by") or []:
                     dep_raw = await self.task_board.execute(
-                        operation="get", path=self.tasks_path, id=str(dep_id)
+                        operation="get",
+                        path=self.tasks_path,
+                        store=self.store,
+                        task_list_id=self.task_list_id,
+                        id=str(dep_id),
                     )
                     if dep_raw.startswith("Error:"):
                         continue
@@ -133,6 +163,8 @@ class RoundOrchestratorV1:
                     await self.task_board.execute(
                         operation="update",
                         path=self.tasks_path,
+                        store=self.store,
+                        task_list_id=self.task_list_id,
                         id=tid,
                         status="failed",
                         errors="; ".join(exec_result.violations or []),
@@ -146,6 +178,8 @@ class RoundOrchestratorV1:
                     await self.task_board.execute(
                         operation="update",
                         path=self.tasks_path,
+                        store=self.store,
+                        task_list_id=self.task_list_id,
                         id=tid,
                         status="failed",
                         errors="missing result",
@@ -157,6 +191,8 @@ class RoundOrchestratorV1:
                 await self.task_board.execute(
                     operation="update",
                     path=self.tasks_path,
+                    store=self.store,
+                    task_list_id=self.task_list_id,
                     id=tid,
                     status=status,
                     summary=res.summary,
