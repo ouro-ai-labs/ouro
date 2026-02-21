@@ -9,6 +9,8 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 
+import yaml
+
 _VALID_STATUSES = {"pending", "in_progress", "completed"}
 
 
@@ -194,6 +196,35 @@ class TaskStore:
                 lines.append(
                     f"- [{checkbox}] {t.id}: {t.content} ({avail}; blockedBy: {deps}; blocks: {blocks})"
                 )
+            lines.append("")
+
+        return "\n".join(lines).rstrip() + "\n"
+
+    async def render_tasks_md(self) -> str:
+        """Render a human-readable `tasks.md` snapshot with optional YAML metadata blocks."""
+        async with self._lock:
+            tasks = sorted(self._tasks.values(), key=_task_sort_key)
+
+        lines: list[str] = ["# tasks", ""]
+        for t in tasks:
+            checkbox = "x" if t.status == "completed" else " "
+            lines.append(f"- [{checkbox}] {t.id}: {t.content}")
+
+            ouro_yaml: dict[str, object] = {}
+            if t.active_form != t.content:
+                ouro_yaml["activeForm"] = t.active_form
+            if t.blocked_by:
+                ouro_yaml["blockedBy"] = list(t.blocked_by)
+            if t.status == "in_progress":
+                ouro_yaml["status"] = "in_progress"
+
+            if ouro_yaml:
+                payload = {"ouro": ouro_yaml}
+                dumped = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True).rstrip()
+                lines.append("  ```yaml")
+                lines.extend([f"  {yaml_line}" for yaml_line in dumped.splitlines()])
+                lines.append("  ```")
+
             lines.append("")
 
         return "\n".join(lines).rstrip() + "\n"

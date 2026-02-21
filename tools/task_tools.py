@@ -85,6 +85,7 @@ and update status as you progress. Prefer Tasks tools over manage_todo_list."""
             {
                 "task": task.to_dict(blocks=blocks.get(task.id, [])),
                 "available": await self._store.available_ids(),
+                "tasksMd": await self._store.render_tasks_md(),
                 "debugTasksMd": await self._store.render_debug_tasks_md(),
             }
         )
@@ -193,6 +194,7 @@ Notes on dependency fields:
             {
                 "task": updated.to_dict(blocks=blocks.get(updated.id, [])),
                 "available": await self._store.available_ids(),
+                "tasksMd": await self._store.render_tasks_md(),
                 "debugTasksMd": await self._store.render_debug_tasks_md(),
             }
         )
@@ -225,6 +227,7 @@ class TaskListTool(BaseTool):
             {
                 "tasks": [t.to_dict(blocks=blocks.get(t.id, [])) for t in tasks],
                 "available": await self._store.available_ids(),
+                "tasksMd": await self._store.render_tasks_md(),
                 "debugTasksMd": await self._store.render_debug_tasks_md(),
             }
         )
@@ -266,6 +269,7 @@ class TaskGetTool(BaseTool):
             {
                 "task": task.to_dict(blocks=blocks.get(task.id, [])),
                 "available": await self._store.available_ids(),
+                "tasksMd": await self._store.render_tasks_md(),
                 "debugTasksMd": await self._store.render_debug_tasks_md(),
             }
         )

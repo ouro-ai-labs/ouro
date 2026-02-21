@@ -29,6 +29,9 @@ async def test_task_create_list_get_and_availability_gates_on_dependencies():
     listed = json.loads(await tlist.execute())
     assert listed["available"] == [a_id]
     assert "debugTasksMd" in listed
+    assert "tasksMd" in listed
+    assert f"- [ ] {b_id}: Do B" in listed["tasksMd"]
+    assert "blockedBy:" in listed["tasksMd"]
 
     got_b = json.loads(await tget.execute(id=b_id))
     assert got_b["task"]["blockedBy"] == [a_id]
