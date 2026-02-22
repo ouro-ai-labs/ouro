@@ -526,6 +526,10 @@ async def run_bot(model_id: str | None = None) -> None:
             from tools.cron_tool import CronTool
 
             agent.tool_executor.add_tool(CronTool(_shared["cron"]))
+        # Give the agent a manage_heartbeat tool to edit the heartbeat checklist
+        from tools.heartbeat_tool import HeartbeatTool
+
+        agent.tool_executor.add_tool(HeartbeatTool())
         return agent
 
     router = SessionRouter(agent_factory=agent_factory)
