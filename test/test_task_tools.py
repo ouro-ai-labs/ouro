@@ -193,11 +193,13 @@ async def test_task_dump_md_writes_tasks_md_and_optional_debug(tmp_path):
 async def test_task_fanout_creates_children_and_rewrites_join_dependencies():
     store = TaskStore()
     create = TaskCreateTool(store)
+    update = TaskUpdateTool(store)
     fanout = TaskFanoutTool(store)
     tget = TaskGetTool(store)
 
     upstream = json.loads(await create.execute(content="Upstream", activeForm="Upstreaming"))
     upstream_id = upstream["task"]["id"]
+    await update.execute(id=upstream_id, status="completed")
     phase = json.loads(
         await create.execute(content="Phase", activeForm="Phasing", blockedBy=[upstream_id])
     )
@@ -230,7 +232,56 @@ async def test_task_fanout_creates_children_and_rewrites_join_dependencies():
     assert phase_id not in got_join["task"]["blockedBy"]
     assert got_join["task"]["blockedBy"] == child_ids
 
-    # Children should depend on the phase (and inherit its deps by default).
+    # If the phase has no output, TaskFanout treats it as a pure container:
+    # - children inherit phase.blockedBy, but do not depend on phaseId
+    # - the phase is auto-completed to avoid blocking status updates
+    got_phase = json.loads(await tget.execute(id=phase_id))
+    assert got_phase["task"]["status"] == "completed"
+
+    # Children should inherit the upstream dep, but not depend on the phaseId.
+    for cid in child_ids:
+        got_child = json.loads(await tget.execute(id=cid))
+        assert upstream_id in got_child["task"]["blockedBy"]
+        assert phase_id not in got_child["task"]["blockedBy"]
+
+
+@pytest.mark.asyncio
+async def test_task_fanout_phase_with_output_is_a_gate_and_children_depend_on_it():
+    store = TaskStore()
+    create = TaskCreateTool(store)
+    fanout = TaskFanoutTool(store)
+    tget = TaskGetTool(store)
+
+    upstream = json.loads(await create.execute(content="Upstream", activeForm="Upstreaming"))
+    upstream_id = upstream["task"]["id"]
+    phase = json.loads(
+        await create.execute(
+            content="Phase",
+            activeForm="Phasing",
+            blockedBy=[upstream_id],
+            status="completed",
+            detail="Resolved inputs: A, B, C",
+        )
+    )
+    phase_id = phase["task"]["id"]
+    join = json.loads(
+        await create.execute(content="Join", activeForm="Joining", blockedBy=[phase_id])
+    )
+    join_id = join["task"]["id"]
+
+    result = json.loads(
+        await fanout.execute(
+            phaseId=phase_id,
+            joinId=join_id,
+            children=[
+                {"content": "Leaf 1", "activeForm": "Leafing 1"},
+                {"content": "Leaf 2", "activeForm": "Leafing 2"},
+            ],
+        )
+    )
+    assert result["ok"] is True
+    child_ids = result["childIds"]
+
     for cid in child_ids:
         got_child = json.loads(await tget.execute(id=cid))
         assert phase_id in got_child["task"]["blockedBy"]

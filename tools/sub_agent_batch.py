@@ -35,6 +35,9 @@ class SubAgentBatchTool(BaseTool):
 
     MAX_PARALLEL_CAP = 8
     MAX_OUTPUT_CHARS = 4000
+    MAX_CONTEXT_CHARS = 1500
+    MAX_UPSTREAM_DETAIL_CHARS = 600
+    MAX_CONVERSATION_MESSAGES = 6
 
     def __init__(self, agent: BaseAgent):
         self.agent = agent
@@ -109,9 +112,97 @@ class SubAgentBatchTool(BaseTool):
         }
         return [t for t in all_tools if (_tool_name(t) not in excluded)]
 
-    def _build_worker_prompt(self, *, task_id: str, task_content: str, notes: str) -> str:
+    def _extract_simplified_conversation_context(self) -> str:
+        """Extract a simplified conversational context (no tool-call traces/results).
+
+        This intentionally excludes tool messages and only includes recent user/assistant text.
+        """
+        memory = getattr(self.agent, "memory", None)
+        short_term = getattr(memory, "short_term", None)
+        get_messages = getattr(short_term, "get_messages", None)
+        if get_messages is None:
+            return ""
+
+        try:
+            messages = list(get_messages())
+        except Exception:
+            return ""
+
+        simplified: list[str] = []
+        for msg in reversed(messages):
+            role = getattr(msg, "role", None)
+            if role not in {"user", "assistant"}:
+                continue
+            content = getattr(msg, "content", None)
+            if isinstance(content, str) and content.strip():
+                simplified.append(f"{role}: {content.strip()}")
+            if len(simplified) >= self.MAX_CONVERSATION_MESSAGES:
+                break
+
+        simplified.reverse()
+        return _truncate("\n".join(simplified).strip(), self.MAX_CONTEXT_CHARS)
+
+    async def _collect_direct_upstream_outputs(self, task_id: str) -> str:
+        """Collect direct upstream (blockedBy) task outputs to reduce ambiguity.
+
+        Only includes completed upstream tasks, prioritizing their detail (output).
+        """
+        raw = await self.agent.tool_executor.execute_tool_call("TaskGet", {"id": task_id})
+        try:
+            data = json.loads(raw)
+            task = data.get("task") or {}
+        except Exception:
+            return ""
+
+        deps = [str(x) for x in (task.get("blockedBy") or []) if str(x).strip()]
+        if not deps:
+            return ""
+
+        items: list[str] = []
+        for dep_id in deps:
+            raw_dep = await self.agent.tool_executor.execute_tool_call("TaskGet", {"id": dep_id})
+            try:
+                dep_data = json.loads(raw_dep)
+                dep_task = dep_data.get("task") or {}
+            except Exception:
+                continue
+
+            status = str(dep_task.get("status", "") or "").strip()
+            if status != "completed":
+                continue
+
+            content = str(dep_task.get("content", "") or "").strip() or f"(task {dep_id})"
+            detail = str(dep_task.get("detail", "") or "").strip()
+            if not detail:
+                continue
+
+            detail = _truncate(detail, self.MAX_UPSTREAM_DETAIL_CHARS)
+            items.append(f"- [{dep_id}] {content}\n  {detail.replace('\\n', '\\n  ')}")
+
+        if not items:
+            return ""
+        return _truncate("\n".join(items).strip(), self.MAX_CONTEXT_CHARS)
+
+    async def _build_shared_context(self, task_id: str) -> str:
+        simplified = self._extract_simplified_conversation_context()
+        upstream = await self._collect_direct_upstream_outputs(task_id)
+
+        if not simplified and not upstream:
+            return ""
+
+        parts: list[str] = []
+        if simplified:
+            parts.append("<conversation>\n" + simplified + "\n</conversation>")
+        if upstream:
+            parts.append("<upstream_outputs>\n" + upstream + "\n</upstream_outputs>")
+        return _truncate("\n\n".join(parts).strip(), self.MAX_CONTEXT_CHARS)
+
+    def _build_worker_prompt(
+        self, *, task_id: str, task_content: str, notes: str, context: str
+    ) -> str:
         extra = notes.strip()
         notes_block = f"\n\n<constraints>\n{extra}\n</constraints>\n" if extra else ""
+        context_block = f"\n\n<shared_context>\n{context}\n</shared_context>\n" if context else ""
 
         return f"""<role>
 You are a sub-agent executing exactly one task from a shared task graph.
@@ -122,6 +213,7 @@ You must focus ONLY on this task and return a concise, high-signal output.
 <task>
 {task_content.strip()}
 </task>
+{context_block}
 {notes_block}
 <contract>
 1. Execute:
@@ -180,8 +272,12 @@ Execute now."""
 
         async def _run_one(task_id: str, notes: str) -> dict[str, Any]:
             task_content = await _get_task_content(task_id)
+            context = await self._build_shared_context(task_id)
             prompt = self._build_worker_prompt(
-                task_id=task_id, task_content=task_content, notes=notes
+                task_id=task_id,
+                task_content=task_content,
+                notes=notes,
+                context=context,
             )
             messages = [LLMMessage(role="user", content=prompt)]
             async with semaphore:

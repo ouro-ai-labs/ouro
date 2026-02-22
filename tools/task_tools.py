@@ -7,6 +7,7 @@ These tools manage an in-memory task graph (session-scoped). Persistence to
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 from typing import Any
@@ -57,16 +58,18 @@ class TaskFanoutTool(BaseTool):
     @property
     def description(self) -> str:
         return (
-            "Create multiple child tasks for a phase, making children depend on the phase by default. "
-            "Children also inherit the phase's blockedBy by default. "
+            "Create multiple child tasks for a phase, making children depend on the phase when the phase is a gate (has output). "
+            "Children inherit the phase's blockedBy by default. "
             "Optionally rewrite a join task to depend on the new child task IDs instead of the phase. "
             "Use this when you want true fan-out (N leaf tasks) + join (1 aggregation task) execution.\n\n"
             "Recommended pattern:\n"
             "1) Create an identify task to resolve the concrete item list.\n"
             "2) Create a phase/container task blockedBy identify.\n"
             "3) Create a join task blockedBy phase.\n"
-            "4) Call TaskFanout(phaseId, joinId, children=[...]) to create named leaf tasks; children are blockedBy phaseId (and inherit phase.blockedBy).\n"
-            "5) Mark the phase completed (it was only a container) and run leaf tasks (e.g. via sub_agent_batch), then complete join."
+            "4) Call TaskFanout(phaseId, joinId, children=[...]) to create named leaf tasks.\n"
+            "   - If the phase has output (detail non-empty or already completed), children depend on phaseId (and can use that output).\n"
+            "   - If the phase has no output (pure container), children do NOT depend on phaseId (they only inherit phase.blockedBy), and TaskFanout will auto-complete the phase.\n"
+            "5) Run leaf tasks (e.g. via sub_agent_batch), then complete join."
         )
 
     @property
@@ -152,6 +155,11 @@ class TaskFanoutTool(BaseTool):
             return _json({"ok": False, "error": f"phase task not found: {phase_id}"})
 
         phase_blocked_by = list(getattr(phase, "blocked_by", []) or [])
+        phase_detail = str(getattr(phase, "detail", "") or "").strip()
+        phase_status = str(getattr(phase, "status", "pending") or "pending").strip()
+        phase_is_gate = bool(phase_detail) or (phase_status == "completed")
+
+        effective_depend_on_phase = bool(dependOnPhase) and phase_is_gate
 
         all_tasks = await self._store.list_tasks()
         existing_by_content: dict[str, list[Any]] = {}
@@ -163,7 +171,7 @@ class TaskFanoutTool(BaseTool):
             if inheritPhaseBlockedBy:
                 blocked.extend(phase_blocked_by)
             blocked.extend(explicit)
-            if dependOnPhase:
+            if effective_depend_on_phase:
                 blocked.append(phase_id)
             blocked = [b for b in blocked if b]
             return _dedupe_keep_order(blocked)
@@ -188,7 +196,7 @@ class TaskFanoutTool(BaseTool):
                 candidates = list(existing_by_content.get(content, []))
                 for cand in candidates:
                     cand_blocked = list(getattr(cand, "blocked_by", []) or [])
-                    if (not dependOnPhase) or (phase_id in cand_blocked):
+                    if (not effective_depend_on_phase) or (phase_id in cand_blocked):
                         reused = cand
                         break
                 # Strict adoption: if there is exactly one candidate with identical content and it
@@ -211,6 +219,8 @@ class TaskFanoutTool(BaseTool):
                 cand_blocked = list(getattr(reused, "blocked_by", []) or [])
                 merged = _dedupe_keep_order([*cand_blocked, *blocked_by])
                 merged = [d for d in merged if d != reused.id]
+                if not phase_is_gate:
+                    merged = [d for d in merged if d != phase_id]
                 if merged != cand_blocked:
                     await self._store.update(reused.id, blocked_by=merged)
                 reused_ids.append(reused.id)
@@ -224,6 +234,13 @@ class TaskFanoutTool(BaseTool):
                 blocked_by=blocked_by,
             )
             created_ids.append(created.id)
+
+        # If the phase is a pure container (no output), treat it as completed so it doesn't
+        # block leaf task status updates under strict dependency gating.
+        if not phase_is_gate and phase_status != "completed":
+            # Best-effort; do not fail fanout if the phase can't be updated.
+            with contextlib.suppress(Exception):
+                await self._store.update(phase_id, status="completed")
 
         join_id = str(joinId or "").strip()
         join_blocked_by: list[str] | None = None
@@ -364,6 +381,7 @@ Guidelines:
 - Tasks should represent real execution units (leaf work should be its own task).
 - If the N items are unknown upfront, create an identify task first; record the resolved item list in that task (content or detail) and complete it before creating leaf tasks.
 - Avoid placeholder leaf tasks like "item 1" / "Song #1" that re-decide the item later; leaf task titles should include the concrete item name.
+- Prefer meaningful tasks with output: if you create a gate/identify/phase task, make it produce reusable inputs or constraints in `detail`, then mark it completed. Avoid empty "container" tasks unless you intend to use TaskFanout (which can auto-complete pure containers).
 - For "analyze Top N items" requests: create N leaf tasks + 1 join task, with join blockedBy the N leaf tasks (TaskFanout can help)."""
 
     def __init__(self, store: TaskStore):
