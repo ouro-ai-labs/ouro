@@ -114,6 +114,7 @@ async def test_task_update_rejects_start_or_complete_when_blocked_by_incomplete_
         await update.execute(id=b_id, status="completed")
     assert excinfo2.value.missing_deps == [a_id]
 
+
 @pytest.mark.asyncio
 async def test_task_update_rejects_dependency_edits_for_non_pending_tasks():
     store = TaskStore()

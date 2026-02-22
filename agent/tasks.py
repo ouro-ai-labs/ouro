@@ -7,8 +7,8 @@ Persistence (e.g. tasks.md hydration) can be layered on later.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
 import hashlib
+from dataclasses import dataclass, field
 
 import yaml
 
@@ -166,9 +166,10 @@ class TaskStore:
             else:
                 next_status = task.status
 
-            if blocked_by is not None or add_blocked_by or remove_blocked_by:
-                if next_status != "pending":
-                    raise TaskDependencyFrozenError(tid, next_status)
+            if (
+                blocked_by is not None or add_blocked_by or remove_blocked_by
+            ) and next_status != "pending":
+                raise TaskDependencyFrozenError(tid, next_status)
 
             deps_changed = False
             next_deps = list(task.blocked_by)
@@ -324,7 +325,9 @@ class TaskStore:
             if t.detail:
                 detail_text = str(t.detail)
                 ouro_yaml["detailChars"] = len(detail_text)
-                ouro_yaml["detailDigest"] = hashlib.sha1(detail_text.encode("utf-8")).hexdigest()[:12]
+                ouro_yaml["detailDigest"] = hashlib.sha1(detail_text.encode("utf-8")).hexdigest()[
+                    :12
+                ]
 
             if ouro_yaml:
                 payload = {"ouro": ouro_yaml}

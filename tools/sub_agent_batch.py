@@ -180,7 +180,9 @@ Execute now."""
 
         async def _run_one(task_id: str, notes: str) -> dict[str, Any]:
             task_content = await _get_task_content(task_id)
-            prompt = self._build_worker_prompt(task_id=task_id, task_content=task_content, notes=notes)
+            prompt = self._build_worker_prompt(
+                task_id=task_id, task_content=task_content, notes=notes
+            )
             messages = [LLMMessage(role="user", content=prompt)]
             async with semaphore:
                 try:

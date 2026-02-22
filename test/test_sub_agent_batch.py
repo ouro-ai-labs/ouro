@@ -69,7 +69,9 @@ async def test_sub_agent_batch_runs_workers_and_updates_task_status():
     a_id = a["task"]["id"]
     b_id = b["task"]["id"]
 
-    result = json.loads(await tool.execute(runs=[{"taskId": a_id}, {"taskId": b_id}], maxParallel=2))
+    result = json.loads(
+        await tool.execute(runs=[{"taskId": a_id}, {"taskId": b_id}], maxParallel=2)
+    )
     assert result["ok"] is True
     assert {r["taskId"] for r in result["results"]} == {a_id, b_id}
     assert all(r["ok"] is True for r in result["results"])
