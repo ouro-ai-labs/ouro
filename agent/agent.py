@@ -1,6 +1,7 @@
 """Loop agent implementation."""
 
 import logging
+import re
 from typing import Optional
 
 from config import Config
@@ -72,6 +73,60 @@ AGENTS.md is optional. If not found, proceed normally.
 </agents_md>
 
 """
+
+    def _extract_task_dump_md_request(self, task: str) -> tuple[str, bool] | None:
+        """Best-effort parse of a user request that explicitly asks to call TaskDumpMd(...).
+
+        Only triggers when a path is provided, to avoid surprising writes to repo root.
+        """
+        if "TaskDumpMd" not in task:
+            return None
+
+        # Match TaskDumpMd(path="...") in a user prompt. Keep this conservative to avoid false positives.
+        # NOTE: Use \(...\) (not \\(...\\)) so the regex matches a literal '(' and doesn't open a group.
+        path_match = re.search(r"TaskDumpMd\([^)]*\bpath\s*=\s*(['\"])(.+?)\1", task)
+        if not path_match:
+            return None
+        path_value = str(path_match.group(2)).strip()
+        if not path_value:
+            return None
+
+        include_debug = False
+        debug_match = re.search(
+            r"TaskDumpMd\([^)]*\bincludeDebug\s*=\s*(true|false|1|0)\b",
+            task,
+            flags=re.IGNORECASE,
+        )
+        if debug_match:
+            raw = debug_match.group(1).lower()
+            include_debug = raw in {"true", "1"}
+
+        return (path_value, include_debug)
+
+    async def _auto_dump_tasks_md_if_requested(self, task: str) -> None:
+        store = getattr(self, "task_store", None)
+        if store is None:
+            return
+
+        request = self._extract_task_dump_md_request(task)
+        if not request:
+            return
+        path_value, include_debug = request
+
+        try:
+            tasks = await store.list_tasks()
+        except Exception:
+            return
+        if not tasks:
+            return
+
+        try:
+            from tools.task_tools import TaskDumpMdTool
+
+            dump = TaskDumpMdTool(store)
+            await dump.execute(path=path_value, includeDebug=include_debug)
+        except Exception:
+            logger.warning("Auto TaskDumpMd failed", exc_info=True)
 
     async def _task_incomplete_summary(self) -> str | None:
         store = getattr(self, "task_store", None)
@@ -211,6 +266,10 @@ AGENTS.md is optional. If not found, proceed normally.
             )
 
         result = await self._enforce_tasks_completed(tools=tools, task=task, result=result)
+
+        # Best-effort: if the user explicitly asked to call TaskDumpMd(path=..., includeDebug=...),
+        # ensure we produce a final on-disk snapshot even if the LLM forgot or dumped too early.
+        await self._auto_dump_tasks_md_if_requested(task)
 
         self._print_memory_stats()
 

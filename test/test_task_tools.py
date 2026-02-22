@@ -196,7 +196,11 @@ async def test_task_fanout_creates_children_and_rewrites_join_dependencies():
     fanout = TaskFanoutTool(store)
     tget = TaskGetTool(store)
 
-    phase = json.loads(await create.execute(content="Phase", activeForm="Phasing"))
+    upstream = json.loads(await create.execute(content="Upstream", activeForm="Upstreaming"))
+    upstream_id = upstream["task"]["id"]
+    phase = json.loads(
+        await create.execute(content="Phase", activeForm="Phasing", blockedBy=[upstream_id])
+    )
     phase_id = phase["task"]["id"]
     join = json.loads(
         await create.execute(content="Join", activeForm="Joining", blockedBy=[phase_id])
@@ -220,10 +224,57 @@ async def test_task_fanout_creates_children_and_rewrites_join_dependencies():
     assert result["ok"] is True
     child_ids = result["childIds"]
     assert len(child_ids) == 5
+    assert result["adoptedChildIds"] == []
 
     got_join = json.loads(await tget.execute(id=join_id))
     assert phase_id not in got_join["task"]["blockedBy"]
     assert got_join["task"]["blockedBy"] == child_ids
+
+    # Children should depend on the phase (and inherit its deps by default).
+    for cid in child_ids:
+        got_child = json.loads(await tget.execute(id=cid))
+        assert phase_id in got_child["task"]["blockedBy"]
+        assert upstream_id in got_child["task"]["blockedBy"]
+
+
+@pytest.mark.asyncio
+async def test_task_fanout_reuses_existing_child_by_content_and_updates_join():
+    store = TaskStore()
+    create = TaskCreateTool(store)
+    fanout = TaskFanoutTool(store)
+    tget = TaskGetTool(store)
+
+    phase = json.loads(await create.execute(content="Phase", activeForm="Phasing"))
+    phase_id = phase["task"]["id"]
+    join = json.loads(
+        await create.execute(content="Join", activeForm="Joining", blockedBy=[phase_id])
+    )
+    join_id = join["task"]["id"]
+
+    existing = json.loads(
+        await create.execute(content="Leaf 1", activeForm="Leafing 1", blockedBy=[phase_id])
+    )
+    existing_id = existing["task"]["id"]
+
+    result = json.loads(
+        await fanout.execute(
+            phaseId=phase_id,
+            joinId=join_id,
+            children=[
+                {"content": "Leaf 1", "activeForm": "Leafing 1"},
+                {"content": "Leaf 2", "activeForm": "Leafing 2"},
+            ],
+        )
+    )
+
+    assert result["ok"] is True
+    assert existing_id in result["childIds"]
+    assert existing_id in (result.get("reusedChildIds") or [])
+    assert existing_id not in (result.get("adoptedChildIds") or [])
+
+    got_join = json.loads(await tget.execute(id=join_id))
+    assert phase_id not in got_join["task"]["blockedBy"]
+    assert existing_id in got_join["task"]["blockedBy"]
 
 
 @pytest.mark.asyncio

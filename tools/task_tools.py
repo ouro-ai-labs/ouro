@@ -57,14 +57,15 @@ class TaskFanoutTool(BaseTool):
     @property
     def description(self) -> str:
         return (
-            "Create multiple child tasks for a phase, inheriting the phase's blockedBy by default. "
+            "Create multiple child tasks for a phase, making children depend on the phase by default. "
+            "Children also inherit the phase's blockedBy by default. "
             "Optionally rewrite a join task to depend on the new child task IDs instead of the phase. "
             "Use this when you want true fan-out (N leaf tasks) + join (1 aggregation task) execution.\n\n"
             "Recommended pattern:\n"
             "1) Create an identify task to resolve the concrete item list.\n"
             "2) Create a phase/container task blockedBy identify.\n"
             "3) Create a join task blockedBy phase.\n"
-            "4) Call TaskFanout(phaseId, joinId, children=[...]) to create named leaf tasks; children inherit phase.blockedBy.\n"
+            "4) Call TaskFanout(phaseId, joinId, children=[...]) to create named leaf tasks; children are blockedBy phaseId (and inherit phase.blockedBy).\n"
             "5) Mark the phase completed (it was only a container) and run leaf tasks (e.g. via sub_agent_batch), then complete join."
         )
 
@@ -112,6 +113,21 @@ class TaskFanoutTool(BaseTool):
                 "description": "If child.blockedBy is omitted/empty, inherit phase.blockedBy (default: true)",
                 "default": True,
             },
+            "dependOnPhase": {
+                "type": "boolean",
+                "description": "Ensure each child depends on phaseId (default: true). Disable only for special cases.",
+                "default": True,
+            },
+            "reuseExistingByContent": {
+                "type": "boolean",
+                "description": "If a child task with identical content already exists, reuse it (and update its deps if needed) instead of creating a duplicate (default: true).",
+                "default": True,
+            },
+            "includeRender": {
+                "type": "boolean",
+                "description": "Include full task renderings (tasksMd/debugTasksMd/tasks) in the response (default: false).",
+                "default": False,
+            },
         }
 
     async def execute(
@@ -120,6 +136,9 @@ class TaskFanoutTool(BaseTool):
         children: list[dict[str, Any]],
         joinId: str = "",
         inheritPhaseBlockedBy: bool = True,
+        dependOnPhase: bool = True,
+        reuseExistingByContent: bool = True,
+        includeRender: bool = False,
         **kwargs,
     ) -> str:
         if not phaseId or not str(phaseId).strip():
@@ -134,7 +153,24 @@ class TaskFanoutTool(BaseTool):
 
         phase_blocked_by = list(getattr(phase, "blocked_by", []) or [])
 
+        all_tasks = await self._store.list_tasks()
+        existing_by_content: dict[str, list[Any]] = {}
+        for t in all_tasks:
+            existing_by_content.setdefault(t.content, []).append(t)
+
+        def _desired_blocked_by(explicit: list[str]) -> list[str]:
+            blocked: list[str] = []
+            if inheritPhaseBlockedBy:
+                blocked.extend(phase_blocked_by)
+            blocked.extend(explicit)
+            if dependOnPhase:
+                blocked.append(phase_id)
+            blocked = [b for b in blocked if b]
+            return _dedupe_keep_order(blocked)
+
         created_ids: list[str] = []
+        reused_ids: list[str] = []
+        adopted_ids: list[str] = []
         for child in children:
             content = str(child.get("content", "")).strip()
             if not content:
@@ -144,9 +180,42 @@ class TaskFanoutTool(BaseTool):
             status = str(child.get("status", "pending") or "pending").strip()
 
             raw_blocked_by = child.get("blockedBy")
-            blocked_by = _normalize_id_list(raw_blocked_by) if raw_blocked_by else []
-            if inheritPhaseBlockedBy and not blocked_by:
-                blocked_by = list(phase_blocked_by)
+            explicit_blocked_by = _normalize_id_list(raw_blocked_by) if raw_blocked_by else []
+            blocked_by = _desired_blocked_by(explicit_blocked_by)
+
+            reused = None
+            if reuseExistingByContent:
+                candidates = list(existing_by_content.get(content, []))
+                for cand in candidates:
+                    cand_blocked = list(getattr(cand, "blocked_by", []) or [])
+                    if (not dependOnPhase) or (phase_id in cand_blocked):
+                        reused = cand
+                        break
+                # Strict adoption: if there is exactly one candidate with identical content and it
+                # hasn't started, has no detail, and has no extra deps beyond what we'd want,
+                # then "adopt" it by adding missing deps instead of creating a duplicate.
+                if reused is None and len(candidates) == 1:
+                    cand = candidates[0]
+                    cand_blocked = list(getattr(cand, "blocked_by", []) or [])
+                    cand_status = str(getattr(cand, "status", "pending") or "pending")
+                    cand_detail = str(getattr(cand, "detail", "") or "")
+                    if (
+                        cand_status == "pending"
+                        and not cand_detail.strip()
+                        and set(cand_blocked).issubset(set(blocked_by))
+                    ):
+                        reused = cand
+                        adopted_ids.append(cand.id)
+
+            if reused is not None:
+                cand_blocked = list(getattr(reused, "blocked_by", []) or [])
+                merged = _dedupe_keep_order([*cand_blocked, *blocked_by])
+                merged = [d for d in merged if d != reused.id]
+                if merged != cand_blocked:
+                    await self._store.update(reused.id, blocked_by=merged)
+                reused_ids.append(reused.id)
+                created_ids.append(reused.id)
+                continue
 
             created = await self._store.create(
                 content=content,
@@ -157,30 +226,46 @@ class TaskFanoutTool(BaseTool):
             created_ids.append(created.id)
 
         join_id = str(joinId or "").strip()
+        join_blocked_by: list[str] | None = None
         if join_id:
             join = await self._store.get(join_id)
             if not join:
                 return _json({"ok": False, "error": f"join task not found: {join_id}"})
 
             existing = list(getattr(join, "blocked_by", []) or [])
-            rewritten = [d for d in existing if d != phase_id]
+            rewritten = [d for d in existing if d not in {phase_id, join_id}]
             rewritten = _dedupe_keep_order([*rewritten, *created_ids])
             await self._store.update(join_id, blocked_by=rewritten)
+            join_blocked_by = rewritten
 
-        tasks = await self._store.list_tasks()
-        blocks = _compute_blocks(tasks)
-        return _json(
-            {
-                "ok": True,
-                "phaseId": phase_id,
-                "childIds": created_ids,
-                "joinId": join_id or None,
-                "available": await self._store.available_ids(),
-                "tasks": [t.to_dict(blocks=blocks.get(t.id, [])) for t in tasks],
-                "tasksMd": await self._store.render_tasks_md(),
-                "debugTasksMd": await self._store.render_debug_tasks_md(),
-            }
-        )
+        if join_id and join_blocked_by is None:
+            join = await self._store.get(join_id)
+            if join:
+                join_blocked_by = list(getattr(join, "blocked_by", []) or [])
+
+        payload: dict[str, Any] = {
+            "ok": True,
+            "phaseId": phase_id,
+            "childIds": created_ids,
+            "reusedChildIds": reused_ids,
+            "adoptedChildIds": adopted_ids,
+            "joinId": join_id or None,
+            "joinBlockedBy": join_blocked_by,
+            "available": await self._store.available_ids(),
+        }
+
+        if includeRender:
+            tasks = await self._store.list_tasks()
+            blocks = _compute_blocks(tasks)
+            payload.update(
+                {
+                    "tasks": [t.to_dict(blocks=blocks.get(t.id, [])) for t in tasks],
+                    "tasksMd": await self._store.render_tasks_md(),
+                    "debugTasksMd": await self._store.render_debug_tasks_md(),
+                }
+            )
+
+        return _json(payload)
 
 
 class TaskDumpMdTool(BaseTool):
