@@ -35,7 +35,10 @@ class WebSearchTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return "Search the web for information using DuckDuckGo"
+        return (
+            "Search the web for information using DuckDuckGo. "
+            "Returns up to 5 results as markdown: [title](url) plus a short snippet."
+        )
 
     @property
     def parameters(self) -> Dict[str, Any]:
