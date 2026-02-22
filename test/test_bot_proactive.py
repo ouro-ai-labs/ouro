@@ -12,8 +12,8 @@ import pytest
 from bot.channel.base import OutgoingMessage
 from bot.proactive import (
     CronScheduler,
-    HeartbeatRunner,
-    ProactiveExecutor,
+    HeartbeatScheduler,
+    IsolatedAgentRunner,
     is_active_hours,
     load_heartbeat,
 )
@@ -48,8 +48,8 @@ def _make_executor(
     router: SessionRouter | None = None,
     sessions: list[tuple[str, str]] | None = None,
     busy_sessions: set[tuple[str, str]] | None = None,
-) -> ProactiveExecutor:
-    """Build a ProactiveExecutor with mock agent and optional test sessions."""
+) -> IsolatedAgentRunner:
+    """Build an IsolatedAgentRunner with mock agent and optional test sessions."""
     mock_agent = MagicMock()
     mock_agent.run = AsyncMock(return_value=agent_result)
     factory = lambda: mock_agent  # noqa: E731
@@ -77,7 +77,7 @@ def _make_executor(
 
         router.is_session_busy = _busy  # type: ignore[assignment]
 
-    return ProactiveExecutor(factory, channels, router)
+    return IsolatedAgentRunner(factory, channels, router)
 
 
 # ---------------------------------------------------------------------------
@@ -134,11 +134,11 @@ class TestLoadHeartbeat:
 
 
 # ---------------------------------------------------------------------------
-# ProactiveExecutor
+# IsolatedAgentRunner
 # ---------------------------------------------------------------------------
 
 
-class TestProactiveExecutor:
+class TestIsolatedAgentRunner:
     async def test_run_isolated_returns_agent_result(self):
         executor = _make_executor("hello world")
         result = await executor.run_isolated("test prompt")
@@ -153,7 +153,7 @@ class TestProactiveExecutor:
             return "late"
 
         mock_agent.run = slow_run
-        executor = ProactiveExecutor(lambda: mock_agent, [], SessionRouter(lambda: MagicMock()))
+        executor = IsolatedAgentRunner(lambda: mock_agent, [], SessionRouter(lambda: MagicMock()))
 
         with patch("bot.proactive._ISOLATED_TIMEOUT", 0.1):
             result = await executor.run_isolated("test")
@@ -185,15 +185,15 @@ class TestProactiveExecutor:
 
 
 # ---------------------------------------------------------------------------
-# HeartbeatRunner
+# HeartbeatScheduler
 # ---------------------------------------------------------------------------
 
 
-class TestHeartbeatRunner:
+class TestHeartbeatScheduler:
     async def test_heartbeat_ok_silently_dropped(self):
         executor = _make_executor("HEARTBEAT_OK")
         executor.broadcast = AsyncMock(return_value=0)
-        runner = HeartbeatRunner(executor, interval=10)
+        runner = HeartbeatScheduler(executor, interval=10)
 
         with patch("bot.proactive.is_active_hours", return_value=True):
             await runner._tick()
@@ -203,7 +203,7 @@ class TestHeartbeatRunner:
     async def test_heartbeat_broadcasts_non_ok(self):
         executor = _make_executor("Server disk is 95% full")
         executor.broadcast = AsyncMock(return_value=2)
-        runner = HeartbeatRunner(executor, interval=10)
+        runner = HeartbeatScheduler(executor, interval=10)
 
         with patch("bot.proactive.is_active_hours", return_value=True):
             await runner._tick()
@@ -216,7 +216,7 @@ class TestHeartbeatRunner:
     async def test_heartbeat_skips_outside_active_hours(self):
         executor = _make_executor("should not run")
         executor.run_isolated = AsyncMock()
-        runner = HeartbeatRunner(executor, interval=10)
+        runner = HeartbeatScheduler(executor, interval=10)
 
         with patch("bot.proactive.is_active_hours", return_value=False):
             await runner._tick()
@@ -231,7 +231,7 @@ class TestHeartbeatRunner:
             busy_sessions={("test", "c1")},
         )
         executor.run_isolated = AsyncMock()
-        runner = HeartbeatRunner(executor, interval=10)
+        runner = HeartbeatScheduler(executor, interval=10)
 
         with patch("bot.proactive.is_active_hours", return_value=True):
             await runner._tick()
@@ -241,7 +241,7 @@ class TestHeartbeatRunner:
     async def test_heartbeat_exception_does_not_crash(self):
         executor = _make_executor()
         executor.run_isolated = AsyncMock(side_effect=RuntimeError("boom"))
-        runner = HeartbeatRunner(executor, interval=10)
+        runner = HeartbeatScheduler(executor, interval=10)
 
         with patch("bot.proactive.is_active_hours", return_value=True):
             # Should not raise
@@ -249,12 +249,12 @@ class TestHeartbeatRunner:
 
     def test_disabled_when_interval_zero(self):
         executor = _make_executor()
-        runner = HeartbeatRunner(executor, interval=0)
+        runner = HeartbeatScheduler(executor, interval=0)
         assert runner.enabled is False
 
     def test_enabled_when_interval_positive(self):
         executor = _make_executor()
-        runner = HeartbeatRunner(executor, interval=60)
+        runner = HeartbeatScheduler(executor, interval=60)
         assert runner.enabled is True
 
     async def test_heartbeat_injects_checklist(self, tmp_path, monkeypatch):
@@ -271,7 +271,7 @@ class TestHeartbeatRunner:
 
         executor = _make_executor()
         executor.run_isolated = capture_run  # type: ignore[assignment]
-        runner = HeartbeatRunner(executor, interval=10)
+        runner = HeartbeatScheduler(executor, interval=10)
 
         with patch("bot.proactive.is_active_hours", return_value=True):
             await runner._tick()
@@ -387,6 +387,49 @@ class TestCronScheduler:
         assert len(sched2.jobs) == 1
         assert sched2.jobs[0].name == "persist-test"
 
+    def test_add_job_once_iso(self):
+        executor = _make_executor()
+        sched = CronScheduler(executor)
+        job = sched.add_job("2026-06-15T10:00:00+08:00", "Remind me about meeting")
+        assert job.schedule_type == "once"
+        assert job.schedule_value == "2026-06-15T10:00:00+08:00"
+        assert job.next_run_at == "2026-06-15T10:00:00+08:00"
+
+    def test_add_job_once_naive_gets_utc(self):
+        executor = _make_executor()
+        sched = CronScheduler(executor)
+        job = sched.add_job("2026-06-15T10:00:00", "Remind me")
+        assert job.schedule_type == "once"
+        assert "+00:00" in job.schedule_value
+
+    async def test_tick_executes_and_removes_once_job(self):
+        executor = _make_executor("Reminder sent")
+        executor.broadcast = AsyncMock(return_value=1)
+        sched = CronScheduler(executor)
+        job = sched.add_job("2020-01-01T00:00:00+00:00", "Old reminder")
+        assert job.schedule_type == "once"
+        assert len(sched.jobs) == 1
+
+        with patch("bot.proactive.is_active_hours", return_value=True):
+            await sched._tick()
+
+        executor.broadcast.assert_awaited_once()
+        # Job should be auto-removed after execution
+        assert len(sched.jobs) == 0
+
+    async def test_once_job_not_due_stays(self):
+        executor = _make_executor()
+        executor.run_isolated = AsyncMock()
+        sched = CronScheduler(executor)
+        sched.add_job("2099-12-31T23:59:59+00:00", "Far future task")
+        assert len(sched.jobs) == 1
+
+        with patch("bot.proactive.is_active_hours", return_value=True):
+            await sched._tick()
+
+        executor.run_isolated.assert_not_awaited()
+        assert len(sched.jobs) == 1
+
     async def test_job_failure_does_not_crash_loop(self):
         executor = _make_executor()
         executor.run_isolated = AsyncMock(side_effect=RuntimeError("LLM down"))
@@ -426,7 +469,7 @@ class TestProactiveSlashCommands:
 
         ch = FakeChannel("test")
         executor = _make_executor(channels=[ch], router=router)
-        hb = HeartbeatRunner(executor, interval=1800)
+        hb = HeartbeatScheduler(executor, interval=1800)
         cron = CronScheduler(executor)
 
         server = BotServer(

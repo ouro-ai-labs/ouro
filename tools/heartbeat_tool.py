@@ -7,7 +7,7 @@ from typing import Any
 
 from tools.base import BaseTool
 
-# Default path — same file that HeartbeatRunner reads via load_heartbeat().
+# Default path — same file that HeartbeatScheduler reads via load_heartbeat().
 _BOT_DIR = os.path.join(os.path.expanduser("~"), ".ouro", "bot")
 _HEARTBEAT_FILE = os.path.join(_BOT_DIR, "heartbeat.md")
 

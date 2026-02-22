@@ -22,10 +22,11 @@ class CronTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return """Manage cron-scheduled recurring tasks.
+        return """Manage cron-scheduled tasks (recurring or one-time).
 
 WHEN TO USE:
-- User asks to schedule a recurring task (e.g. "每天早上9点给我发日报")
+- User asks to schedule a recurring task (e.g. "send me a daily report every morning at 9am")
+- User asks to schedule a one-time task (e.g. "remind me about the meeting tomorrow at 3pm")
 - User wants to list, modify, or remove scheduled jobs
 
 OPERATIONS:
@@ -36,9 +37,11 @@ OPERATIONS:
 SCHEDULE FORMAT:
 - Cron expression: "0 9 * * *" (daily at 9am), "*/30 * * * *" (every 30 min)
 - Interval in seconds: "3600" (every hour), "300" (every 5 min)
+- One-time: ISO datetime "2026-02-22T15:00:00+08:00" (execute once then auto-remove)
 
 EXAMPLES:
-- add: {"schedule": "0 9 * * *", "prompt": "生成今日工作日报", "name": "Daily report"}
+- add recurring: {"schedule": "0 9 * * *", "prompt": "Generate today's work report", "name": "Daily report"}
+- add one-time: {"schedule": "2026-02-23T15:00:00+08:00", "prompt": "Remind me about the meeting", "name": "Meeting reminder"}
 - list: {} (no parameters needed)
 - remove: {"job_id": "abc123def456"}"""
 
@@ -51,7 +54,7 @@ EXAMPLES:
             },
             "schedule": {
                 "type": "string",
-                "description": "Cron expression (e.g. '0 9 * * *') or interval in seconds (for add)",
+                "description": "Cron expression, interval in seconds, or ISO datetime for one-time (for add)",
                 "default": "",
             },
             "prompt": {

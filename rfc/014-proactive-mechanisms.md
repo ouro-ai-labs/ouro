@@ -105,8 +105,8 @@ BOT_ACTIVE_HOURS_TZ=Asia/Shanghai
 
 ```
 bot/proactive.py
-├── ProactiveExecutor     — run_isolated() + broadcast()
-├── HeartbeatRunner       — periodic loop, reads heartbeat.md
+├── IsolatedAgentRunner     — run_isolated() + broadcast()
+├── HeartbeatScheduler       — periodic loop, reads heartbeat.md
 ├── CronScheduler         — tick loop, persists to cron_jobs.json
 └── helpers               — load_heartbeat(), is_active_hours()
 
@@ -114,16 +114,16 @@ tools/cron_tool.py        — CronTool(BaseTool), delegates to CronScheduler
 tools/heartbeat_tool.py   — HeartbeatTool(BaseTool), reads/writes heartbeat.md directly
 ```
 
-### ProactiveExecutor
+### IsolatedAgentRunner
 
 Shared execution engine for both heartbeat and cron:
 
 - `run_isolated(prompt)`: creates a one-shot agent via `agent_factory`, runs prompt with a hard timeout (120s), returns result string
 - `broadcast(text)`: pushes text to all active IM sessions, skipping busy ones
 
-### HeartbeatTool vs HeartbeatRunner
+### HeartbeatTool vs HeartbeatScheduler
 
-`HeartbeatRunner` reads `heartbeat.md` on each tick to build the agent prompt. `HeartbeatTool` reads/writes the same file to let the agent add/remove items. They share the file path but are otherwise independent — no runtime coupling.
+`HeartbeatScheduler` reads `heartbeat.md` on each tick to build the agent prompt. `HeartbeatTool` reads/writes the same file to let the agent add/remove items. They share the file path but are otherwise independent — no runtime coupling.
 
 ### Tool injection
 
@@ -138,7 +138,7 @@ agent.tool_executor.add_tool(HeartbeatTool())
 
 ## Alternatives Considered
 
-- **HeartbeatTool wraps HeartbeatRunner**: Rejected — `HeartbeatRunner` is a background loop, not a data store. Direct file I/O is simpler and avoids coupling the tool to the runner lifecycle.
+- **HeartbeatTool wraps HeartbeatScheduler**: Rejected — `HeartbeatScheduler` is a background loop, not a data store. Direct file I/O is simpler and avoids coupling the tool to the runner lifecycle.
 - **In-memory cron storage only**: Rejected — jobs must survive bot restarts. JSON file is simple and sufficient.
 - **Single unified `manage_proactive` tool**: Rejected — heartbeat and cron have different parameters and semantics. Separate tools are clearer for the LLM.
 - **Database-backed persistence**: Over-engineering for MVP. A JSON file and a markdown file are sufficient for the expected scale (< 100 items).
@@ -146,7 +146,7 @@ agent.tool_executor.add_tool(HeartbeatTool())
 ## Test Plan
 
 - Unit tests:
-  - `test/test_bot_proactive.py` — HeartbeatRunner, CronScheduler, ProactiveExecutor, active hours (42 tests)
+  - `test/test_bot_proactive.py` — HeartbeatScheduler, CronScheduler, IsolatedAgentRunner, active hours (42 tests)
   - `test/test_cron_tool.py` — CronTool add/remove/list/edge cases (12 tests)
   - `test/test_heartbeat_tool.py` — HeartbeatTool add/remove/list/edge cases (13 tests)
   - `test/test_bot_server.py` — BotServer with proactive components wired in

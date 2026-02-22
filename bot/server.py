@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from aiohttp import web
 
 from bot.channel.base import Channel, IncomingMessage, OutgoingMessage
-from bot.proactive import CronScheduler, HeartbeatRunner, ProactiveExecutor
+from bot.proactive import CronScheduler, HeartbeatScheduler, IsolatedAgentRunner
 from bot.session_router import SessionRouter
 from config import Config
 
@@ -43,7 +43,7 @@ class BotServer:
         session_router: SessionRouter,
         channels: list[Channel],
         *,
-        heartbeat: HeartbeatRunner | None = None,
+        heartbeat: HeartbeatScheduler | None = None,
         cron_scheduler: CronScheduler | None = None,
     ) -> None:
         self._router = session_router
@@ -535,8 +535,8 @@ async def run_bot(model_id: str | None = None) -> None:
     router = SessionRouter(agent_factory=agent_factory)
 
     # Proactive mechanisms (heartbeat + cron)
-    executor = ProactiveExecutor(agent_factory, channels, router)
-    heartbeat = HeartbeatRunner(executor)
+    executor = IsolatedAgentRunner(agent_factory, channels, router)
+    heartbeat = HeartbeatScheduler(executor)
     cron = CronScheduler(executor)
     _shared["cron"] = cron
 

@@ -57,6 +57,23 @@ class TestCronToolAdd:
         assert "cron=0 9 * * *" in result
         assert len(sched.jobs) == 1
 
+    async def test_add_once_iso_datetime(self, tmp_path, monkeypatch):
+        sched = _make_scheduler(tmp_path, monkeypatch)
+        tool = CronTool(sched)
+
+        result = await tool.execute(
+            operation="add",
+            schedule="2026-06-15T15:00:00+08:00",
+            prompt="Remind me about the meeting",
+            name="meeting-reminder",
+        )
+
+        assert "Created cron job" in result
+        assert "meeting-reminder" in result
+        assert "once=" in result
+        assert len(sched.jobs) == 1
+        assert sched.jobs[0].schedule_type == "once"
+
     async def test_add_missing_schedule(self, tmp_path, monkeypatch):
         sched = _make_scheduler(tmp_path, monkeypatch)
         tool = CronTool(sched)

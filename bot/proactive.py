@@ -117,11 +117,11 @@ def is_active_hours(
 
 
 # ---------------------------------------------------------------------------
-# ProactiveExecutor — isolated execution + broadcast
+# IsolatedAgentRunner — isolated execution + broadcast
 # ---------------------------------------------------------------------------
 
 
-class ProactiveExecutor:
+class IsolatedAgentRunner:
     """Run prompts in one-shot agent sessions and broadcast results."""
 
     def __init__(
@@ -191,14 +191,14 @@ class ProactiveExecutor:
 
 
 # ---------------------------------------------------------------------------
-# HeartbeatRunner
+# HeartbeatScheduler
 # ---------------------------------------------------------------------------
 
 
-class HeartbeatRunner:
+class HeartbeatScheduler:
     """Periodically execute a heartbeat check and broadcast if needed."""
 
-    def __init__(self, executor: ProactiveExecutor, interval: int | None = None) -> None:
+    def __init__(self, executor: IsolatedAgentRunner, interval: int | None = None) -> None:
         self._executor = executor
         self._interval = interval if interval is not None else Config.BOT_HEARTBEAT_INTERVAL
         self._last_run: datetime | None = None
@@ -280,8 +280,8 @@ class CronJob:
 
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     name: str = ""
-    schedule_type: str = "cron"  # "cron" | "every"
-    schedule_value: str = ""  # cron expression | seconds
+    schedule_type: str = "cron"  # "cron" | "every" | "once"
+    schedule_value: str = ""  # cron expression | seconds | ISO datetime
     prompt: str = ""
     enabled: bool = True
     last_run_at: str | None = None
@@ -289,9 +289,9 @@ class CronJob:
 
 
 class CronScheduler:
-    """Run cron-scheduled prompts via ProactiveExecutor."""
+    """Run cron-scheduled prompts via IsolatedAgentRunner."""
 
-    def __init__(self, executor: ProactiveExecutor) -> None:
+    def __init__(self, executor: IsolatedAgentRunner) -> None:
         self._executor = executor
         self._jobs: list[CronJob] = []
         self._running = False
@@ -309,14 +309,24 @@ class CronScheduler:
         prompt: str,
         name: str = "",
     ) -> CronJob:
-        """Add a new job. *schedule_expr* is a cron expression or an integer (seconds)."""
+        """Add a new job.
+
+        *schedule_expr* is an integer (seconds), an ISO datetime (once), or
+        a cron expression.
+        """
         try:
             seconds = int(schedule_expr)
             stype, sval = "every", str(seconds)
         except ValueError:
-            # Validate cron expression
-            croniter(schedule_expr)  # raises ValueError on bad expr
-            stype, sval = "cron", schedule_expr
+            try:
+                dt = datetime.fromisoformat(schedule_expr)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                stype, sval = "once", dt.isoformat()
+            except ValueError:
+                # Validate cron expression
+                croniter(schedule_expr)  # raises ValueError on bad expr
+                stype, sval = "cron", schedule_expr
 
         job = CronJob(
             name=name or prompt[:40],
@@ -384,7 +394,10 @@ class CronScheduler:
             logger.exception("Cron job %s failed", job.id)
         finally:
             job.last_run_at = datetime.now(tz=timezone.utc).isoformat()
-            self._compute_next_run(job)
+            if job.schedule_type == "once":
+                self._jobs = [j for j in self._jobs if j.id != job.id]
+            else:
+                self._compute_next_run(job)
             self._save_jobs()
 
     # ---- Persistence -------------------------------------------------------
@@ -393,6 +406,9 @@ class CronScheduler:
         """Set job.next_run_at based on schedule type."""
         now = datetime.now(tz=timezone.utc)
         try:
+            if job.schedule_type == "once":
+                job.next_run_at = job.schedule_value  # already ISO
+                return
             if job.schedule_type == "every":
                 seconds = int(job.schedule_value)
                 nxt = now + _td(seconds)
