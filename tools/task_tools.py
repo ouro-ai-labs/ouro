@@ -28,6 +28,156 @@ def _normalize_id_list(values: list[str | int | float] | None) -> list[str]:
     return [_normalize_task_id(v) for v in values]
 
 
+def _dedupe_keep_order(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
+    return out
+
+
+class TaskFanoutTool(BaseTool):
+    """Create child tasks for a phase and (optionally) rewrite a join task's dependencies.
+
+    This is a convenience tool to avoid a common orchestration pitfall:
+    creating a "container/phase" task and separate leaf tasks, but forgetting to
+    update the downstream join task's blockedBy to depend on the leaf tasks.
+    """
+
+    def __init__(self, store: TaskStore):
+        self._store = store
+
+    @property
+    def name(self) -> str:
+        return "TaskFanout"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Create multiple child tasks for a phase, inheriting the phase's blockedBy by default. "
+            "Optionally rewrite a join task to depend on the new child task IDs instead of the phase. "
+            "Common pattern: create an identify task -> phase task blockedBy identify -> join task blockedBy phase; "
+            "then TaskFanout the phase into named leaf tasks and rewrite the join to depend on leaf tasks."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "phaseId": {"type": "string", "description": "Phase/container task ID"},
+            "children": {
+                "type": "array",
+                "description": "Child task specs (one per leaf task)",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "content": {
+                            "type": "string",
+                            "description": "Task description (imperative)",
+                        },
+                        "activeForm": {
+                            "type": "string",
+                            "description": "Present continuous form (optional)",
+                            "default": "",
+                        },
+                        "status": {
+                            "type": "string",
+                            "description": "pending, in_progress, completed (optional; default pending)",
+                            "default": "pending",
+                        },
+                        "blockedBy": {
+                            "type": "array",
+                            "description": "Explicit blockedBy (optional). If omitted/empty and inheritPhaseBlockedBy=true, inherits phase.blockedBy.",
+                            "items": {"type": "string"},
+                            "default": [],
+                        },
+                    },
+                    "required": ["content"],
+                },
+            },
+            "joinId": {
+                "type": "string",
+                "description": "Optional join/aggregation task ID to rewrite dependencies for",
+                "default": "",
+            },
+            "inheritPhaseBlockedBy": {
+                "type": "boolean",
+                "description": "If child.blockedBy is omitted/empty, inherit phase.blockedBy (default: true)",
+                "default": True,
+            },
+        }
+
+    async def execute(
+        self,
+        phaseId: str,
+        children: list[dict[str, Any]],
+        joinId: str = "",
+        inheritPhaseBlockedBy: bool = True,
+        **kwargs,
+    ) -> str:
+        if not phaseId or not str(phaseId).strip():
+            return _json({"ok": False, "error": "phaseId must be a non-empty string"})
+        if not children:
+            return _json({"ok": False, "error": "children must be a non-empty array"})
+
+        phase_id = _normalize_task_id(phaseId)
+        phase = await self._store.get(phase_id)
+        if not phase:
+            return _json({"ok": False, "error": f"phase task not found: {phase_id}"})
+
+        phase_blocked_by = list(getattr(phase, "blocked_by", []) or [])
+
+        created_ids: list[str] = []
+        for child in children:
+            content = str(child.get("content", "")).strip()
+            if not content:
+                return _json({"ok": False, "error": "Each child must include non-empty content"})
+
+            active_form = str(child.get("activeForm", "") or "").strip()
+            status = str(child.get("status", "pending") or "pending").strip()
+
+            raw_blocked_by = child.get("blockedBy")
+            blocked_by = _normalize_id_list(raw_blocked_by) if raw_blocked_by else []
+            if inheritPhaseBlockedBy and not blocked_by:
+                blocked_by = list(phase_blocked_by)
+
+            created = await self._store.create(
+                content=content,
+                active_form=active_form or None,
+                status=status or "pending",
+                blocked_by=blocked_by,
+            )
+            created_ids.append(created.id)
+
+        join_id = str(joinId or "").strip()
+        if join_id:
+            join = await self._store.get(join_id)
+            if not join:
+                return _json({"ok": False, "error": f"join task not found: {join_id}"})
+
+            existing = list(getattr(join, "blocked_by", []) or [])
+            rewritten = [d for d in existing if d != phase_id]
+            rewritten = _dedupe_keep_order([*rewritten, *created_ids])
+            await self._store.update(join_id, blocked_by=rewritten)
+
+        tasks = await self._store.list_tasks()
+        blocks = _compute_blocks(tasks)
+        return _json(
+            {
+                "ok": True,
+                "phaseId": phase_id,
+                "childIds": created_ids,
+                "joinId": join_id or None,
+                "available": await self._store.available_ids(),
+                "tasks": [t.to_dict(blocks=blocks.get(t.id, [])) for t in tasks],
+                "tasksMd": await self._store.render_tasks_md(),
+                "debugTasksMd": await self._store.render_debug_tasks_md(),
+            }
+        )
+
+
 class TaskDumpMdTool(BaseTool):
     """Persist a human-readable tasks.md snapshot to disk."""
 
@@ -134,6 +284,11 @@ and update status as you progress. Prefer Tasks tools over manage_todo_list."""
                 "description": "Present continuous form (used when in progress)",
                 "default": "",
             },
+            "detail": {
+                "type": "string",
+                "description": "Optional long-form detail/result for this task (keep content short).",
+                "default": "",
+            },
             "status": {
                 "type": "string",
                 "description": "One of: pending, in_progress, completed",
@@ -151,6 +306,7 @@ and update status as you progress. Prefer Tasks tools over manage_todo_list."""
         self,
         content: str,
         activeForm: str = "",
+        detail: str = "",
         status: str = "pending",
         blockedBy: list[str | int | float] | None = None,
         **kwargs,
@@ -158,6 +314,7 @@ and update status as you progress. Prefer Tasks tools over manage_todo_list."""
         task = await self._store.create(
             content=content,
             active_form=activeForm or None,
+            detail=detail or None,
             status=status,
             blocked_by=_normalize_id_list(blockedBy),
         )
@@ -184,6 +341,12 @@ class TaskUpdateTool(BaseTool):
     def description(self) -> str:
         return """Update an existing task: status/content, and dependency edges.
 
+Use `detail` to store long-form results/notes. Keep `content` short and stable (task title).
+
+Dependency rules:
+- You may only edit dependency edges (blockedBy/addBlockedBy/removeBlockedBy/addBlocks/removeBlocks) for tasks that are pending.
+- If you need to change dependencies after work has started, explicitly reopen the task first with status="pending", then edit dependencies, then start again.
+
 Notes on dependency fields:
 - blockedBy replaces the full dependency list for this task.
 - addBlockedBy/removeBlockedBy incrementally edit blockedBy.
@@ -208,6 +371,16 @@ Notes on dependency fields:
                 "type": "string",
                 "description": "New present continuous form (optional)",
                 "default": None,
+            },
+            "detail": {
+                "type": "string",
+                "description": "Long-form detail/result (optional; does not change the task title)",
+                "default": None,
+            },
+            "replaceDetail": {
+                "type": "boolean",
+                "description": "If true, overwrite any existing detail. If false (default), new non-empty detail is appended to existing detail (never clears).",
+                "default": False,
             },
             "status": {
                 "type": "string",
@@ -251,6 +424,8 @@ Notes on dependency fields:
         id: str | int | float,
         content: str | None = None,
         activeForm: str | None = None,
+        detail: str | None = None,
+        replaceDetail: bool = False,
         status: str | None = None,
         blockedBy: list[str | int | float] | None = None,
         addBlockedBy: list[str | int | float] | None = None,
@@ -259,10 +434,23 @@ Notes on dependency fields:
         removeBlocks: list[str | int | float] | None = None,
         **kwargs,
     ) -> str:
+        # Detail is append-only by default to avoid accidental clobbering of long results.
+        # Clearing or overwriting requires replaceDetail=true.
+        if detail is not None and not replaceDetail:
+            if not str(detail).strip():
+                detail = None
+            else:
+                existing = await self._store.get(id)
+                if existing and getattr(existing, "detail", None):
+                    existing_detail = str(existing.detail or "")
+                    if existing_detail.strip() and str(detail) not in existing_detail:
+                        detail = existing_detail.rstrip() + "\n\n---\n\n" + str(detail).lstrip()
+
         updated = await self._store.update(
             id,
             content=content,
             active_form=activeForm,
+            detail=detail,
             status=status,
             blocked_by=_normalize_id_list(blockedBy) if blockedBy is not None else None,
             add_blocked_by=_normalize_id_list(addBlockedBy) or None,
@@ -349,7 +537,7 @@ class TaskGetTool(BaseTool):
         blocks = _compute_blocks(tasks)
         return _json(
             {
-                "task": task.to_dict(blocks=blocks.get(task.id, [])),
+                "task": task.to_dict(blocks=blocks.get(task.id, []), include_detail=True),
                 "available": await self._store.available_ids(),
                 "tasksMd": await self._store.render_tasks_md(),
                 "debugTasksMd": await self._store.render_debug_tasks_md(),

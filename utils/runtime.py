@@ -36,6 +36,9 @@ def get_sessions_dir() -> str:
     Returns:
         Path to ~/.ouro/sessions/
     """
+    override = os.environ.get("OURO_SESSIONS_DIR")
+    if override and override.strip():
+        return os.path.expanduser(override.strip())
     return os.path.join(RUNTIME_DIR, "sessions")
 
 
@@ -120,7 +123,8 @@ def ensure_runtime_dirs(create_logs: bool = False) -> None:
     Args:
         create_logs: Whether to create the logs directory (for --verbose mode)
     """
-    os.makedirs(os.path.join(RUNTIME_DIR, "sessions"), exist_ok=True)
+    # Allow overriding sessions dir for restricted environments (e.g. sandboxed runs).
+    os.makedirs(get_sessions_dir(), exist_ok=True)
 
     if create_logs:
-        os.makedirs(os.path.join(RUNTIME_DIR, "logs"), exist_ok=True)
+        os.makedirs(get_log_dir(), exist_ok=True)

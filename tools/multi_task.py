@@ -45,7 +45,10 @@ class MultiTaskTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return """Execute multiple tasks in parallel using sub-agents.
+        return """(Legacy) Execute multiple tasks in parallel using sub-agents.
+
+Prefer TaskCreate/TaskFanout + sub_agent_batch when Tasks tools are available:
+this tool does not integrate with the session Task graph (no Task IDs, no dependency edges).
 
 Use this tool when you need to:
 - Run 2+ independent or semi-dependent tasks concurrently

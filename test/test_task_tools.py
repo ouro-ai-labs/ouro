@@ -6,10 +6,15 @@ import json
 
 import pytest
 
-from agent.tasks import TaskStore
+from agent.tasks import (
+    TaskBlockedError,
+    TaskDependencyFrozenError,
+    TaskStore,
+)
 from tools.task_tools import (
     TaskCreateTool,
     TaskDumpMdTool,
+    TaskFanoutTool,
     TaskGetTool,
     TaskListTool,
     TaskUpdateTool,
@@ -91,6 +96,68 @@ async def test_task_update_add_and_remove_blocked_by_edits_dependencies():
 
 
 @pytest.mark.asyncio
+async def test_task_update_rejects_start_or_complete_when_blocked_by_incomplete_deps():
+    store = TaskStore()
+    create = TaskCreateTool(store)
+    update = TaskUpdateTool(store)
+
+    a = json.loads(await create.execute(content="Do A", activeForm="Doing A"))
+    a_id = a["task"]["id"]
+    b = json.loads(await create.execute(content="Do B", activeForm="Doing B", blockedBy=[a_id]))
+    b_id = b["task"]["id"]
+
+    with pytest.raises(TaskBlockedError) as excinfo:
+        await update.execute(id=b_id, status="in_progress")
+    assert excinfo.value.missing_deps == [a_id]
+
+    with pytest.raises(TaskBlockedError) as excinfo2:
+        await update.execute(id=b_id, status="completed")
+    assert excinfo2.value.missing_deps == [a_id]
+
+@pytest.mark.asyncio
+async def test_task_update_rejects_dependency_edits_for_non_pending_tasks():
+    store = TaskStore()
+    create = TaskCreateTool(store)
+    update = TaskUpdateTool(store)
+
+    a = json.loads(await create.execute(content="Do A", activeForm="Doing A"))
+    a_id = a["task"]["id"]
+    b = json.loads(await create.execute(content="Do B", activeForm="Doing B", blockedBy=[a_id]))
+    b_id = b["task"]["id"]
+
+    await update.execute(id=a_id, status="completed")
+    await update.execute(id=b_id, status="in_progress")
+
+    with pytest.raises(TaskDependencyFrozenError):
+        await update.execute(id=b_id, addBlockedBy=[a_id])
+
+    with pytest.raises(TaskDependencyFrozenError):
+        await update.execute(id=b_id, blockedBy=[a_id])
+
+
+@pytest.mark.asyncio
+async def test_task_update_allows_editing_dependencies_when_reopening_to_pending():
+    store = TaskStore()
+    create = TaskCreateTool(store)
+    update = TaskUpdateTool(store)
+    tget = TaskGetTool(store)
+
+    a = json.loads(await create.execute(content="Do A", activeForm="Doing A"))
+    a_id = a["task"]["id"]
+    b = json.loads(await create.execute(content="Do B", activeForm="Doing B", blockedBy=[a_id]))
+    b_id = b["task"]["id"]
+    c = json.loads(await create.execute(content="Do C", activeForm="Doing C"))
+    c_id = c["task"]["id"]
+
+    await update.execute(id=a_id, status="completed")
+    await update.execute(id=b_id, status="in_progress")
+
+    await update.execute(id=b_id, status="pending", addBlockedBy=[c_id])
+    got_b = json.loads(await tget.execute(id=b_id))
+    assert set(got_b["task"]["blockedBy"]) == {a_id, c_id}
+
+
+@pytest.mark.asyncio
 async def test_task_dump_md_writes_tasks_md_and_optional_debug(tmp_path):
     store = TaskStore()
     create = TaskCreateTool(store)
@@ -119,3 +186,88 @@ async def test_task_dump_md_writes_tasks_md_and_optional_debug(tmp_path):
     debug_path = tmp_path / "tasks.debug.md"
     debug_text = debug_path.read_text(encoding="utf-8")
     assert "# tasks.md (debug)" in debug_text
+
+
+@pytest.mark.asyncio
+async def test_task_fanout_creates_children_and_rewrites_join_dependencies():
+    store = TaskStore()
+    create = TaskCreateTool(store)
+    fanout = TaskFanoutTool(store)
+    tget = TaskGetTool(store)
+
+    phase = json.loads(await create.execute(content="Phase", activeForm="Phasing"))
+    phase_id = phase["task"]["id"]
+    join = json.loads(
+        await create.execute(content="Join", activeForm="Joining", blockedBy=[phase_id])
+    )
+    join_id = join["task"]["id"]
+
+    result = json.loads(
+        await fanout.execute(
+            phaseId=phase_id,
+            joinId=join_id,
+            children=[
+                {"content": "Leaf 1", "activeForm": "Leafing 1"},
+                {"content": "Leaf 2", "activeForm": "Leafing 2"},
+                {"content": "Leaf 3", "activeForm": "Leafing 3"},
+                {"content": "Leaf 4", "activeForm": "Leafing 4"},
+                {"content": "Leaf 5", "activeForm": "Leafing 5"},
+            ],
+        )
+    )
+
+    assert result["ok"] is True
+    child_ids = result["childIds"]
+    assert len(child_ids) == 5
+
+    got_join = json.loads(await tget.execute(id=join_id))
+    assert phase_id not in got_join["task"]["blockedBy"]
+    assert got_join["task"]["blockedBy"] == child_ids
+
+
+@pytest.mark.asyncio
+async def test_task_detail_is_stored_and_task_get_includes_it():
+    store = TaskStore()
+    create = TaskCreateTool(store)
+    update = TaskUpdateTool(store)
+    tlist = TaskListTool(store)
+    tget = TaskGetTool(store)
+
+    created = json.loads(await create.execute(content="Do X", activeForm="Doing X"))
+    tid = created["task"]["id"]
+
+    await update.execute(id=tid, detail="long result")
+
+    listed = json.loads(await tlist.execute())
+    t = [x for x in listed["tasks"] if x["id"] == tid][0]
+    assert t["hasDetail"] is True
+    assert t["detailChars"] == len("long result")
+    assert "detail" not in t
+
+    got = json.loads(await tget.execute(id=tid))
+    assert got["task"]["detail"] == "long result"
+
+
+@pytest.mark.asyncio
+async def test_task_update_appends_detail_by_default_and_replace_detail_overwrites():
+    store = TaskStore()
+    create = TaskCreateTool(store)
+    update = TaskUpdateTool(store)
+    tget = TaskGetTool(store)
+
+    created = json.loads(await create.execute(content="Do X", activeForm="Doing X"))
+    tid = created["task"]["id"]
+
+    await update.execute(id=tid, detail="first")
+    await update.execute(id=tid, detail="second")
+    got = json.loads(await tget.execute(id=tid))
+    assert got["task"]["detail"] == "first\n\n---\n\nsecond"
+
+    await update.execute(id=tid, detail="third", replaceDetail=True)
+    got2 = json.loads(await tget.execute(id=tid))
+    assert got2["task"]["detail"] == "third"
+
+    # Empty detail does not clear by default (no-op).
+    await update.execute(id=tid, detail="")
+    got3 = json.loads(await tget.execute(id=tid))
+    assert got3["task"]["detail"] == "third"

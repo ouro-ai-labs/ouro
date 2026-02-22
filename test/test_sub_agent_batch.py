@@ -46,17 +46,10 @@ class _FakeAgent:
             await self._probe.enter()
             await asyncio.sleep(0.05)
 
-        await self.tool_executor.execute_tool_call(
-            "TaskUpdate", {"id": task_id, "status": "in_progress"}
-        )
-        await self.tool_executor.execute_tool_call(
-            "TaskUpdate", {"id": task_id, "status": "completed"}
-        )
-
         if self._probe is not None:
             await self._probe.exit()
 
-        return f"completed {task_id}"
+        return f"result for {task_id}"
 
 
 @pytest.mark.asyncio
@@ -76,16 +69,15 @@ async def test_sub_agent_batch_runs_workers_and_updates_task_status():
     a_id = a["task"]["id"]
     b_id = b["task"]["id"]
 
-    result = json.loads(
-        await tool.execute(runs=[{"taskId": a_id}, {"taskId": b_id}], maxParallel=2)
-    )
+    result = json.loads(await tool.execute(runs=[{"taskId": a_id}, {"taskId": b_id}], maxParallel=2))
     assert result["ok"] is True
     assert {r["taskId"] for r in result["results"]} == {a_id, b_id}
-
+    assert all(r["ok"] is True for r in result["results"])
+    # sub_agent_batch does not update task state; the main agent applies results via TaskUpdate.
     got_a = json.loads(await TaskGetTool(store).execute(id=a_id))
     got_b = json.loads(await TaskGetTool(store).execute(id=b_id))
-    assert got_a["task"]["status"] == "completed"
-    assert got_b["task"]["status"] == "completed"
+    assert got_a["task"]["status"] == "pending"
+    assert got_b["task"]["status"] == "pending"
 
 
 @pytest.mark.asyncio

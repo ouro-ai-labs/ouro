@@ -32,6 +32,7 @@ from tools.sub_agent_batch import SubAgentBatchTool
 from tools.task_tools import (
     TaskCreateTool,
     TaskDumpMdTool,
+    TaskFanoutTool,
     TaskGetTool,
     TaskListTool,
     TaskUpdateTool,
@@ -73,6 +74,7 @@ def create_agent(
         ShellTool(),
         TaskCreateTool(task_store),
         TaskUpdateTool(task_store),
+        TaskFanoutTool(task_store),
         TaskListTool(task_store),
         TaskGetTool(task_store),
         TaskDumpMdTool(task_store),
@@ -87,18 +89,20 @@ def create_agent(
             "or edit `.ouro/models.yaml` to add at least one model and set `default`."
         )
 
-    # Get the model to use
+    # Get the model to use (run-scoped; do not persist selection to ~/.ouro/models.yaml)
+    current_profile = None
     if model_id:
         profile = model_manager.get_model(model_id)
         if profile:
-            model_manager.switch_model(model_id)
+            current_profile = profile
         else:
             available = ", ".join(model_manager.get_model_ids())
             terminal_ui.print_error(f"Model '{model_id}' not found, using default")
             if available:
                 terminal_ui.console.print(f"Available: {available}")
 
-    current_profile = model_manager.get_current_model()
+    if current_profile is None:
+        current_profile = model_manager.get_current_model()
     if not current_profile:
         raise ValueError("No model available. Please check `.ouro/models.yaml`.")
 
