@@ -46,7 +46,6 @@ async def main():
     # Configure memory settings directly via Config class
     # (In production, these would be set via environment variables)
     Config.MEMORY_COMPRESSION_THRESHOLD = 400  # Trigger compression quickly
-    Config.MEMORY_SHORT_TERM_SIZE = 5
     Config.MEMORY_COMPRESSION_RATIO = 0.3
 
     mock_llm = MockLLM()
@@ -54,7 +53,6 @@ async def main():
 
     print("\nConfiguration:")
     print(f"  Compression threshold: {Config.MEMORY_COMPRESSION_THRESHOLD}")
-    print(f"  Short-term size: {Config.MEMORY_SHORT_TERM_SIZE}")
 
     # Add system message
     print("\n1. Adding system message...")

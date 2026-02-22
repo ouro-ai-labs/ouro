@@ -18,8 +18,7 @@ All settings go in `~/.ouro/config`:
 |---------|---------|-------------|
 | `MEMORY_ENABLED` | `true` | Enable memory management |
 | `MEMORY_COMPRESSION_THRESHOLD` | `60000` | Token count that triggers compression |
-| `MEMORY_SHORT_TERM_SIZE` | `100` | Max recent messages kept at full fidelity |
-| `MEMORY_SHORT_TERM_MIN_SIZE` | `6` | Minimum messages always preserved |
+| `MEMORY_SHORT_TERM_MIN_SIZE` | `6` | Minimum messages always preserved during compression |
 | `MEMORY_COMPRESSION_RATIO` | `0.3` | Target compression ratio (0.3 = compress to 30%) |
 
 ## Compression Strategies
@@ -235,7 +234,7 @@ stats = manager.get_stats()
 
 **Compression not triggering**: Check that `MEMORY_ENABLED=true` and that the conversation has exceeded `MEMORY_COMPRESSION_THRESHOLD` tokens.
 
-**Context quality degraded after compression**: Switch to `selective` strategy, increase `MEMORY_SHORT_TERM_SIZE`, or raise `MEMORY_COMPRESSION_RATIO`.
+**Context quality degraded after compression**: Switch to `selective` strategy, increase `MEMORY_SHORT_TERM_MIN_SIZE`, or raise `MEMORY_COMPRESSION_RATIO`.
 
 **High compression cost**: Compression itself uses LLM tokens. Increase the threshold to compress less often, or use `deletion` strategy (zero LLM cost).
 
