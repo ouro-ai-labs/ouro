@@ -125,6 +125,8 @@ ouro --resume a1b2c3d4
 
 Run ouro as a persistent IM bot — message it from Lark or Slack, get agent responses. No public URL needed; the bot uses outbound long connections (WebSocket / Socket Mode).
 
+Bot data is isolated under `~/.ouro/bot/` (sessions, memory, skills) so it never conflicts with interactive or task mode.
+
 ### Install
 
 ```bash
@@ -149,7 +151,22 @@ SLACK_APP_TOKEN=xapp-xxx
 ouro --bot
 ```
 
-Platform setup guides:
+### Session Persistence
+
+Bot conversations are automatically saved to disk and resumed across restarts. Each IM conversation gets its own session, mapped via `~/.ouro/bot/sessions/conversation_map.yaml`.
+
+Commands (send as a message to the bot):
+
+| Command | Description |
+|---------|-------------|
+| `/sessions list` | List all saved sessions |
+| `/sessions resume <id>` | Switch to a previous session |
+| `/new` or `/reset` | Start a fresh session |
+
+Sessions untouched for 30 days are automatically cleaned up.
+
+### Platform Guides
+
 - [Lark (Feishu) Setup](bot/LARK.md)
 - [Slack Setup](bot/SLACK.md)
 
