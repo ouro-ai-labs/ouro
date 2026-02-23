@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)]()
 
-*An open-source AI agent built on a single, unified loop.*
+*An open-source AI agent — run it as a Coding agent CLI or deploy it as a bot just like JARVIS.*
 
 </div>
 
@@ -159,11 +159,31 @@ Commands (send as a message to the bot):
 
 | Command | Description |
 |---------|-------------|
+| `/new` or `/reset` | Start a fresh session |
 | `/sessions list` | List all saved sessions |
 | `/sessions resume <id>` | Switch to a previous session |
-| `/new` or `/reset` | Start a fresh session |
+| `/compact` | Compress conversation memory to save tokens |
+| `/status` | Show session statistics (age, messages, tokens, compressions) |
+| `/heartbeat` | Show heartbeat status (interval, last run, next run) |
+| `/cron list` | List all scheduled cron jobs |
+| `/cron add <schedule> <prompt>` | Create a new cron job |
+| `/cron remove <id>` | Delete a cron job |
+| `/help` | List all available commands |
 
 Sessions untouched for 30 days are automatically cleaned up.
+
+### Proactive Mechanisms
+
+The bot can act on its own between conversations:
+
+- **Heartbeat**: Periodic self-checks — the agent runs through a checklist and broadcasts results to active IM sessions when action is needed.
+- **Cron**: Schedule recurring or one-time tasks via cron expressions, second intervals, or one-time ISO timestamps.
+
+See [Bot Configuration](docs/configuration.md) for `BOT_HEARTBEAT_INTERVAL`, `BOT_ACTIVE_HOURS_*`, and other settings.
+
+### Personality
+
+`~/.ouro/bot/soul.md` defines the bot's identity and tone. It is injected into the agent's system prompt for all bot sessions. A default template is created automatically on first launch — edit it to customize your bot's personality.
 
 ### Platform Guides
 
@@ -172,13 +192,15 @@ Sessions untouched for 30 days are automatically cleaned up.
 
 ## Features
 
-- **Unified agent loop**: Think-Act-Observe cycle — planning, sub-agents, and tool use all happen in one loop, chosen autonomously by the agent
+- **Dual mode**: Interactive CLI with rich TUI + persistent IM bot (Lark, Slack) — same agent core, two deployment modes
+- **Unified agent loop**: Think-Act-Observe cycle — planning, sub-agents, and tool use all happen in one loop
 - **Self-verification**: Ralph Loop verifies the agent's answer against the original task and re-enters if incomplete (`--verify`)
 - **Parallel execution**: Concurrent readonly tool calls in a single turn, plus `multi_task` for spawning parallel sub-agents with dependency ordering
-- **Memory system**: LLM-driven compression (sliding window / selective / deletion), git-aware long-term memory, and YAML session persistence resumable via `--resume`
-- **OAuth login**: `--login` / `/login` to authenticate with ChatGPT Codex subscription models; bundled OAuth catalog auto-synced
-- **TUI**: Dark/light themes, slash-command autocomplete, live status bar, token & cache tracking (`/stats`)
-- **Skills**: Extensible skill registry — list, install, and manage via `/skills`
+- **Memory system**: LLM-driven compression, long-term memory, and YAML session persistence resumable across restarts
+- **Proactive mechanisms**: Heartbeat self-checks + cron-scheduled tasks, with results broadcast to active IM sessions
+- **Personality**: Customizable soul file (`~/.ouro/bot/soul.md`) defines bot identity and tone
+- **Skills**: Extensible skill registry — dynamically loaded per session
+- **OAuth login**: `--login` / `/login` to authenticate with ChatGPT Codex subscription models
 - **Benchmarks**: First-class [Harbor](https://github.com/laude-institute/harbor) integration for agent evaluation (see [Evaluation](#evaluation))
 
 ## Evaluation
