@@ -23,6 +23,15 @@ def _json(obj: object) -> str:
     return json.dumps(obj, ensure_ascii=False, sort_keys=True)
 
 
+def _truncate(text: str, limit: int) -> tuple[str, bool, int]:
+    raw = str(text or "")
+    if limit <= 0:
+        return ("", True, len(raw))
+    if len(raw) <= limit:
+        return (raw, False, len(raw))
+    return (raw[:limit] + "... [truncated]", True, len(raw))
+
+
 def _normalize_id_list(values: list[str | int | float] | None) -> list[str]:
     if not values:
         return []
@@ -64,11 +73,11 @@ class TaskFanoutTool(BaseTool):
             "Use this when you want true fan-out (N leaf tasks) + join (1 aggregation task) execution.\n\n"
             "Recommended pattern:\n"
             "1) Create an identify task to resolve the concrete item list.\n"
-            "2) Create a phase/container task blockedBy identify.\n"
-            "3) Create a join task blockedBy phase.\n"
-            "4) Call TaskFanout(phaseId, joinId, children=[...]) to create named leaf tasks.\n"
+            "2) OPTIONAL: Create a phase/container task blockedBy identify (only if you need a named gate for shared rules).\n"
+            "3) Create a join task blockedBy the gate (either identify or phase).\n"
+            "4) Call TaskFanout(phaseId, joinId, children=[...]) to create named leaf tasks. You may set phaseId to the identify task directly.\n"
             "   - If the phase has output (detail non-empty or already completed), children depend on phaseId (and can use that output).\n"
-            "   - If the phase has no output (pure container), children do NOT depend on phaseId (they only inherit phase.blockedBy), and TaskFanout will auto-complete the phase.\n"
+            "   - If the phase has no output (pure container), children do NOT depend on phaseId (they only inherit phase.blockedBy), and TaskFanout will auto-complete the phase. Avoid putting placeholder detail on pure containers.\n"
             "5) Run leaf tasks (e.g. via sub_agent_batch), then complete join."
         )
 
@@ -379,10 +388,12 @@ and update status as you progress. Prefer Tasks tools over manage_todo_list.
 
 Guidelines:
 - Tasks should represent real execution units (leaf work should be its own task).
-- If the N items are unknown upfront, create an identify task first; record the resolved item list in that task (content or detail) and complete it before creating leaf tasks.
+- If the N items are unknown upfront, create an identify task first; put the resolved item list in that task's `detail` and complete it before creating leaf tasks.
+  - The `detail` should be reusable: include the final list using canonical names (no placeholders) and at least 1-3 source links so downstream tasks don't need to re-identify.
 - Avoid placeholder leaf tasks like "item 1" / "Song #1" that re-decide the item later; leaf task titles should include the concrete item name.
 - Prefer meaningful tasks with output: if you create a gate/identify/phase task, make it produce reusable inputs or constraints in `detail`, then mark it completed. Avoid empty "container" tasks unless you intend to use TaskFanout (which can auto-complete pure containers).
 - Avoid redundant parent+child tasks that repeat the same work: if you create a parent like "Analyze Top N items" and also create N leaf analyses, the parent should add reusable value (e.g., normalize the input list, define evaluation dimensions, or record shared constraints in `detail`). Otherwise omit the parent and fan out directly.
+- If you already have an identify task that produced the concrete item list, you can fan out directly from that identify task (using TaskFanout with phaseId=identifyId) and skip creating an extra phase task.
 - For "analyze Top N items" requests: create N leaf tasks + 1 join task, with join blockedBy the N leaf tasks (TaskFanout can help)."""
 
     def __init__(self, store: TaskStore):
@@ -436,9 +447,16 @@ Guidelines:
         )
         tasks = await self._store.list_tasks()
         blocks = _compute_blocks(tasks)
+        task_dict = task.to_dict(blocks=blocks.get(task.id, []), include_detail=True)
+        if isinstance(task_dict.get("detail"), str) and task_dict.get("detail"):
+            truncated, was_truncated, total = _truncate(task_dict["detail"], 8000)
+            task_dict["detail"] = truncated
+            if was_truncated:
+                task_dict["detailTruncated"] = True
+                task_dict["detailTotalChars"] = total
         return _json(
             {
-                "task": task.to_dict(blocks=blocks.get(task.id, [])),
+                "task": task_dict,
                 "available": await self._store.available_ids(),
                 "tasksMd": await self._store.render_tasks_md(),
                 "debugTasksMd": await self._store.render_debug_tasks_md(),
@@ -458,7 +476,12 @@ class TaskUpdateTool(BaseTool):
         return """Update an existing task: status/content, and dependency edges.
 
 Use `detail` to store long-form results/notes. Keep `content` short and stable (task title).
+If downstream tasks depend on this task, make sure `detail` contains the concrete outputs/constraints they need before marking it completed.
+When you finish a task, prefer writing the full result into `detail` (verbatim if available, e.g. from sub_agent_batch) rather than compressing it into a short summary.
 By default, `detail` is append-only; set replaceDetail=true to overwrite/clear.
+
+Batch updates:
+- You can update multiple tasks in one call via `updates=[{id, ...}, ...]` (useful after sub_agent_batch returns N results).
 
 Dependency rules:
 - You may only edit dependency edges (blockedBy/addBlockedBy/removeBlockedBy/addBlocks/removeBlocks) for tasks that are pending.
@@ -467,7 +490,10 @@ Dependency rules:
 Notes on dependency fields:
 - blockedBy replaces the full dependency list for this task.
 - addBlockedBy/removeBlockedBy incrementally edit blockedBy.
-- addBlocks/removeBlocks edit reverse edges (A blocks B => B.blockedBy includes A)."""
+- addBlocks/removeBlocks edit reverse edges (A blocks B => B.blockedBy includes A).
+
+Tool response:
+- For single-task updates (id=...), the response includes the updated task's long-form `detail` (bounded/truncated when very large)."""
 
     def __init__(self, store: TaskStore):
         self._store = store
@@ -478,6 +504,74 @@ Notes on dependency fields:
             "id": {
                 "type": "string",
                 "description": "Task id to update",
+                "default": None,
+            },
+            "updates": {
+                "type": "array",
+                "description": "Batch updates (optional): list of task update objects",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string", "description": "Task id"},
+                        "content": {
+                            "type": "string",
+                            "description": "New imperative description",
+                            "default": None,
+                        },
+                        "activeForm": {
+                            "type": "string",
+                            "description": "New present continuous form",
+                            "default": None,
+                        },
+                        "detail": {
+                            "type": "string",
+                            "description": "Long-form detail/result",
+                            "default": None,
+                        },
+                        "replaceDetail": {
+                            "type": "boolean",
+                            "description": "If true, overwrite any existing detail. If false (default), append non-empty detail.",
+                            "default": False,
+                        },
+                        "status": {
+                            "type": "string",
+                            "description": "New status: pending, in_progress, completed",
+                            "default": None,
+                        },
+                        "blockedBy": {
+                            "type": "array",
+                            "description": "Replace dependencies",
+                            "items": {"type": "string"},
+                            "default": None,
+                        },
+                        "addBlockedBy": {
+                            "type": "array",
+                            "description": "Add dependencies",
+                            "items": {"type": "string"},
+                            "default": None,
+                        },
+                        "removeBlockedBy": {
+                            "type": "array",
+                            "description": "Remove dependencies",
+                            "items": {"type": "string"},
+                            "default": None,
+                        },
+                        "addBlocks": {
+                            "type": "array",
+                            "description": "Add reverse edges: this task blocks those task ids",
+                            "items": {"type": "string"},
+                            "default": None,
+                        },
+                        "removeBlocks": {
+                            "type": "array",
+                            "description": "Remove reverse edges: this task no longer blocks those ids",
+                            "items": {"type": "string"},
+                            "default": None,
+                        },
+                    },
+                    "required": ["id"],
+                },
+                "default": None,
             },
             "content": {
                 "type": "string",
@@ -538,7 +632,8 @@ Notes on dependency fields:
 
     async def execute(
         self,
-        id: str | int | float,
+        id: str | int | float | None = None,
+        updates: list[dict[str, Any]] | None = None,
         content: str | None = None,
         activeForm: str | None = None,
         detail: str | None = None,
@@ -551,6 +646,113 @@ Notes on dependency fields:
         removeBlocks: list[str | int | float] | None = None,
         **kwargs,
     ) -> str:
+        if updates is not None:
+            if id is not None or any(
+                x is not None
+                for x in (
+                    content,
+                    activeForm,
+                    detail,
+                    status,
+                    blockedBy,
+                    addBlockedBy,
+                    removeBlockedBy,
+                    addBlocks,
+                    removeBlocks,
+                )
+            ):
+                raise ValueError(
+                    "When using updates=[...], do not also pass top-level task fields."
+                )
+            if not isinstance(updates, list) or not updates:
+                raise ValueError("'updates' must be a non-empty array when provided")
+
+            # Snapshot for append-only detail behavior.
+            tasks = await self._store.list_tasks()
+            by_id = {t.id: t for t in tasks}
+
+            normalized: list[dict[str, Any]] = []
+            seen: set[str] = set()
+            for u in updates:
+                if not isinstance(u, dict):
+                    raise ValueError("Each item in updates must be an object")
+                raw_id = u.get("id")
+                if raw_id is None:
+                    raise ValueError("Each update must include a non-empty id")
+                tid = _normalize_task_id(raw_id)
+                if tid in seen:
+                    raise ValueError(f"Duplicate id in updates: {tid}")
+                seen.add(tid)
+
+                u_detail = u.get("detail")
+                u_replace = bool(u.get("replaceDetail", False))
+                if u_detail is not None and not u_replace:
+                    if not str(u_detail).strip():
+                        u_detail = None
+                    else:
+                        existing = by_id.get(tid)
+                        if existing and getattr(existing, "detail", None):
+                            existing_detail = str(existing.detail or "")
+                            if existing_detail.strip() and str(u_detail) not in existing_detail:
+                                u_detail = (
+                                    existing_detail.rstrip()
+                                    + "\n\n---\n\n"
+                                    + str(u_detail).lstrip()
+                                )
+
+                normalized.append(
+                    {
+                        "id": tid,
+                        "content": u.get("content"),
+                        "active_form": u.get("activeForm"),
+                        "detail": u_detail,
+                        "status": u.get("status"),
+                        "blocked_by": (
+                            _normalize_id_list(u.get("blockedBy"))
+                            if u.get("blockedBy") is not None
+                            else None
+                        ),
+                        "add_blocked_by": _normalize_id_list(u.get("addBlockedBy")) or None,
+                        "remove_blocked_by": _normalize_id_list(u.get("removeBlockedBy")) or None,
+                        "add_blocks": _normalize_id_list(u.get("addBlocks")) or None,
+                        "remove_blocks": _normalize_id_list(u.get("removeBlocks")) or None,
+                    }
+                )
+
+            updated_tasks = await self._store.update_many(normalized)
+            tasks2 = await self._store.list_tasks()
+            blocks2 = _compute_blocks(tasks2)
+            tasks2_by_id = {t.id: t for t in tasks2}
+            update_debug: list[dict[str, Any]] = []
+            for updated_task in updated_tasks:
+                record = tasks2_by_id.get(updated_task.id, updated_task)
+                record_dict = record.to_dict(
+                    blocks=blocks2.get(record.id, []), include_detail=False
+                )
+                detail_text = str(getattr(record, "detail", "") or "")
+                detail_preview = _truncate(detail_text, 240)[0] if detail_text else ""
+                update_debug.append(
+                    {
+                        "id": record_dict.get("id"),
+                        "status": record_dict.get("status"),
+                        "detailChars": record_dict.get("detailChars", 0),
+                        "detailDigest": record_dict.get("detailDigest", ""),
+                        "detailPreview": detail_preview,
+                    }
+                )
+            return _json(
+                {
+                    "tasks": [t.to_dict(blocks=blocks2.get(t.id, [])) for t in updated_tasks],
+                    "updateDebug": update_debug,
+                    "available": await self._store.available_ids(),
+                    "tasksMd": await self._store.render_tasks_md(),
+                    "debugTasksMd": await self._store.render_debug_tasks_md(),
+                }
+            )
+
+        if id is None:
+            raise ValueError("TaskUpdate requires either id=... or updates=[...]")
+
         # Detail is append-only by default to avoid accidental clobbering of long results.
         # Clearing or overwriting requires replaceDetail=true.
         if detail is not None and not replaceDetail:
@@ -575,11 +777,35 @@ Notes on dependency fields:
             add_blocks=_normalize_id_list(addBlocks) or None,
             remove_blocks=_normalize_id_list(removeBlocks) or None,
         )
-        tasks = await self._store.list_tasks()
-        blocks = _compute_blocks(tasks)
+        tasks3 = await self._store.list_tasks()
+        blocks3 = _compute_blocks(tasks3)
+
+        # For single-task updates, include the task's long-form detail (bounded) so downstream steps
+        # can reliably reuse it via the tool result (not only via TaskGet).
+        task_dict = updated.to_dict(blocks=blocks3.get(updated.id, []), include_detail=True)
+        detail_max = 8000
+        if isinstance(task_dict.get("detail"), str) and task_dict.get("detail"):
+            truncated, was_truncated, total = _truncate(task_dict["detail"], detail_max)
+            task_dict["detail"] = truncated
+            if was_truncated:
+                task_dict["detailTruncated"] = True
+                task_dict["detailTotalChars"] = total
+
+        update_debug = {
+            "id": task_dict.get("id"),
+            "status": task_dict.get("status"),
+            "detailChars": task_dict.get("detailChars", 0),
+            "detailDigest": task_dict.get("detailDigest", ""),
+            "detailPreview": (
+                _truncate(str(task_dict.get("detail") or ""), 240)[0]
+                if str(task_dict.get("detail") or "")
+                else ""
+            ),
+        }
         return _json(
             {
-                "task": updated.to_dict(blocks=blocks.get(updated.id, [])),
+                "task": task_dict,
+                "updateDebug": update_debug,
                 "available": await self._store.available_ids(),
                 "tasksMd": await self._store.render_tasks_md(),
                 "debugTasksMd": await self._store.render_debug_tasks_md(),
@@ -634,7 +860,10 @@ class TaskGetTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return "Get a single task by id (includes long-form detail when present)."
+        return (
+            "Get a single task by id (includes long-form detail when present). "
+            "If you need multiple tasks' details, prefer TaskGetMany(ids=[...]) to reduce tool calls."
+        )
 
     def __init__(self, store: TaskStore):
         self._store = store
@@ -661,6 +890,63 @@ class TaskGetTool(BaseTool):
                 "available": await self._store.available_ids(),
                 "tasksMd": await self._store.render_tasks_md(),
                 "debugTasksMd": await self._store.render_debug_tasks_md(),
+            }
+        )
+
+
+class TaskGetManyTool(BaseTool):
+    """Get multiple tasks by ids."""
+
+    readonly = True
+
+    @property
+    def name(self) -> str:
+        return "TaskGetMany"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Get multiple tasks by id (each includes long-form detail when present). "
+            "Use this to fetch N leaf task outputs for a join/summarization step in one call."
+        )
+
+    def __init__(self, store: TaskStore):
+        self._store = store
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "ids": {
+                "type": "array",
+                "description": "Task ids to fetch",
+                "items": {"type": "string"},
+            }
+        }
+
+    async def execute(self, ids: list[str | int | float], **kwargs) -> str:
+        normalized = _normalize_id_list(ids)
+        if not normalized:
+            return _json({"ok": False, "error": "'ids' must be a non-empty array"})
+
+        tasks = await self._store.list_tasks()
+        blocks = _compute_blocks(tasks)
+        by_id = {t.id: t for t in tasks}
+
+        out_tasks = []
+        missing = []
+        for tid in normalized:
+            t = by_id.get(tid)
+            if not t:
+                missing.append(tid)
+                continue
+            out_tasks.append(t.to_dict(blocks=blocks.get(t.id, []), include_detail=True))
+
+        return _json(
+            {
+                "ok": True,
+                "tasks": out_tasks,
+                "missing": missing,
+                "available": await self._store.available_ids(),
             }
         )
 

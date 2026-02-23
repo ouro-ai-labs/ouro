@@ -212,6 +212,26 @@ class TestToolConversion:
         assert result[0]["function"]["parameters"] == tools[0]["input_schema"]
 
 
+def test_convert_response_sanitizes_non_json_tool_arguments():
+    adapter = LiteLLMAdapter(model="gpt-3.5-turbo")
+
+    # Simulate a provider tool_call where arguments are a Python dict repr (invalid JSON).
+    tc = SimpleNamespace(
+        id="call_1",
+        function=SimpleNamespace(name="TaskGetMany", arguments="{'ids': ['1', '2']}"),
+    )
+    message = SimpleNamespace(content=None, tool_calls=[tc], reasoning_content=None)
+    choice = SimpleNamespace(message=message, finish_reason="tool_calls")
+    response = SimpleNamespace(choices=[choice], usage=None)
+
+    converted = adapter._convert_response(response)
+    assert converted.tool_calls is not None
+    args = converted.tool_calls[0]["function"]["arguments"]
+    # Must be valid JSON string to survive strict providers.
+    parsed = json.loads(args)
+    assert parsed == {"ids": ["1", "2"]}
+
+
 async def test_chatgpt_adapter_sets_token_dir_and_avoids_device_code(tmp_path, monkeypatch):
     auth_dir = tmp_path / "chatgpt-auth"
     auth_dir.mkdir(parents=True, exist_ok=True)

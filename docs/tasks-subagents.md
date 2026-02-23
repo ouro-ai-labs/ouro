@@ -9,7 +9,7 @@ The intent is to keep the first iteration small: **LLM-driven scheduling** (the 
 - Use `TaskStore` as the canonical DAG: tasks, dependency edges, and status.
 - Let the main agent decide *what* to run next based on `TaskList.available`.
 - Run multiple sub-agents concurrently (each is a fresh ReAct loop).
-- Have each sub-agent update only its own task via `TaskGet/TaskUpdate`.
+- Have workers produce results that are written back into `TaskStore` for downstream reuse.
 - Keep intermediate artifacts ephemeral by default (sub-agents should avoid writing scratch files).
 - Keep everything debuggable:
   - `TaskList` and `tasksMd` snapshots
@@ -62,23 +62,14 @@ The main agent follows a repeated loop:
 
 Each sub-agent should be prompted to follow a simple contract:
 
-1. **Self-check**
-   - Call `TaskGet(id)` and verify the task exists.
-   - Call `TaskList()` and verify `id` is present in `available`.
-     - If not available or already completed, stop early with a short note.
-2. **Mark start**
-   - `TaskUpdate(id, status="in_progress")`
-3. **Execute**
+1. **Execute**
    - Use tools to complete only this task.
    - Avoid modifying unrelated files.
    - Prefer not to write scratch artifacts; if needed, keep them minimal.
-4. **Mark end**
-   - On success: `TaskUpdate(id, status="completed")`
-   - On failure: leave as `pending` or set back to `pending` (and report why)
-5. **Report**
-   - Return a bounded summary: what changed, what remains, risks.
+2. **Report**
+   - Return a bounded result that can be stored verbatim in the task's `detail` (key claims + evidence/links + caveats).
 
-The worker must update **only its own** task ID. It can propose new tasks, but the orchestrator should create them to keep the graph stable.
+Workers do not mutate the task graph directly; the orchestrator applies results with `TaskUpdate`.
 
 ## Proposed tool rewrite: parallel sub-agent runner
 
@@ -107,9 +98,7 @@ Behavior sketch:
     - the `taskId`
     - the worker contract above
     - optional `notes`
-  - provide a tool schema set that includes:
-    - `TaskGet/TaskList/TaskUpdate`
-    - normal repo tools (read/search/edit/shell), optionally restricted
+  - provide a tool schema set that includes normal repo tools (read/search/edit/shell), optionally restricted
   - run all workers in an `asyncio.TaskGroup`, bounded by `maxParallel`
 
 Result sketch (bounded):
@@ -117,10 +106,8 @@ Result sketch (bounded):
 ```json
 {
   "ok": true,
-  "results": [
-    { "taskId": "12", "ok": true, "output": "…(truncated)…" },
-    { "taskId": "15", "ok": false, "error": "…" }
-  ]
+  "results": [{ "taskId": "12", "ok": true }, { "taskId": "15", "ok": false, "error": "…" }],
+  "updates": [{ "id": "12", "status": "completed", "detail": "…(truncated)…", "replaceDetail": true }]
 }
 ```
 

@@ -33,6 +33,7 @@ from tools.task_tools import (
     TaskCreateTool,
     TaskDumpMdTool,
     TaskFanoutTool,
+    TaskGetManyTool,
     TaskGetTool,
     TaskListTool,
     TaskUpdateTool,
@@ -77,6 +78,7 @@ def create_agent(
         TaskFanoutTool(task_store),
         TaskListTool(task_store),
         TaskGetTool(task_store),
+        TaskGetManyTool(task_store),
         TaskDumpMdTool(task_store),
     ]
 

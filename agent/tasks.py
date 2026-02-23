@@ -96,6 +96,31 @@ class TaskStore:
         self._lock = asyncio.Lock()
         self._tasks: dict[str, TaskRecord] = {}
         self._next_id = 1
+        # Ephemeral stash for external task outputs (e.g. sub-agent results) that should be written
+        # into TaskRecord.detail when a task is completed, even if the caller only sets status.
+        self._stashed_detail: dict[str, str] = {}
+
+    async def stash_detail(self, task_id: str | int | float, detail: str) -> None:
+        """Stash a detail payload for a task id (used by orchestrators/workers)."""
+        tid = _normalize_task_id(task_id)
+        async with self._lock:
+            text = str(detail or "").strip()
+            if not text:
+                return
+            self._stashed_detail[tid] = text
+
+    def _maybe_fill_detail_from_stash_unlocked(
+        self, tid: str, *, requested_status: str | None, requested_detail: str | None
+    ) -> str | None:
+        if requested_detail is not None:
+            return requested_detail
+        if requested_status != "completed":
+            return None
+        task = self._tasks.get(tid)
+        if not task or str(task.detail or "").strip():
+            return None
+        stashed = str(self._stashed_detail.get(tid, "") or "").strip()
+        return stashed or None
 
     async def create(
         self,
@@ -155,111 +180,124 @@ class TaskStore:
     ) -> TaskRecord:
         tid = _normalize_task_id(task_id)
         async with self._lock:
-            task = self._tasks.get(tid)
-            if not task:
-                raise KeyError(f"Task not found: {tid}")
+            # If callers only set status=completed, allow a pre-stashed output to populate detail.
+            used_stash = False
+            if detail is None and status == "completed":
+                filled = self._maybe_fill_detail_from_stash_unlocked(
+                    tid, requested_status=status, requested_detail=detail
+                )
+                if filled is not None:
+                    detail = filled
+                    used_stash = True
 
-            if status is not None:
-                if status not in _VALID_STATUSES:
-                    raise ValueError(f"Invalid status: {status}. Must be one of {_VALID_STATUSES}")
-                next_status = status
-            else:
-                next_status = task.status
+            updated = _update_unlocked(
+                self._tasks,
+                tid,
+                content=content,
+                active_form=active_form,
+                detail=detail,
+                status=status,
+                blocked_by=blocked_by,
+                add_blocked_by=add_blocked_by,
+                remove_blocked_by=remove_blocked_by,
+                add_blocks=add_blocks,
+                remove_blocks=remove_blocks,
+            )
+            if used_stash:
+                self._stashed_detail.pop(tid, None)
+            return updated
 
-            if (
-                blocked_by is not None or add_blocked_by or remove_blocked_by
-            ) and next_status != "pending":
-                raise TaskDependencyFrozenError(tid, next_status)
+    async def update_many(self, updates: list[dict]) -> list[TaskRecord]:
+        """Apply multiple updates atomically (all-or-nothing) under one lock."""
+        if not updates:
+            return []
 
-            deps_changed = False
-            next_deps = list(task.blocked_by)
+        async with self._lock:
+            # Prepare local copies and also fill missing detail from stash when completing.
+            prepared: list[dict] = []
+            stashed_consumed: set[str] = set()
+            for u in updates:
+                raw_id = u.get("id")
+                if raw_id is None:
+                    raise ValueError("Each update must include a non-empty id")
+                tid = _normalize_task_id(raw_id)
+                requested_status = u.get("status")
+                requested_detail = u.get("detail")
+                filled_detail = requested_detail
+                if requested_detail is None and requested_status == "completed":
+                    task = self._tasks.get(tid)
+                    if task and not str(task.detail or "").strip():
+                        stashed = str(self._stashed_detail.get(tid, "") or "").strip()
+                        if stashed:
+                            filled_detail = stashed
+                            stashed_consumed.add(tid)
 
-            if blocked_by is not None:
-                deps = [_normalize_task_id(x) for x in blocked_by]
-                deps = [d for d in deps if d != tid]
-                next_deps = _dedupe_keep_order(deps)
-                deps_changed = True
+                if filled_detail is not requested_detail:
+                    u = dict(u)
+                    u["detail"] = filled_detail
+                prepared.append(u)
 
-            if add_blocked_by:
-                to_add = [_normalize_task_id(x) for x in add_blocked_by]
-                to_add = [d for d in to_add if d != tid]
-                next_deps = _dedupe_keep_order([*next_deps, *to_add])
-                deps_changed = True
+            # Simulate on a copy first to avoid partial writes if an update fails.
+            simulated: dict[str, TaskRecord] = {
+                tid: TaskRecord(
+                    id=t.id,
+                    content=t.content,
+                    active_form=t.active_form,
+                    status=t.status,
+                    blocked_by=list(t.blocked_by),
+                    detail=t.detail,
+                )
+                for tid, t in self._tasks.items()
+            }
 
-            if remove_blocked_by:
-                to_remove = {_normalize_task_id(x) for x in remove_blocked_by}
-                next_deps = [d for d in next_deps if d not in to_remove]
-                deps_changed = True
+            for u in prepared:
+                raw_id = u.get("id")
+                if raw_id is None:
+                    raise ValueError("Each update must include a non-empty id")
+                tid = _normalize_task_id(raw_id)
+                _update_unlocked(
+                    simulated,
+                    tid,
+                    content=u.get("content"),
+                    active_form=u.get("active_form"),
+                    detail=u.get("detail"),
+                    status=u.get("status"),
+                    blocked_by=u.get("blocked_by"),
+                    add_blocked_by=u.get("add_blocked_by"),
+                    remove_blocked_by=u.get("remove_blocked_by"),
+                    add_blocks=u.get("add_blocks"),
+                    remove_blocks=u.get("remove_blocks"),
+                )
 
-            if add_blocks:
-                for target in add_blocks:
-                    target_id = _normalize_task_id(target)
-                    if target_id == tid:
-                        continue
-                    other = self._tasks.get(target_id)
-                    if not other:
-                        raise KeyError(f"Task not found: {target_id}")
-                    if other.status != "pending":
-                        raise TaskDependencyFrozenError(target_id, other.status)
+            # Apply for real (should not raise because we already validated in simulation).
+            out: list[TaskRecord] = []
+            seen: set[str] = set()
+            for u in prepared:
+                raw_id = u.get("id")
+                if raw_id is None:
+                    raise ValueError("Each update must include a non-empty id")
+                tid = _normalize_task_id(raw_id)
+                updated = _update_unlocked(
+                    self._tasks,
+                    tid,
+                    content=u.get("content"),
+                    active_form=u.get("active_form"),
+                    detail=u.get("detail"),
+                    status=u.get("status"),
+                    blocked_by=u.get("blocked_by"),
+                    add_blocked_by=u.get("add_blocked_by"),
+                    remove_blocked_by=u.get("remove_blocked_by"),
+                    add_blocks=u.get("add_blocks"),
+                    remove_blocks=u.get("remove_blocks"),
+                )
+                if tid not in seen:
+                    seen.add(tid)
+                    out.append(updated)
 
-            if remove_blocks:
-                for target in remove_blocks:
-                    target_id = _normalize_task_id(target)
-                    if target_id == tid:
-                        continue
-                    other = self._tasks.get(target_id)
-                    if not other:
-                        raise KeyError(f"Task not found: {target_id}")
-                    if other.status != "pending":
-                        raise TaskDependencyFrozenError(target_id, other.status)
-
-            if status is not None and status in {"in_progress", "completed"}:
-                missing = _missing_deps_unlocked(self._tasks, next_deps)
-                if missing:
-                    raise TaskBlockedError(tid, status, missing)
-
-            if content is not None:
-                if not str(content).strip():
-                    raise ValueError("'content' must be a non-empty string when provided")
-                task.content = str(content).strip()
-
-            if active_form is not None:
-                if not str(active_form).strip():
-                    raise ValueError("'activeForm' must be a non-empty string when provided")
-                task.active_form = str(active_form).strip()
-
-            if detail is not None:
-                # detail may be cleared by setting "" explicitly
-                task.detail = str(detail or "").strip()
-
-            if status is not None:
-                task.status = status
-
-            if deps_changed:
-                task.blocked_by = next_deps
-
-            if add_blocks:
-                # "A blocks B" => B.blocked_by includes A
-                for target in add_blocks:
-                    target_id = _normalize_task_id(target)
-                    if target_id == tid:
-                        continue
-                    other = self._tasks.get(target_id)
-                    if not other:
-                        raise KeyError(f"Task not found: {target_id}")
-                    other.blocked_by = _dedupe_keep_order([*other.blocked_by, tid])
-
-            if remove_blocks:
-                for target in remove_blocks:
-                    target_id = _normalize_task_id(target)
-                    if target_id == tid:
-                        continue
-                    other = self._tasks.get(target_id)
-                    if not other:
-                        raise KeyError(f"Task not found: {target_id}")
-                    other.blocked_by = [d for d in other.blocked_by if d != tid]
-
-            return task
+            # Clear consumed stashed outputs after successful commit.
+            for tid in stashed_consumed:
+                self._stashed_detail.pop(tid, None)
+            return out
 
     async def available_ids(self) -> list[str]:
         async with self._lock:
@@ -403,3 +441,120 @@ def _task_id_sort_key(task_id: str) -> tuple[int, str]:
         return (0, f"{int(task_id):012d}")
     except ValueError:
         return (1, task_id)
+
+
+def _update_unlocked(
+    tasks: dict[str, TaskRecord],
+    tid: str,
+    *,
+    content: str | None = None,
+    active_form: str | None = None,
+    detail: str | None = None,
+    status: str | None = None,
+    blocked_by: list[str] | None = None,
+    add_blocked_by: list[str] | None = None,
+    remove_blocked_by: list[str] | None = None,
+    add_blocks: list[str] | None = None,
+    remove_blocks: list[str] | None = None,
+) -> TaskRecord:
+    task = tasks.get(tid)
+    if not task:
+        raise KeyError(f"Task not found: {tid}")
+
+    if status is not None:
+        if status not in _VALID_STATUSES:
+            raise ValueError(f"Invalid status: {status}. Must be one of {_VALID_STATUSES}")
+        next_status = status
+    else:
+        next_status = task.status
+
+    if (blocked_by is not None or add_blocked_by or remove_blocked_by) and next_status != "pending":
+        raise TaskDependencyFrozenError(tid, next_status)
+
+    deps_changed = False
+    next_deps = list(task.blocked_by)
+
+    if blocked_by is not None:
+        deps = [_normalize_task_id(x) for x in blocked_by]
+        deps = [d for d in deps if d != tid]
+        next_deps = _dedupe_keep_order(deps)
+        deps_changed = True
+
+    if add_blocked_by:
+        to_add = [_normalize_task_id(x) for x in add_blocked_by]
+        to_add = [d for d in to_add if d != tid]
+        next_deps = _dedupe_keep_order([*next_deps, *to_add])
+        deps_changed = True
+
+    if remove_blocked_by:
+        to_remove = {_normalize_task_id(x) for x in remove_blocked_by}
+        next_deps = [d for d in next_deps if d not in to_remove]
+        deps_changed = True
+
+    if add_blocks:
+        for target in add_blocks:
+            target_id = _normalize_task_id(target)
+            if target_id == tid:
+                continue
+            other = tasks.get(target_id)
+            if not other:
+                raise KeyError(f"Task not found: {target_id}")
+            if other.status != "pending":
+                raise TaskDependencyFrozenError(target_id, other.status)
+
+    if remove_blocks:
+        for target in remove_blocks:
+            target_id = _normalize_task_id(target)
+            if target_id == tid:
+                continue
+            other = tasks.get(target_id)
+            if not other:
+                raise KeyError(f"Task not found: {target_id}")
+            if other.status != "pending":
+                raise TaskDependencyFrozenError(target_id, other.status)
+
+    if status is not None and status in {"in_progress", "completed"}:
+        missing = _missing_deps_unlocked(tasks, next_deps)
+        if missing:
+            raise TaskBlockedError(tid, status, missing)
+
+    if content is not None:
+        if not str(content).strip():
+            raise ValueError("'content' must be a non-empty string when provided")
+        task.content = str(content).strip()
+
+    if active_form is not None:
+        if not str(active_form).strip():
+            raise ValueError("'activeForm' must be a non-empty string when provided")
+        task.active_form = str(active_form).strip()
+
+    if detail is not None:
+        task.detail = str(detail or "").strip()
+
+    if status is not None:
+        task.status = status
+
+    if deps_changed:
+        task.blocked_by = next_deps
+
+    if add_blocks:
+        for target in add_blocks:
+            target_id = _normalize_task_id(target)
+            if target_id == tid:
+                continue
+            other = tasks.get(target_id)
+            if not other:
+                raise KeyError(f"Task not found: {target_id}")
+            other.blocked_by = _dedupe_keep_order([*other.blocked_by, tid])
+
+    if remove_blocks:
+        for target in remove_blocks:
+            target_id = _normalize_task_id(target)
+            if target_id == tid:
+                continue
+            other = tasks.get(target_id)
+            if not other:
+                raise KeyError(f"Task not found: {target_id}")
+            other.blocked_by = [d for d in other.blocked_by if d != tid]
+
+    return task

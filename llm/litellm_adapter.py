@@ -1,5 +1,6 @@
 """LiteLLM adapter for unified LLM access across 100+ providers."""
 
+import ast
 import importlib
 import json
 import logging
@@ -372,6 +373,7 @@ class LiteLLMAdapter:
             arguments = tc.function.arguments
             if not isinstance(arguments, str):
                 arguments = json.dumps(arguments)
+            arguments = self._coerce_json_arguments(arguments)
 
             tool_call: ToolCallBlock = {
                 "id": tc.id,
@@ -383,6 +385,38 @@ class LiteLLMAdapter:
             }
             normalized.append(tool_call)
         return normalized
+
+    def _coerce_json_arguments(self, arguments: str) -> str:
+        """Ensure tool call arguments are stored as a valid JSON string.
+
+        Some providers/models emit non-JSON strings (e.g. Python dict repr with single quotes).
+        Keeping such strings in conversation history can cause downstream API errors for providers
+        that strictly validate `function.arguments` as JSON.
+        """
+        if not isinstance(arguments, str):
+            try:
+                return json.dumps(arguments, ensure_ascii=False)
+            except Exception:
+                return "{}"
+
+        raw = arguments.strip()
+        if not raw:
+            return "{}"
+
+        try:
+            json.loads(raw)
+            return raw
+        except Exception:
+            pass
+
+        # Best-effort: parse Python literals like "{'a': 1}" or "['x', 'y']".
+        if len(raw) > 100_000:
+            return "{}"
+        try:
+            obj = ast.literal_eval(raw)
+            return json.dumps(obj, ensure_ascii=False)
+        except Exception:
+            return "{}"
 
     def _extract_thinking_from_message(self, message) -> Optional[str]:
         """Extract thinking/reasoning content from message.

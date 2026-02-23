@@ -15,6 +15,7 @@ from tools.task_tools import (
     TaskCreateTool,
     TaskDumpMdTool,
     TaskFanoutTool,
+    TaskGetManyTool,
     TaskGetTool,
     TaskListTool,
     TaskUpdateTool,
@@ -93,6 +94,54 @@ async def test_task_update_add_and_remove_blocked_by_edits_dependencies():
     await update.execute(id=b_id, removeBlockedBy=[a_id])
     got_b2 = json.loads(await tget.execute(id=b_id))
     assert got_b2["task"]["blockedBy"] == []
+
+
+@pytest.mark.asyncio
+async def test_task_update_includes_single_update_debug_metadata():
+    store = TaskStore()
+    create = TaskCreateTool(store)
+    update = TaskUpdateTool(store)
+
+    created = json.loads(await create.execute(content="Do A", activeForm="Doing A"))
+    task_id = created["task"]["id"]
+
+    result = json.loads(
+        await update.execute(id=task_id, status="completed", detail="long detail content")
+    )
+    assert result["task"]["id"] == task_id
+    assert result["updateDebug"]["id"] == task_id
+    assert result["updateDebug"]["status"] == "completed"
+    assert result["updateDebug"]["detailChars"] >= len("long detail content")
+    assert result["updateDebug"]["detailDigest"]
+    assert "long detail content" in result["updateDebug"]["detailPreview"]
+
+
+@pytest.mark.asyncio
+async def test_task_update_includes_batch_update_debug_metadata():
+    store = TaskStore()
+    create = TaskCreateTool(store)
+    update = TaskUpdateTool(store)
+
+    a = json.loads(await create.execute(content="Do A", activeForm="Doing A"))
+    b = json.loads(await create.execute(content="Do B", activeForm="Doing B"))
+    a_id = a["task"]["id"]
+    b_id = b["task"]["id"]
+
+    result = json.loads(
+        await update.execute(
+            updates=[
+                {"id": a_id, "status": "completed", "detail": "detail A"},
+                {"id": b_id, "status": "completed", "detail": "detail B"},
+            ]
+        )
+    )
+    assert len(result["updateDebug"]) == 2
+    debug_by_id = {d["id"]: d for d in result["updateDebug"]}
+    assert set(debug_by_id.keys()) == {a_id, b_id}
+    assert debug_by_id[a_id]["status"] == "completed"
+    assert debug_by_id[b_id]["status"] == "completed"
+    assert "detail A" in debug_by_id[a_id]["detailPreview"]
+    assert "detail B" in debug_by_id[b_id]["detailPreview"]
 
 
 @pytest.mark.asyncio
@@ -352,6 +401,25 @@ async def test_task_detail_is_stored_and_task_get_includes_it():
 
 
 @pytest.mark.asyncio
+async def test_task_get_many_returns_multiple_tasks_with_details():
+    store = TaskStore()
+    create = TaskCreateTool(store)
+    update = TaskUpdateTool(store)
+    get_many = TaskGetManyTool(store)
+
+    a = json.loads(await create.execute(content="A", activeForm="A"))
+    b = json.loads(await create.execute(content="B", activeForm="B"))
+    await update.execute(id=a["task"]["id"], detail="detail a")
+    await update.execute(id=b["task"]["id"], detail="detail b")
+
+    got = json.loads(await get_many.execute(ids=[a["task"]["id"], b["task"]["id"]]))
+    assert got["ok"] is True
+    assert [t["id"] for t in got["tasks"]] == [a["task"]["id"], b["task"]["id"]]
+    assert got["tasks"][0]["detail"] == "detail a"
+    assert got["tasks"][1]["detail"] == "detail b"
+
+
+@pytest.mark.asyncio
 async def test_task_update_appends_detail_by_default_and_replace_detail_overwrites():
     store = TaskStore()
     create = TaskCreateTool(store)
@@ -374,3 +442,96 @@ async def test_task_update_appends_detail_by_default_and_replace_detail_overwrit
     await update.execute(id=tid, detail="")
     got3 = json.loads(await tget.execute(id=tid))
     assert got3["task"]["detail"] == "third"
+
+
+@pytest.mark.asyncio
+async def test_task_update_supports_batch_updates_for_multiple_tasks():
+    store = TaskStore()
+    create = TaskCreateTool(store)
+    update = TaskUpdateTool(store)
+    tlist = TaskListTool(store)
+    tget = TaskGetTool(store)
+
+    a = json.loads(await create.execute(content="Identify", activeForm="Identifying"))
+    a_id = a["task"]["id"]
+    b = json.loads(await create.execute(content="Leaf B", activeForm="Leafing B", blockedBy=[a_id]))
+    b_id = b["task"]["id"]
+    c = json.loads(await create.execute(content="Leaf C", activeForm="Leafing C", blockedBy=[a_id]))
+    c_id = c["task"]["id"]
+    join = json.loads(
+        await create.execute(content="Join", activeForm="Joining", blockedBy=[b_id, c_id])
+    )
+    join_id = join["task"]["id"]
+
+    await update.execute(id=a_id, status="completed")
+    listed = json.loads(await tlist.execute())
+    assert set(listed["available"]) == {b_id, c_id}
+
+    result = json.loads(
+        await update.execute(
+            updates=[
+                {"id": b_id, "status": "completed", "detail": "result b", "replaceDetail": True},
+                {"id": c_id, "status": "completed", "detail": "result c", "replaceDetail": True},
+            ]
+        )
+    )
+    assert "tasks" in result
+    assert {t["id"] for t in result["tasks"]} == {b_id, c_id}
+
+    got_b = json.loads(await tget.execute(id=b_id))
+    got_c = json.loads(await tget.execute(id=c_id))
+    assert got_b["task"]["detail"] == "result b"
+    assert got_c["task"]["detail"] == "result c"
+
+    listed2 = json.loads(await tlist.execute())
+    assert join_id in listed2["available"]
+
+
+@pytest.mark.asyncio
+async def test_task_update_batch_rejects_duplicate_task_ids():
+    store = TaskStore()
+    create = TaskCreateTool(store)
+    update = TaskUpdateTool(store)
+
+    t = json.loads(await create.execute(content="Do X", activeForm="Doing X"))
+    tid = t["task"]["id"]
+
+    with pytest.raises(ValueError, match="Duplicate id in updates"):
+        await update.execute(
+            updates=[
+                {"id": tid, "detail": "a"},
+                {"id": tid, "detail": "b"},
+            ]
+        )
+
+
+@pytest.mark.asyncio
+async def test_task_update_can_complete_using_stashed_detail_when_detail_omitted():
+    store = TaskStore()
+    create = TaskCreateTool(store)
+    update = TaskUpdateTool(store)
+    tget = TaskGetTool(store)
+
+    created = json.loads(await create.execute(content="Do X", activeForm="Doing X"))
+    tid = created["task"]["id"]
+
+    await store.stash_detail(tid, "stashed output")
+    await update.execute(id=tid, status="completed")
+
+    got = json.loads(await tget.execute(id=tid))
+    assert got["task"]["status"] == "completed"
+    assert got["task"]["detail"] == "stashed output"
+
+
+@pytest.mark.asyncio
+async def test_task_update_response_includes_detail_for_single_update():
+    store = TaskStore()
+    create = TaskCreateTool(store)
+    update = TaskUpdateTool(store)
+
+    created = json.loads(await create.execute(content="Do X", activeForm="Doing X"))
+    tid = created["task"]["id"]
+
+    resp = json.loads(await update.execute(id=tid, detail="long result", replaceDetail=True))
+    assert resp["task"]["id"] == tid
+    assert resp["task"]["detail"] == "long result"
