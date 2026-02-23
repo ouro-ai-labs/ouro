@@ -41,9 +41,7 @@ _DEFAULT_HEARTBEAT = """\
 # Heartbeat Checklist
 
 This file is read every heartbeat cycle. Edit it to define periodic checks.
-
-- [ ] Check if any pending tasks need follow-up
-- [ ] Review recent memory for unresolved items
+Use the manage_heartbeat tool to add or remove items.
 """
 
 _HEARTBEAT_PROMPT = """\
