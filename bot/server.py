@@ -72,6 +72,7 @@ class BotServer:
         "  /reset     — Alias for /new\n"
         "  /compact   — Compress conversation memory to save tokens\n"
         "  /status    — Show session statistics\n"
+        "  /sessions  — List or resume saved sessions\n"
         "  /heartbeat — Show heartbeat status\n"
         "  /cron      — Manage cron jobs (list | add | remove)\n"
         "  /help      — Show this message"
@@ -90,7 +91,7 @@ class BotServer:
         cmd = text.split()[0].lower()
 
         if cmd in ("/new", "/reset"):
-            self._router.reset_session(msg.channel, msg.conversation_id)
+            await self._router.reset_session(msg.channel, msg.conversation_id)
             await channel.send_message(
                 OutgoingMessage(
                     conversation_id=msg.conversation_id,
@@ -159,6 +160,10 @@ class BotServer:
             )
             return True
 
+        if cmd == "/sessions":
+            await self._handle_sessions_command(channel, msg)
+            return True
+
         if cmd == "/heartbeat":
             await self._handle_heartbeat_command(channel, msg)
             return True
@@ -194,6 +199,124 @@ class BotServer:
             ]
             text = "\n".join(lines)
         await channel.send_message(OutgoingMessage(conversation_id=msg.conversation_id, text=text))
+
+    async def _handle_sessions_command(self, channel: Channel, msg: IncomingMessage) -> None:
+        """Handle /sessions subcommands: list, resume."""
+        parts = msg.text.strip().split(maxsplit=2)
+        sub = parts[1].lower() if len(parts) > 1 else "list"
+
+        if sub == "list":
+            await self._sessions_list(channel, msg)
+        elif sub == "resume":
+            target = parts[2].strip() if len(parts) > 2 else ""
+            await self._sessions_resume(channel, msg, target)
+        else:
+            await channel.send_message(
+                OutgoingMessage(
+                    conversation_id=msg.conversation_id,
+                    text="Usage: /sessions list | /sessions resume <id-prefix>",
+                )
+            )
+
+    async def _sessions_list(self, channel: Channel, msg: IncomingMessage) -> None:
+        """List persisted sessions."""
+        try:
+            sessions = await self._router.list_persisted_sessions(limit=10)
+        except Exception:
+            logger.exception("Failed to list sessions")
+            await channel.send_message(
+                OutgoingMessage(
+                    conversation_id=msg.conversation_id,
+                    text="Failed to list sessions.",
+                )
+            )
+            return
+
+        if not sessions:
+            await channel.send_message(
+                OutgoingMessage(
+                    conversation_id=msg.conversation_id,
+                    text="No saved sessions.",
+                )
+            )
+            return
+
+        lines = ["Saved sessions:"]
+        for s in sessions:
+            sid = s["id"][:8]
+            updated = s.get("updated_at", "?")[:19]
+            count = s.get("message_count", 0)
+            preview = s.get("preview", "")[:50]
+            if preview:
+                preview = f'  "{preview}"'
+            lines.append(f"  {sid}  {updated}  {count} msgs{preview}")
+        lines.append("\nUse /sessions resume <id-prefix> to switch.")
+        await channel.send_message(
+            OutgoingMessage(
+                conversation_id=msg.conversation_id,
+                text="\n".join(lines),
+            )
+        )
+
+    async def _sessions_resume(self, channel: Channel, msg: IncomingMessage, target: str) -> None:
+        """Resume a persisted session by ID prefix."""
+        if not target:
+            await channel.send_message(
+                OutgoingMessage(
+                    conversation_id=msg.conversation_id,
+                    text="Usage: /sessions resume <id-prefix>",
+                )
+            )
+            return
+
+        from memory.manager import MemoryManager
+
+        full_id = await MemoryManager.find_session_by_prefix(
+            target, sessions_dir=self._router._sessions_dir
+        )
+        if not full_id:
+            await channel.send_message(
+                OutgoingMessage(
+                    conversation_id=msg.conversation_id,
+                    text=f"No session found matching '{target}'.",
+                )
+            )
+            return
+
+        # Save current session before switching
+        key = self._router._session_key(msg.channel, msg.conversation_id)
+        old_agent = self._router._sessions.get(key)
+        if old_agent:
+            try:
+                await old_agent.memory.save_memory()
+            except Exception:
+                logger.warning("Failed to save current session before resume", exc_info=True)
+
+        # Reset and create a new agent, then load the target session
+        await self._router.reset_session(msg.channel, msg.conversation_id)
+        agent = await self._router.get_or_create_agent(msg.channel, msg.conversation_id)
+
+        try:
+            await agent.load_session(full_id)
+        except Exception:
+            logger.exception("Failed to resume session %s", full_id[:8])
+            await channel.send_message(
+                OutgoingMessage(
+                    conversation_id=msg.conversation_id,
+                    text=f"Failed to resume session {full_id[:8]}.",
+                )
+            )
+            return
+
+        # Update the conversation map to point to the resumed session
+        await self._router.update_session_mapping(msg.channel, msg.conversation_id)
+
+        await channel.send_message(
+            OutgoingMessage(
+                conversation_id=msg.conversation_id,
+                text=f"Resumed session {full_id[:8]}. Send a message to continue.",
+            )
+        )
 
     async def _handle_cron_command(self, channel: Channel, msg: IncomingMessage) -> None:
         """Handle /cron subcommands: list, add, remove."""
@@ -346,6 +469,9 @@ class BotServer:
                 )
                 result = await agent.run(msg.text)
 
+                # Persist session mapping so conversation survives restarts
+                await self._router.update_session_mapping(msg.channel, msg.conversation_id)
+
                 await channel.send_message(
                     OutgoingMessage(
                         conversation_id=msg.conversation_id,
@@ -478,12 +604,26 @@ async def run_bot(model_id: str | None = None) -> None:
     Args:
         model_id: Optional model ID to use for agents.
     """
+    from pathlib import Path
+
     from agent.skills import SkillsRegistry, render_skills_section
     from bot.soul import load_soul
     from main import create_agent
+    from utils.runtime import (
+        ensure_bot_dirs,
+        get_bot_memory_dir,
+        get_bot_sessions_dir,
+        get_bot_skills_dir,
+    )
 
     # Bot mode: enable long-term memory by default so conversations persist
     Config.LONG_TERM_MEMORY_ENABLED = True
+
+    # Ensure bot-specific directories exist
+    ensure_bot_dirs()
+    bot_sessions_dir = get_bot_sessions_dir()
+    bot_memory_dir = get_bot_memory_dir()
+    bot_skills_dir = Path(get_bot_skills_dir())
 
     channels = _build_channels()
     if not channels:
@@ -497,9 +637,9 @@ async def run_bot(model_id: str | None = None) -> None:
     # Load bot personality (once, shared across all sessions)
     soul_content = load_soul()
 
-    # Bootstrap bundled skills (copies defaults to ~/.ouro/skills/ if needed)
+    # Bootstrap bundled skills into bot's own skills directory
     try:
-        bootstrap_registry = SkillsRegistry()
+        bootstrap_registry = SkillsRegistry(skills_dir=bot_skills_dir)
         await bootstrap_registry.load()
     except Exception as e:
         logger.warning("Failed to bootstrap skills registry: %s", e)
@@ -509,12 +649,16 @@ async def run_bot(model_id: str | None = None) -> None:
     _shared: dict[str, CronScheduler] = {}
 
     async def agent_factory() -> LoopAgent:
-        agent = create_agent(model_id=model_id)
+        agent = create_agent(
+            model_id=model_id,
+            sessions_dir=bot_sessions_dir,
+            memory_dir=bot_memory_dir,
+        )
         if soul_content:
             agent.set_soul_section(soul_content)
         # Reload skills from disk each time so new sessions see newly installed skills
         try:
-            registry = SkillsRegistry()
+            registry = SkillsRegistry(skills_dir=bot_skills_dir)
             await registry.load()
             section = render_skills_section(list(registry.skills.values()))
             if section:
@@ -532,7 +676,11 @@ async def run_bot(model_id: str | None = None) -> None:
         agent.tool_executor.add_tool(HeartbeatTool())
         return agent
 
-    router = SessionRouter(agent_factory=agent_factory)
+    router = SessionRouter(
+        agent_factory=agent_factory,
+        sessions_dir=bot_sessions_dir,
+    )
+    await router.load_conversation_map()
 
     # Proactive mechanisms (heartbeat + cron)
     executor = IsolatedAgentRunner(agent_factory, channels, router)

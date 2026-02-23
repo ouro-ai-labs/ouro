@@ -117,7 +117,7 @@ async def test_reset_session_destroys_agent():
     await router.get_or_create_agent("feishu", "chat_123")
     assert router.active_session_count == 1
 
-    existed = router.reset_session("feishu", "chat_123")
+    existed = await router.reset_session("feishu", "chat_123")
     assert existed is True
     assert router.active_session_count == 0
     # Lock should also be removed
@@ -126,9 +126,9 @@ async def test_reset_session_destroys_agent():
     assert key not in router._last_active
 
 
-def test_reset_session_nonexistent():
+async def test_reset_session_nonexistent():
     router = SessionRouter(agent_factory=_mock_agent_factory)
-    existed = router.reset_session("feishu", "no_such_conv")
+    existed = await router.reset_session("feishu", "no_such_conv")
     assert existed is False
 
 
@@ -136,7 +136,7 @@ async def test_reset_session_new_agent_after_reset():
     """After reset, get_or_create_agent returns a fresh agent."""
     router = SessionRouter(agent_factory=_mock_agent_factory)
     agent_before = await router.get_or_create_agent("feishu", "chat_123")
-    router.reset_session("feishu", "chat_123")
+    await router.reset_session("feishu", "chat_123")
     agent_after = await router.get_or_create_agent("feishu", "chat_123")
     assert agent_before is not agent_after
 

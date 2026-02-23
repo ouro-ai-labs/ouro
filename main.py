@@ -36,11 +36,17 @@ from utils.tui.oauth_ui import pick_oauth_provider
 warnings.filterwarnings("ignore", message="Pydantic serializer warnings.*", category=UserWarning)
 
 
-def create_agent(model_id: str | None = None):
+def create_agent(
+    model_id: str | None = None,
+    sessions_dir: str | None = None,
+    memory_dir: str | None = None,
+):
     """Factory function to create agents with tools.
 
     Args:
         model_id: Optional LiteLLM model ID to use (defaults to current/default)
+        sessions_dir: Optional custom sessions directory (for bot mode isolation)
+        memory_dir: Optional custom long-term memory directory (for bot mode isolation)
 
     Returns:
         Configured LoopAgent instance with all tools
@@ -99,6 +105,8 @@ def create_agent(model_id: str | None = None):
         tools=tools,
         max_iterations=Config.MAX_ITERATIONS,
         model_manager=model_manager,
+        sessions_dir=sessions_dir,
+        memory_dir=memory_dir,
     )
 
     # Add tools that require agent reference

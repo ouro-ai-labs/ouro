@@ -53,19 +53,25 @@ class MemoryManager:
         self,
         llm: "LiteLLMAdapter",
         session_id: Optional[str] = None,
+        sessions_dir: Optional[str] = None,
+        memory_dir: Optional[str] = None,
     ):
         """Initialize memory manager.
 
         Args:
             llm: LLM instance for compression
             session_id: Optional session ID (if resuming session)
+            sessions_dir: Optional custom sessions directory (default: ~/.ouro/sessions/)
+            memory_dir: Optional custom long-term memory directory (default: ~/.ouro/memory/)
         """
         self.llm = llm
+        self._sessions_dir = sessions_dir
+        self._memory_dir = memory_dir
 
         # Store is fully owned by MemoryManager
         from .store import YamlFileMemoryStore
 
-        self._store = YamlFileMemoryStore()
+        self._store = YamlFileMemoryStore(sessions_dir=sessions_dir)
 
         # Lazy session creation: only create when first message is added
         # If session_id is provided (resuming), use it immediately
@@ -104,24 +110,30 @@ class MemoryManager:
         if Config.LONG_TERM_MEMORY_ENABLED:
             from .long_term import LongTermMemoryManager
 
-            self._long_term = LongTermMemoryManager(llm)
+            self._long_term = LongTermMemoryManager(llm, memory_dir=memory_dir)
 
     @classmethod
     async def from_session(
         cls,
         session_id: str,
         llm: "LiteLLMAdapter",
+        sessions_dir: Optional[str] = None,
+        memory_dir: Optional[str] = None,
     ) -> "MemoryManager":
         """Load a MemoryManager from a saved session.
 
         Args:
             session_id: Session ID to load
             llm: LLM instance for compression
+            sessions_dir: Optional custom sessions directory
+            memory_dir: Optional custom long-term memory directory
 
         Returns:
             MemoryManager instance with loaded state
         """
-        manager = cls(llm=llm, session_id=session_id)
+        manager = cls(
+            llm=llm, session_id=session_id, sessions_dir=sessions_dir, memory_dir=memory_dir
+        )
 
         # Load session data
         session_data = await manager._store.load_session(session_id)
@@ -147,45 +159,54 @@ class MemoryManager:
         return manager
 
     @staticmethod
-    async def list_sessions(limit: int = 50) -> List[Dict[str, Any]]:
+    async def list_sessions(
+        limit: int = 50, sessions_dir: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         """List saved sessions.
 
         Args:
             limit: Maximum number of sessions to return
+            sessions_dir: Optional custom sessions directory
 
         Returns:
             List of session summaries
         """
         from .store import YamlFileMemoryStore
 
-        store = YamlFileMemoryStore()
+        store = YamlFileMemoryStore(sessions_dir=sessions_dir)
         return await store.list_sessions(limit=limit)
 
     @staticmethod
-    async def find_latest_session() -> Optional[str]:
+    async def find_latest_session(sessions_dir: Optional[str] = None) -> Optional[str]:
         """Find the most recently updated session ID.
+
+        Args:
+            sessions_dir: Optional custom sessions directory
 
         Returns:
             Session ID or None if no sessions exist
         """
         from .store import YamlFileMemoryStore
 
-        store = YamlFileMemoryStore()
+        store = YamlFileMemoryStore(sessions_dir=sessions_dir)
         return await store.find_latest_session()
 
     @staticmethod
-    async def find_session_by_prefix(prefix: str) -> Optional[str]:
+    async def find_session_by_prefix(
+        prefix: str, sessions_dir: Optional[str] = None
+    ) -> Optional[str]:
         """Find a session by ID prefix.
 
         Args:
             prefix: Prefix of session UUID
+            sessions_dir: Optional custom sessions directory
 
         Returns:
             Full session ID or None
         """
         from .store import YamlFileMemoryStore
 
-        store = YamlFileMemoryStore()
+        store = YamlFileMemoryStore(sessions_dir=sessions_dir)
         return await store.find_session_by_prefix(prefix)
 
     async def _ensure_session(self) -> None:

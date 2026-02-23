@@ -31,6 +31,8 @@ class BaseAgent(ABC):
         tools: List[BaseTool],
         max_iterations: int = 10,
         model_manager: Optional["ModelManager"] = None,
+        sessions_dir: Optional[str] = None,
+        memory_dir: Optional[str] = None,
     ):
         """Initialize the agent.
 
@@ -39,10 +41,14 @@ class BaseAgent(ABC):
             max_iterations: Maximum number of agent loop iterations
             tools: List of tools available to the agent
             model_manager: Optional model manager for switching models
+            sessions_dir: Optional custom sessions directory (for bot mode isolation)
+            memory_dir: Optional custom long-term memory directory (for bot mode isolation)
         """
         self.llm = llm
         self.max_iterations = max_iterations
         self.model_manager = model_manager
+        self._sessions_dir = sessions_dir
+        self._memory_dir = memory_dir
 
         # Initialize todo list system
         self.todo_list = TodoList()
@@ -56,7 +62,7 @@ class BaseAgent(ABC):
         self.tool_executor = ToolExecutor(tools)
 
         # Memory manager is fully owned by the agent
-        self.memory = MemoryManager(llm)
+        self.memory = MemoryManager(llm, sessions_dir=sessions_dir, memory_dir=memory_dir)
         self.memory.set_todo_context_provider(self._get_todo_context)
 
         # Run-scoped reasoning control. None means "omit reasoning_effort" (provider defaults).
@@ -81,7 +87,12 @@ class BaseAgent(ABC):
         Args:
             session_id: Session ID to load
         """
-        self.memory = await MemoryManager.from_session(session_id, self.llm)
+        self.memory = await MemoryManager.from_session(
+            session_id,
+            self.llm,
+            sessions_dir=self._sessions_dir,
+            memory_dir=self._memory_dir,
+        )
         self.memory.set_todo_context_provider(self._get_todo_context)
 
     def _set_llm_adapter(self, llm: "LiteLLMAdapter") -> None:

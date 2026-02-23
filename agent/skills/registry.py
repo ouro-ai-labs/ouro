@@ -23,23 +23,22 @@ BUNDLED_SKILLS_DIR = Path(__file__).parent / "system"
 class SkillsRegistry:
     """Index and resolve skills for ouro."""
 
-    def __init__(self) -> None:
+    def __init__(self, skills_dir: Path | None = None) -> None:
         self.skills: dict[str, SkillInfo] = {}
+        self._skills_dir = skills_dir or (Path.home() / ".ouro" / "skills")
 
     async def load(self) -> None:
         await self._bootstrap_bundled_skills()
-        skills_dir = Path.home() / ".ouro" / "skills"
-        self.skills = await self._load_skills(skills_dir)
+        self.skills = await self._load_skills(self._skills_dir)
 
     async def _bootstrap_bundled_skills(self) -> None:
-        """Copy bundled skills to ~/.ouro/skills/ if not already present."""
-        user_skills_dir = Path.home() / ".ouro" / "skills"
+        """Copy bundled skills to the skills directory if not already present."""
         if not await aiofiles.os.path.exists(BUNDLED_SKILLS_DIR):
             return
         for skill_file in await list_skill_files(BUNDLED_SKILLS_DIR):
             skill_dir = skill_file.parent
             name = skill_dir.name
-            dest = user_skills_dir / name
+            dest = self._skills_dir / name
             if await aiofiles.os.path.exists(dest):
                 continue  # User already has this skill — don't overwrite
             await aiofiles.os.makedirs(dest.parent, exist_ok=True)
