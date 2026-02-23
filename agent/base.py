@@ -192,7 +192,7 @@ class BaseAgent(ABC):
             # and gets cache hits on the system prompt + tools + conversation.
             if use_memory and save_to_memory and self.memory.needs_compression():
                 context = self.memory.get_context_for_llm()
-                compaction_prompt = self.memory.get_compaction_prompt()
+                compaction_prompt = await self.memory.get_compaction_prompt()
                 context.append(compaction_prompt)
 
                 response = await self._call_llm(

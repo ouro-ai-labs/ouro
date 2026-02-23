@@ -346,7 +346,7 @@ class MemoryManager:
         """
         return self._compression_needed
 
-    def get_compaction_prompt(self) -> LLMMessage:
+    async def get_compaction_prompt(self) -> LLMMessage:
         """Build the compaction instruction as a user message.
 
         Delegates to the compressor for prompt generation. The resulting prompt
@@ -354,15 +354,26 @@ class MemoryManager:
         context), so the LLM call reuses the cached prefix.
 
         When long-term memory is enabled, the prompt also asks the LLM to
-        extract durable memories in a ``<long_term_memories>`` XML block.
+        extract durable memories in a ``<long_term_memories>`` XML block,
+        and includes already-saved daily memories to avoid duplicates.
 
         Returns:
             LLMMessage with role="user" containing the compaction instruction
         """
+        from datetime import date
+
         messages = self.short_term.get_messages()
         strategy = self._select_strategy(messages)
         target_tokens = self._calculate_target_tokens()
         todo_context = self._todo_context_provider() if self._todo_context_provider else None
+
+        # Read today's daily file so the LLM knows what's already saved
+        existing_memories = ""
+        if self._long_term is not None:
+            try:
+                existing_memories = await self._long_term.store.load_daily(date.today())
+            except Exception:
+                logger.debug("Failed to read today's daily file for compaction", exc_info=True)
 
         prompt_text = self.compressor.build_compaction_prompt(
             messages,
@@ -370,6 +381,7 @@ class MemoryManager:
             target_tokens,
             todo_context,
             ltm_enabled=self._long_term is not None,
+            existing_memories=existing_memories,
         )
         return LLMMessage(role="user", content=prompt_text)
 

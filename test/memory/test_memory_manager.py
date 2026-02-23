@@ -669,7 +669,7 @@ class TestDeferredCompression:
         for msg in simple_messages:
             await manager.add_message(msg)
 
-        prompt = manager.get_compaction_prompt()
+        prompt = await manager.get_compaction_prompt()
 
         assert prompt.role == "user"
         assert "Summarize the conversation above" in prompt.content
@@ -682,7 +682,7 @@ class TestDeferredCompression:
         for msg in simple_messages:
             await manager.add_message(msg)
 
-        prompt = manager.get_compaction_prompt()
+        prompt = await manager.get_compaction_prompt()
 
         assert "[Current Tasks]" in prompt.content
         assert "Test task" in prompt.content

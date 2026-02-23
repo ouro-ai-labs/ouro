@@ -58,15 +58,18 @@ Original messages ({count} messages, ~{tokens} tokens):
     # durable memories in a parseable XML block within the same response.
     # Date prefix is omitted — the daily file name encodes the date.
     COMPACTION_LTM_SUFFIX = (
-        "\n\nAdditionally, extract any information from this conversation that should "
+        "\n\nAdditionally, extract any NEW information from this conversation that should "
         "persist across sessions (user preferences, key decisions with rationale, "
         "project facts, environment details). "
-        "Output them in a <long_term_memories> XML block using markdown, e.g.:\n"
+        "Do NOT repeat information already saved."
+        "{existing_memories_clause}"
+        "\nOutput them in a <long_term_memories> XML block using markdown, e.g.:\n"
         "<long_term_memories>\n"
         "- User prefers dark theme\n"
         "- Project uses Python 3.12+\n"
         "</long_term_memories>\n"
-        "If nothing is worth persisting, output an empty block: <long_term_memories></long_term_memories>"
+        "If nothing NEW is worth persisting, output an empty block: "
+        "<long_term_memories></long_term_memories>"
     )
 
     COMPACTION_PROMPT_SELECTIVE_SUFFIX = (
@@ -126,6 +129,7 @@ Original messages ({count} messages, ~{tokens} tokens):
         target_tokens: int,
         todo_context: Optional[str] = None,
         ltm_enabled: bool = False,
+        existing_memories: str = "",
     ) -> str:
         """Build the compaction instruction text for cache-safe forking.
 
@@ -139,6 +143,7 @@ Original messages ({count} messages, ~{tokens} tokens):
             target_tokens: Target token count for the summary
             todo_context: Optional current todo list state
             ltm_enabled: If True, append instruction to extract long-term memories
+            existing_memories: Already-saved daily memories (to avoid duplicates)
 
         Returns:
             Compaction instruction text
@@ -160,7 +165,11 @@ Original messages ({count} messages, ~{tokens} tokens):
             )
 
         if ltm_enabled:
-            prompt += self.COMPACTION_LTM_SUFFIX
+            if existing_memories.strip():
+                clause = "\nAlready saved today:\n" f"{existing_memories.strip()}\n"
+            else:
+                clause = ""
+            prompt += self.COMPACTION_LTM_SUFFIX.format(existing_memories_clause=clause)
 
         return prompt
 
