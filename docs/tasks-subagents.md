@@ -2,7 +2,9 @@
 
 This document proposes a simple, debuggable way to run multiple sub-agents in parallel while keeping **one** task graph (`TaskStore`) as the source of truth for orchestration.
 
-The intent is to keep the first iteration small: **LLM-driven scheduling** (the main agent chooses what to run next) + **sub-agents update their own task status**.
+Status: this path is currently **experimental**. Legacy `multi_task` remains supported.
+
+The intent is to keep the first iteration small: **LLM-driven scheduling** (the main agent chooses what to run next) + **sub-agent outputs are written back to TaskStore immediately**.
 
 ## Goals
 
@@ -69,7 +71,7 @@ Each sub-agent should be prompted to follow a simple contract:
 2. **Report**
    - Return a bounded result that can be stored verbatim in the task's `detail` (key claims + evidence/links + caveats).
 
-Workers do not mutate the task graph directly; the orchestrator applies results with `TaskUpdate`.
+Workers do not call Task* tools directly. `sub_agent_batch` writes successful outputs back to TaskStore as `status=completed + detail` (best-effort), and also returns an `updates` payload that the orchestrator can replay with `TaskUpdate(updates=[...])` if needed.
 
 ## Proposed tool rewrite: parallel sub-agent runner
 

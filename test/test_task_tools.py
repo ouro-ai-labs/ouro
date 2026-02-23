@@ -445,6 +445,38 @@ async def test_task_update_appends_detail_by_default_and_replace_detail_overwrit
 
 
 @pytest.mark.asyncio
+async def test_task_update_append_only_keeps_existing_when_new_detail_is_subset():
+    store = TaskStore()
+    create = TaskCreateTool(store)
+    update = TaskUpdateTool(store)
+    tget = TaskGetTool(store)
+
+    created = json.loads(await create.execute(content="Do X", activeForm="Doing X"))
+    tid = created["task"]["id"]
+
+    await update.execute(id=tid, detail="alpha beta gamma", replaceDetail=True)
+    await update.execute(id=tid, detail="alpha")
+    got = json.loads(await tget.execute(id=tid))
+    assert got["task"]["detail"] == "alpha beta gamma"
+
+
+@pytest.mark.asyncio
+async def test_task_update_batch_append_only_keeps_existing_when_new_detail_is_subset():
+    store = TaskStore()
+    create = TaskCreateTool(store)
+    update = TaskUpdateTool(store)
+    tget = TaskGetTool(store)
+
+    created = json.loads(await create.execute(content="Do X", activeForm="Doing X"))
+    tid = created["task"]["id"]
+
+    await update.execute(id=tid, detail="alpha beta gamma", replaceDetail=True)
+    await update.execute(updates=[{"id": tid, "detail": "beta"}])
+    got = json.loads(await tget.execute(id=tid))
+    assert got["task"]["detail"] == "alpha beta gamma"
+
+
+@pytest.mark.asyncio
 async def test_task_update_supports_batch_updates_for_multiple_tasks():
     store = TaskStore()
     create = TaskCreateTool(store)

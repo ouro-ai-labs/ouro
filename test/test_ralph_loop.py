@@ -300,6 +300,54 @@ async def test_run_enforces_tasks_completion_gate_until_all_completed():
 
 
 @pytest.mark.asyncio
+async def test_run_prefers_terminal_join_task_detail_as_final_result():
+    """When a complete task graph exists, final output should use terminal join detail."""
+    from agent.tasks import TaskStore
+
+    agent = _make_loop_agent()
+    store = TaskStore()
+
+    leaf = await store.create(
+        content="Leaf analysis",
+        active_form="Analyzing leaf",
+        status="completed",
+        detail="leaf detail",
+    )
+    await store.create(
+        content="Join summary",
+        active_form="Summarizing",
+        status="completed",
+        blocked_by=[leaf.id],
+        detail="JOIN DETAIL: rich structured output",
+    )
+    agent.task_store = store
+
+    agent._react_loop = AsyncMock(return_value="short rewritten answer")
+    result = await agent.run("test task", verify=False)
+    assert result == "JOIN DETAIL: rich structured output"
+    # user message + synchronized final assistant message
+    assert agent.memory.add_message.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_run_keeps_model_result_when_no_terminal_task_detail():
+    """If terminal tasks have no detail, preserve model final answer."""
+    from agent.tasks import TaskStore
+
+    agent = _make_loop_agent()
+    store = TaskStore()
+    await store.create(
+        content="Task A", active_form="Doing A", status="completed", detail="detail a"
+    )
+    await store.create(content="Task B", active_form="Doing B", status="completed")
+    agent.task_store = store
+
+    agent._react_loop = AsyncMock(return_value="model final")
+    result = await agent.run("test task", verify=False)
+    assert result == "model final"
+
+
+@pytest.mark.asyncio
 async def test_llm_verifier_complete():
     """LLMVerifier parses a COMPLETE response correctly."""
     mock_llm = MagicMock()

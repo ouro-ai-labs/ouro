@@ -1,7 +1,6 @@
 """Loop agent implementation."""
 
 import logging
-import re
 from typing import Optional
 
 from config import Config
@@ -11,6 +10,7 @@ from utils.tui.progress import AsyncSpinner
 
 from .base import BaseAgent
 from .context import format_context_prompt
+from .task_policy import TaskPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,8 @@ When you have enough information, provide your final answer directly without usi
 - Use read_file only when you need full contents (avoid reading multiple large files at once)
 - Use smart_edit for precise changes (fuzzy match, auto backup, diff preview)
 - Use write_file only for creating new files or complete rewrites
-- Prefer Tasks + sub_agent_batch for parallelizable work. Avoid multi_task (legacy) when Tasks tools are available.
+- Tasks + sub_agent_batch are experimental graph-orchestration tools. Use them when dependency-aware planning is beneficial or explicitly requested.
+- multi_task remains available for legacy/simple parallel subtasks.
 - Use TaskCreate/TaskUpdate/TaskList/TaskGet/TaskFanout/TaskDumpMd for task graphs (see each tool's description for the full contract).
 - Use manage_todo_list only for a simple linear checklist or if Tasks tools are unavailable.
 </tool_usage_guidelines>
@@ -74,116 +75,30 @@ AGENTS.md is optional. If not found, proceed normally.
 
 """
 
+    def _task_policy(self) -> TaskPolicy:
+        policy = getattr(self, "_task_policy_impl", None)
+        if policy is None:
+            policy = TaskPolicy(self)
+            self._task_policy_impl = policy
+        return policy
+
+    # Backward-compatible wrappers (also used by existing tests).
     def _extract_task_dump_md_request(self, task: str) -> tuple[str, bool] | None:
-        """Best-effort parse of a user request that explicitly asks to call TaskDumpMd(...).
-
-        Only triggers when a path is provided, to avoid surprising writes to repo root.
-        """
-        if "TaskDumpMd" not in task:
-            return None
-
-        # Match TaskDumpMd(path="...") in a user prompt. Keep this conservative to avoid false positives.
-        # NOTE: Use \(...\) (not \\(...\\)) so the regex matches a literal '(' and doesn't open a group.
-        path_match = re.search(r"TaskDumpMd\([^)]*\bpath\s*=\s*(['\"])(.+?)\1", task)
-        if not path_match:
-            return None
-        path_value = str(path_match.group(2)).strip()
-        if not path_value:
-            return None
-
-        include_debug = False
-        debug_match = re.search(
-            r"TaskDumpMd\([^)]*\bincludeDebug\s*=\s*(true|false|1|0)\b",
-            task,
-            flags=re.IGNORECASE,
-        )
-        if debug_match:
-            raw = debug_match.group(1).lower()
-            include_debug = raw in {"true", "1"}
-
-        return (path_value, include_debug)
+        return self._task_policy().extract_task_dump_md_request(task)
 
     async def _auto_dump_tasks_md_if_requested(self, task: str) -> None:
-        store = getattr(self, "task_store", None)
-        if store is None:
-            return
-
-        request = self._extract_task_dump_md_request(task)
-        if not request:
-            return
-        path_value, include_debug = request
-
-        try:
-            tasks = await store.list_tasks()
-        except Exception:
-            return
-        if not tasks:
-            return
-
-        try:
-            from tools.task_tools import TaskDumpMdTool
-
-            dump = TaskDumpMdTool(store)
-            await dump.execute(path=path_value, includeDebug=include_debug)
-        except Exception:
-            logger.warning("Auto TaskDumpMd failed", exc_info=True)
+        await self._task_policy().auto_dump_tasks_md_if_requested(task)
 
     async def _task_incomplete_summary(self) -> str | None:
-        store = getattr(self, "task_store", None)
-        if store is None:
-            return None
-
-        try:
-            tasks = await store.list_tasks()
-        except Exception:
-            return None
-
-        if not tasks:
-            return None
-
-        incomplete = [t for t in tasks if getattr(t, "status", None) != "completed"]
-        if not incomplete:
-            return None
-
-        tasks_by_id = {t.id: t for t in tasks}
-        lines: list[str] = []
-        for t in incomplete:
-            blocked_by = list(getattr(t, "blocked_by", []) or [])
-            missing = []
-            for dep_id in blocked_by:
-                dep = tasks_by_id.get(dep_id)
-                if not dep or getattr(dep, "status", None) != "completed":
-                    missing.append(dep_id)
-            missing_txt = f" missingDeps={','.join(missing)}" if missing else ""
-            lines.append(f"- {t.id}: {t.status} :: {t.content}{missing_txt}")
-        return "\n".join(lines).rstrip()
+        return await self._task_policy().task_incomplete_summary()
 
     async def _enforce_tasks_completed(self, *, tools: list, task: str, result: str) -> str:
-        """Prevent returning a final answer while Tasks remain incomplete.
+        return await self._task_policy().enforce_tasks_completed(
+            tools=tools, task=task, result=result
+        )
 
-        This does not auto-complete tasks; it injects a user message instructing the model
-        to continue using Task* tools until the task graph reaches all-completed.
-        """
-        passes = 0
-        while passes < 3:
-            summary = await self._task_incomplete_summary()
-            if not summary:
-                return result
-            passes += 1
-            gate_msg = (
-                "You created Tasks but some are still incomplete. Continue by using the Task* tools "
-                "to complete ALL tasks, then provide the final answer. Incomplete tasks:\n"
-                f"{summary}"
-            )
-            await self.memory.add_message(LLMMessage(role="user", content=gate_msg))
-            result = await self._react_loop(
-                messages=[],
-                tools=tools,
-                use_memory=True,
-                save_to_memory=True,
-                task=task,
-            )
-        return result
+    async def _prefer_terminal_task_detail_result(self, result: str) -> str:
+        return await self._task_policy().prefer_terminal_task_detail_result(result)
 
     async def run(self, task: str, verify: bool = False) -> str:
         """Execute ReAct loop until task is complete.
@@ -266,6 +181,11 @@ AGENTS.md is optional. If not found, proceed normally.
             )
 
         result = await self._enforce_tasks_completed(tools=tools, task=task, result=result)
+        preferred_result = await self._prefer_terminal_task_detail_result(result)
+        if preferred_result != result:
+            # Keep persisted conversation consistent with the returned final output.
+            await self.memory.add_message(LLMMessage(role="assistant", content=preferred_result))
+            result = preferred_result
 
         # Best-effort: if the user explicitly asked to call TaskDumpMd(path=..., includeDebug=...),
         # ensure we produce a final on-disk snapshot even if the LLM forgot or dumped too early.

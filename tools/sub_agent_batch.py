@@ -1,9 +1,8 @@
 """Parallel sub-agent execution for Tasks-based orchestration.
 
-This tool is intentionally minimal: it runs multiple fresh ReAct loops (sub-agents)
-concurrently, each focused on a single TaskStore task ID. Sub-agents are expected
-to return work output; the main agent is responsible for writing results back to
-the Task graph (e.g. via TaskUpdate).
+This tool runs multiple fresh ReAct loops (sub-agents) concurrently, each focused
+on one TaskStore task ID. On success it writes worker output back to TaskStore as
+completed detail (best-effort), and also returns a TaskUpdate-compatible payload.
 """
 
 from __future__ import annotations
@@ -264,6 +263,38 @@ You must focus ONLY on this task and return a concise, high-signal output.
 
 Execute now."""
 
+    def _compact_result(
+        self,
+        *,
+        task_id: str,
+        ok: bool,
+        debug_meta: dict[str, Any],
+        output: str = "",
+        error: str = "",
+    ) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "taskId": task_id,
+            "ok": ok,
+            "usedUpstreamContext": bool(debug_meta.get("usedUpstreamContext")),
+            "upstreamBlockedBy": list(debug_meta.get("upstreamBlockedBy") or []),
+            "upstreamIncluded": list(debug_meta.get("upstreamIncluded") or []),
+            "upstreamIncludedCount": int(debug_meta.get("upstreamIncludedCount") or 0),
+            "upstreamIncludedDetailChars": int(debug_meta.get("upstreamIncludedDetailChars") or 0),
+            "sharedContextChars": int(debug_meta.get("sharedContextChars") or 0),
+            "sharedContextDigest": str(debug_meta.get("sharedContextDigest") or ""),
+        }
+        if ok:
+            result.update(
+                {
+                    "detailChars": len(output),
+                    "outputDigest": str(debug_meta.get("outputDigest") or ""),
+                    "outputPreview": str(debug_meta.get("outputPreview") or ""),
+                }
+            )
+        else:
+            result["error"] = error
+        return result
+
     async def execute(
         self,
         runs: list[dict[str, Any]],
@@ -364,9 +395,9 @@ Execute now."""
             task_id = str(r.get("taskId", "")).strip()
             if not task_id:
                 continue
+            debug_meta = r.get("debug") if isinstance(r.get("debug"), dict) else {}
             if r.get("ok") is True:
                 output = str(r.get("output", "") or "")
-                debug_meta = r.get("debug") if isinstance(r.get("debug"), dict) else {}
                 updates.append(
                     {
                         "id": task_id,
@@ -376,40 +407,18 @@ Execute now."""
                     }
                 )
                 compact_results.append(
-                    {
-                        "taskId": task_id,
-                        "ok": True,
-                        "detailChars": len(output),
-                        "usedUpstreamContext": bool(debug_meta.get("usedUpstreamContext")),
-                        "upstreamBlockedBy": list(debug_meta.get("upstreamBlockedBy") or []),
-                        "upstreamIncluded": list(debug_meta.get("upstreamIncluded") or []),
-                        "upstreamIncludedCount": int(debug_meta.get("upstreamIncludedCount") or 0),
-                        "upstreamIncludedDetailChars": int(
-                            debug_meta.get("upstreamIncludedDetailChars") or 0
-                        ),
-                        "sharedContextChars": int(debug_meta.get("sharedContextChars") or 0),
-                        "sharedContextDigest": str(debug_meta.get("sharedContextDigest") or ""),
-                        "outputDigest": str(debug_meta.get("outputDigest") or ""),
-                        "outputPreview": str(debug_meta.get("outputPreview") or ""),
-                    }
+                    self._compact_result(
+                        task_id=task_id, ok=True, debug_meta=debug_meta, output=output
+                    )
                 )
             else:
-                debug_meta = r.get("debug") if isinstance(r.get("debug"), dict) else {}
                 compact_results.append(
-                    {
-                        "taskId": task_id,
-                        "ok": False,
-                        "error": r.get("error", ""),
-                        "usedUpstreamContext": bool(debug_meta.get("usedUpstreamContext")),
-                        "upstreamBlockedBy": list(debug_meta.get("upstreamBlockedBy") or []),
-                        "upstreamIncluded": list(debug_meta.get("upstreamIncluded") or []),
-                        "upstreamIncludedCount": int(debug_meta.get("upstreamIncludedCount") or 0),
-                        "upstreamIncludedDetailChars": int(
-                            debug_meta.get("upstreamIncludedDetailChars") or 0
-                        ),
-                        "sharedContextChars": int(debug_meta.get("sharedContextChars") or 0),
-                        "sharedContextDigest": str(debug_meta.get("sharedContextDigest") or ""),
-                    }
+                    self._compact_result(
+                        task_id=task_id,
+                        ok=False,
+                        debug_meta=debug_meta,
+                        error=str(r.get("error", "")),
+                    )
                 )
 
         return _json(

@@ -164,6 +164,14 @@ class TaskStore:
             # Stable ordering: creation order by numeric id when possible.
             return sorted(self._tasks.values(), key=_task_sort_key)
 
+    async def graph_snapshot(self) -> tuple[list[TaskRecord], dict[str, list[str]], list[str]]:
+        """Return tasks + reverse edges + available IDs from one lock snapshot."""
+        async with self._lock:
+            tasks = sorted(self._tasks.values(), key=_task_sort_key)
+            blocks = _compute_blocks_unlocked(tasks)
+            available = _available_ids_unlocked(self._tasks)
+            return tasks, blocks, available
+
     async def update(
         self,
         task_id: str | int | float,
@@ -415,6 +423,11 @@ def _compute_blocks_unlocked(tasks: list[TaskRecord]) -> dict[str, list[str]]:
     for v in blocks.values():
         v.sort(key=_task_id_sort_key)
     return blocks
+
+
+def compute_blocks(tasks: list[TaskRecord]) -> dict[str, list[str]]:
+    """Public helper for reverse edge computation (tool/UI serialization)."""
+    return _compute_blocks_unlocked(list(tasks))
 
 
 def _available_ids_unlocked(tasks: dict[str, TaskRecord]) -> list[str]:

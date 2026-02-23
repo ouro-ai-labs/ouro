@@ -15,7 +15,7 @@ from typing import Any
 import aiofiles
 import aiofiles.os
 
-from agent.tasks import TaskStore, _normalize_task_id
+from agent.tasks import TaskStore, _normalize_task_id, compute_blocks
 from tools.base import BaseTool
 
 
@@ -47,6 +47,102 @@ def _dedupe_keep_order(items: list[str]) -> list[str]:
         seen.add(item)
         out.append(item)
     return out
+
+
+_DETAIL_RETURN_MAX_CHARS = 8000
+_DETAIL_PREVIEW_MAX_CHARS = 240
+
+
+def _merge_append_only_detail(
+    *, existing_detail: str, incoming_detail: str | None, replace_detail: bool
+) -> str | None:
+    """Apply TaskUpdate detail semantics with append-only default.
+
+    - replace_detail=True: return incoming as-is (allow explicit clear/overwrite).
+    - replace_detail=False:
+      - empty incoming -> no-op (None)
+      - no existing detail -> incoming
+      - incoming already present in existing -> keep existing (avoid accidental truncation)
+      - otherwise append with delimiter
+    """
+    if incoming_detail is None:
+        return None
+
+    incoming_text = str(incoming_detail)
+    if replace_detail:
+        return incoming_text
+
+    if not incoming_text.strip():
+        return None
+
+    existing_text = str(existing_detail or "")
+    if not existing_text.strip():
+        return incoming_text
+
+    if incoming_text in existing_text:
+        return existing_text
+
+    return existing_text.rstrip() + "\n\n---\n\n" + incoming_text.lstrip()
+
+
+def _build_update_debug_entry(task_dict: dict[str, Any], detail_text: str) -> dict[str, Any]:
+    detail_preview = _truncate(detail_text, _DETAIL_PREVIEW_MAX_CHARS)[0] if detail_text else ""
+    return {
+        "id": task_dict.get("id"),
+        "status": task_dict.get("status"),
+        "detailChars": task_dict.get("detailChars", 0),
+        "detailDigest": task_dict.get("detailDigest", ""),
+        "detailPreview": detail_preview,
+    }
+
+
+async def _graph_snapshot(store: TaskStore) -> tuple[list[Any], dict[str, list[str]], list[str]]:
+    if hasattr(store, "graph_snapshot"):
+        return await store.graph_snapshot()
+    tasks = await store.list_tasks()
+    return tasks, compute_blocks(tasks), await store.available_ids()
+
+
+async def _render_sections(store: TaskStore) -> dict[str, str]:
+    return {
+        "tasksMd": await store.render_tasks_md(),
+        "debugTasksMd": await store.render_debug_tasks_md(),
+    }
+
+
+async def _read_tasks_payload(
+    store: TaskStore,
+    *,
+    ids: list[str | int | float],
+    include_render: bool = False,
+) -> dict[str, Any]:
+    normalized = _normalize_id_list(ids)
+    if not normalized:
+        return {"ok": False, "error": "'ids' must be a non-empty array"}
+
+    tasks, blocks, available = await _graph_snapshot(store)
+    by_id = {t.id: t for t in tasks}
+
+    out_tasks: list[dict[str, Any]] = []
+    missing: list[str] = []
+    for tid in normalized:
+        task_item = by_id.get(tid)
+        if not task_item:
+            missing.append(tid)
+            continue
+        out_tasks.append(
+            task_item.to_dict(blocks=blocks.get(task_item.id, []), include_detail=True)
+        )
+
+    payload: dict[str, Any] = {
+        "ok": True,
+        "tasks": out_tasks,
+        "missing": missing,
+        "available": available,
+    }
+    if include_render:
+        payload.update(await _render_sections(store))
+    return payload
 
 
 class TaskFanoutTool(BaseTool):
@@ -264,11 +360,6 @@ class TaskFanoutTool(BaseTool):
             await self._store.update(join_id, blocked_by=rewritten)
             join_blocked_by = rewritten
 
-        if join_id and join_blocked_by is None:
-            join = await self._store.get(join_id)
-            if join:
-                join_blocked_by = list(getattr(join, "blocked_by", []) or [])
-
         payload: dict[str, Any] = {
             "ok": True,
             "phaseId": phase_id,
@@ -277,19 +368,20 @@ class TaskFanoutTool(BaseTool):
             "adoptedChildIds": adopted_ids,
             "joinId": join_id or None,
             "joinBlockedBy": join_blocked_by,
-            "available": await self._store.available_ids(),
         }
+        tasks_snapshot, blocks_snapshot, available = await _graph_snapshot(self._store)
+        payload["available"] = available
 
         if includeRender:
-            tasks = await self._store.list_tasks()
-            blocks = _compute_blocks(tasks)
             payload.update(
                 {
-                    "tasks": [t.to_dict(blocks=blocks.get(t.id, [])) for t in tasks],
-                    "tasksMd": await self._store.render_tasks_md(),
-                    "debugTasksMd": await self._store.render_debug_tasks_md(),
+                    "tasks": [
+                        task_item.to_dict(blocks=blocks_snapshot.get(task_item.id, []))
+                        for task_item in tasks_snapshot
+                    ],
                 }
             )
+            payload.update(await _render_sections(self._store))
 
         return _json(payload)
 
@@ -445,8 +537,7 @@ Guidelines:
             status=status,
             blocked_by=_normalize_id_list(blockedBy),
         )
-        tasks = await self._store.list_tasks()
-        blocks = _compute_blocks(tasks)
+        _, blocks, available = await _graph_snapshot(self._store)
         task_dict = task.to_dict(blocks=blocks.get(task.id, []), include_detail=True)
         if isinstance(task_dict.get("detail"), str) and task_dict.get("detail"):
             truncated, was_truncated, total = _truncate(task_dict["detail"], 8000)
@@ -454,14 +545,9 @@ Guidelines:
             if was_truncated:
                 task_dict["detailTruncated"] = True
                 task_dict["detailTotalChars"] = total
-        return _json(
-            {
-                "task": task_dict,
-                "available": await self._store.available_ids(),
-                "tasksMd": await self._store.render_tasks_md(),
-                "debugTasksMd": await self._store.render_debug_tasks_md(),
-            }
-        )
+        payload = {"task": task_dict, "available": available}
+        payload.update(await _render_sections(self._store))
+        return _json(payload)
 
 
 class TaskUpdateTool(BaseTool):
@@ -684,21 +770,12 @@ Tool response:
                     raise ValueError(f"Duplicate id in updates: {tid}")
                 seen.add(tid)
 
-                u_detail = u.get("detail")
-                u_replace = bool(u.get("replaceDetail", False))
-                if u_detail is not None and not u_replace:
-                    if not str(u_detail).strip():
-                        u_detail = None
-                    else:
-                        existing = by_id.get(tid)
-                        if existing and getattr(existing, "detail", None):
-                            existing_detail = str(existing.detail or "")
-                            if existing_detail.strip() and str(u_detail) not in existing_detail:
-                                u_detail = (
-                                    existing_detail.rstrip()
-                                    + "\n\n---\n\n"
-                                    + str(u_detail).lstrip()
-                                )
+                existing = by_id.get(tid)
+                u_detail = _merge_append_only_detail(
+                    existing_detail=str(getattr(existing, "detail", "") or ""),
+                    incoming_detail=u.get("detail"),
+                    replace_detail=bool(u.get("replaceDetail", False)),
+                )
 
                 normalized.append(
                     {
@@ -720,9 +797,8 @@ Tool response:
                 )
 
             updated_tasks = await self._store.update_many(normalized)
-            tasks2 = await self._store.list_tasks()
-            blocks2 = _compute_blocks(tasks2)
-            tasks2_by_id = {t.id: t for t in tasks2}
+            tasks2, blocks2, available = await _graph_snapshot(self._store)
+            tasks2_by_id = {task_item.id: task_item for task_item in tasks2}
             update_debug: list[dict[str, Any]] = []
             for updated_task in updated_tasks:
                 record = tasks2_by_id.get(updated_task.id, updated_task)
@@ -730,40 +806,27 @@ Tool response:
                     blocks=blocks2.get(record.id, []), include_detail=False
                 )
                 detail_text = str(getattr(record, "detail", "") or "")
-                detail_preview = _truncate(detail_text, 240)[0] if detail_text else ""
-                update_debug.append(
-                    {
-                        "id": record_dict.get("id"),
-                        "status": record_dict.get("status"),
-                        "detailChars": record_dict.get("detailChars", 0),
-                        "detailDigest": record_dict.get("detailDigest", ""),
-                        "detailPreview": detail_preview,
-                    }
-                )
-            return _json(
-                {
-                    "tasks": [t.to_dict(blocks=blocks2.get(t.id, [])) for t in updated_tasks],
-                    "updateDebug": update_debug,
-                    "available": await self._store.available_ids(),
-                    "tasksMd": await self._store.render_tasks_md(),
-                    "debugTasksMd": await self._store.render_debug_tasks_md(),
-                }
-            )
+                update_debug.append(_build_update_debug_entry(record_dict, detail_text))
+            payload = {
+                "tasks": [
+                    task_item.to_dict(blocks=blocks2.get(task_item.id, []))
+                    for task_item in updated_tasks
+                ],
+                "updateDebug": update_debug,
+                "available": available,
+            }
+            payload.update(await _render_sections(self._store))
+            return _json(payload)
 
         if id is None:
             raise ValueError("TaskUpdate requires either id=... or updates=[...]")
 
-        # Detail is append-only by default to avoid accidental clobbering of long results.
-        # Clearing or overwriting requires replaceDetail=true.
-        if detail is not None and not replaceDetail:
-            if not str(detail).strip():
-                detail = None
-            else:
-                existing = await self._store.get(id)
-                if existing and getattr(existing, "detail", None):
-                    existing_detail = str(existing.detail or "")
-                    if existing_detail.strip() and str(detail) not in existing_detail:
-                        detail = existing_detail.rstrip() + "\n\n---\n\n" + str(detail).lstrip()
+        existing = await self._store.get(id)
+        detail = _merge_append_only_detail(
+            existing_detail=str(getattr(existing, "detail", "") or ""),
+            incoming_detail=detail,
+            replace_detail=replaceDetail,
+        )
 
         updated = await self._store.update(
             id,
@@ -777,13 +840,12 @@ Tool response:
             add_blocks=_normalize_id_list(addBlocks) or None,
             remove_blocks=_normalize_id_list(removeBlocks) or None,
         )
-        tasks3 = await self._store.list_tasks()
-        blocks3 = _compute_blocks(tasks3)
+        _, blocks3, available = await _graph_snapshot(self._store)
 
         # For single-task updates, include the task's long-form detail (bounded) so downstream steps
         # can reliably reuse it via the tool result (not only via TaskGet).
         task_dict = updated.to_dict(blocks=blocks3.get(updated.id, []), include_detail=True)
-        detail_max = 8000
+        detail_max = _DETAIL_RETURN_MAX_CHARS
         if isinstance(task_dict.get("detail"), str) and task_dict.get("detail"):
             truncated, was_truncated, total = _truncate(task_dict["detail"], detail_max)
             task_dict["detail"] = truncated
@@ -791,26 +853,12 @@ Tool response:
                 task_dict["detailTruncated"] = True
                 task_dict["detailTotalChars"] = total
 
-        update_debug = {
-            "id": task_dict.get("id"),
-            "status": task_dict.get("status"),
-            "detailChars": task_dict.get("detailChars", 0),
-            "detailDigest": task_dict.get("detailDigest", ""),
-            "detailPreview": (
-                _truncate(str(task_dict.get("detail") or ""), 240)[0]
-                if str(task_dict.get("detail") or "")
-                else ""
-            ),
-        }
-        return _json(
-            {
-                "task": task_dict,
-                "updateDebug": update_debug,
-                "available": await self._store.available_ids(),
-                "tasksMd": await self._store.render_tasks_md(),
-                "debugTasksMd": await self._store.render_debug_tasks_md(),
-            }
+        update_debug = _build_update_debug_entry(
+            task_dict, str(getattr(updated, "detail", "") or "")
         )
+        payload = {"task": task_dict, "updateDebug": update_debug, "available": available}
+        payload.update(await _render_sections(self._store))
+        return _json(payload)
 
 
 class TaskListTool(BaseTool):
@@ -837,16 +885,15 @@ class TaskListTool(BaseTool):
         return {}
 
     async def execute(self, **kwargs) -> str:
-        tasks = await self._store.list_tasks()
-        blocks = _compute_blocks(tasks)
-        return _json(
-            {
-                "tasks": [t.to_dict(blocks=blocks.get(t.id, [])) for t in tasks],
-                "available": await self._store.available_ids(),
-                "tasksMd": await self._store.render_tasks_md(),
-                "debugTasksMd": await self._store.render_debug_tasks_md(),
-            }
-        )
+        tasks, blocks, available = await _graph_snapshot(self._store)
+        payload = {
+            "tasks": [
+                task_item.to_dict(blocks=blocks.get(task_item.id, [])) for task_item in tasks
+            ],
+            "available": available,
+        }
+        payload.update(await _render_sections(self._store))
+        return _json(payload)
 
 
 class TaskGetTool(BaseTool):
@@ -878,18 +925,18 @@ class TaskGetTool(BaseTool):
         }
 
     async def execute(self, id: str | int | float, **kwargs) -> str:
-        task = await self._store.get(id)
-        if not task:
+        payload = await _read_tasks_payload(self._store, ids=[id], include_render=True)
+        if payload.get("ok") is False:
+            return _json(payload)
+        missing = payload.get("missing") or []
+        if missing:
             return _json({"error": "Task not found", "id": str(id)})
-
-        tasks = await self._store.list_tasks()
-        blocks = _compute_blocks(tasks)
         return _json(
             {
-                "task": task.to_dict(blocks=blocks.get(task.id, []), include_detail=True),
-                "available": await self._store.available_ids(),
-                "tasksMd": await self._store.render_tasks_md(),
-                "debugTasksMd": await self._store.render_debug_tasks_md(),
+                "task": (payload.get("tasks") or [None])[0],
+                "available": payload.get("available", []),
+                "tasksMd": payload.get("tasksMd", ""),
+                "debugTasksMd": payload.get("debugTasksMd", ""),
             }
         )
 
@@ -924,46 +971,4 @@ class TaskGetManyTool(BaseTool):
         }
 
     async def execute(self, ids: list[str | int | float], **kwargs) -> str:
-        normalized = _normalize_id_list(ids)
-        if not normalized:
-            return _json({"ok": False, "error": "'ids' must be a non-empty array"})
-
-        tasks = await self._store.list_tasks()
-        blocks = _compute_blocks(tasks)
-        by_id = {t.id: t for t in tasks}
-
-        out_tasks = []
-        missing = []
-        for tid in normalized:
-            t = by_id.get(tid)
-            if not t:
-                missing.append(tid)
-                continue
-            out_tasks.append(t.to_dict(blocks=blocks.get(t.id, []), include_detail=True))
-
-        return _json(
-            {
-                "ok": True,
-                "tasks": out_tasks,
-                "missing": missing,
-                "available": await self._store.available_ids(),
-            }
-        )
-
-
-def _compute_blocks(tasks) -> dict[str, list[str]]:
-    blocks: dict[str, list[str]] = {t.id: [] for t in tasks}
-    for t in tasks:
-        for dep in t.blocked_by:
-            if dep in blocks:
-                blocks[dep].append(t.id)
-    for v in blocks.values():
-        v.sort(key=_blocks_sort_key)
-    return blocks
-
-
-def _blocks_sort_key(task_id: str) -> tuple[int, str]:
-    try:
-        return (0, f"{int(task_id):012d}")
-    except ValueError:
-        return (1, task_id)
+        return _json(await _read_tasks_payload(self._store, ids=ids, include_render=False))
