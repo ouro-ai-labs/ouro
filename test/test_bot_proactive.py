@@ -14,6 +14,7 @@ from bot.proactive import (
     CronScheduler,
     HeartbeatScheduler,
     IsolatedAgentRunner,
+    _has_checklist_items,
     is_active_hours,
     load_heartbeat,
 )
@@ -116,6 +117,23 @@ class TestIsActiveHours:
 # ---------------------------------------------------------------------------
 
 
+class TestHasChecklistItems:
+    def test_empty_string(self):
+        assert _has_checklist_items("") is False
+
+    def test_default_template(self):
+        text = "# Heartbeat Checklist\n\nUse the manage_heartbeat tool.\n"
+        assert _has_checklist_items(text) is False
+
+    def test_with_items(self):
+        text = "# Heartbeat Checklist\n\n- [ ] Check disk space\n- [ ] Check logs\n"
+        assert _has_checklist_items(text) is True
+
+    def test_checked_items_not_counted(self):
+        text = "- [x] Already done\n"
+        assert _has_checklist_items(text) is False
+
+
 class TestLoadHeartbeat:
     def test_creates_default_file(self, tmp_path, monkeypatch):
         hb_file = tmp_path / "heartbeat.md"
@@ -195,9 +213,43 @@ class TestHeartbeatScheduler:
         executor.broadcast = AsyncMock(return_value=0)
         runner = HeartbeatScheduler(executor, interval=10)
 
+        with patch("bot.proactive.is_active_hours", return_value=True), patch(
+            "bot.proactive.load_heartbeat", return_value="- [ ] Check servers"
+        ):
+            await runner._tick()
+
+        executor.broadcast.assert_not_awaited()
+
+    async def test_heartbeat_ok_detected_with_surrounding_text(self):
+        """LLM may wrap HEARTBEAT_OK in extra text — must still be detected."""
+        executor = _make_executor(
+            "The heartbeat checklist is empty. Nothing needs attention.\n\nHEARTBEAT_OK"
+        )
+        executor.broadcast = AsyncMock(return_value=0)
+        runner = HeartbeatScheduler(executor, interval=10)
+
+        with patch("bot.proactive.is_active_hours", return_value=True), patch(
+            "bot.proactive.load_heartbeat", return_value="- [ ] Check servers"
+        ):
+            await runner._tick()
+
+        executor.broadcast.assert_not_awaited()
+
+    async def test_heartbeat_skips_empty_checklist(self, tmp_path, monkeypatch):
+        """No LLM call when the checklist has no items."""
+        hb_file = tmp_path / "heartbeat.md"
+        hb_file.write_text("# Heartbeat Checklist\n\nNo items here.\n")
+        monkeypatch.setattr("bot.proactive._HEARTBEAT_FILE", str(hb_file))
+
+        executor = _make_executor()
+        executor.run_isolated = AsyncMock()
+        executor.broadcast = AsyncMock()
+        runner = HeartbeatScheduler(executor, interval=10)
+
         with patch("bot.proactive.is_active_hours", return_value=True):
             await runner._tick()
 
+        executor.run_isolated.assert_not_awaited()
         executor.broadcast.assert_not_awaited()
 
     async def test_heartbeat_broadcasts_non_ok(self):
@@ -205,7 +257,9 @@ class TestHeartbeatScheduler:
         executor.broadcast = AsyncMock(return_value=2)
         runner = HeartbeatScheduler(executor, interval=10)
 
-        with patch("bot.proactive.is_active_hours", return_value=True):
+        with patch("bot.proactive.is_active_hours", return_value=True), patch(
+            "bot.proactive.load_heartbeat", return_value="- [ ] Check disk space"
+        ):
             await runner._tick()
 
         executor.broadcast.assert_awaited_once()

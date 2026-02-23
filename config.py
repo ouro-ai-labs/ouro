@@ -131,7 +131,7 @@ class Config:
 
     # Proactive: Heartbeat & Active Hours
     BOT_HEARTBEAT_INTERVAL = int(
-        _cfg.get("BOT_HEARTBEAT_INTERVAL", "1800")
+        _cfg.get("BOT_HEARTBEAT_INTERVAL", "3600")
     )  # seconds; 0 = disabled
     BOT_ACTIVE_HOURS_START = int(_cfg.get("BOT_ACTIVE_HOURS_START", "8"))  # 24h format
     BOT_ACTIVE_HOURS_END = int(_cfg.get("BOT_ACTIVE_HOURS_END", "22"))  # 24h format

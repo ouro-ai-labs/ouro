@@ -79,6 +79,11 @@ def load_heartbeat() -> str:
         return ""
 
 
+def _has_checklist_items(text: str) -> bool:
+    """Return True if *text* contains at least one ``- [ ] …`` item."""
+    return any(line.strip().startswith("- [ ] ") for line in text.splitlines())
+
+
 def is_active_hours(
     now: datetime | None = None,
     *,
@@ -254,10 +259,15 @@ class HeartbeatScheduler:
 
             self._last_run = datetime.now(tz=timezone.utc)
             checklist = load_heartbeat()
+
+            if not _has_checklist_items(checklist):
+                logger.debug("Heartbeat skipped: checklist has no items")
+                return
+
             prompt = _HEARTBEAT_PROMPT.format(checklist=checklist)
             result = await self._executor.run_isolated(prompt)
 
-            if result.strip().startswith("HEARTBEAT_OK"):
+            if "HEARTBEAT_OK" in result:
                 logger.info("Heartbeat: OK (nothing to report)")
                 return
 
