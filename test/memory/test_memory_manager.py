@@ -669,7 +669,7 @@ class TestDeferredCompression:
         for msg in simple_messages:
             await manager.add_message(msg)
 
-        prompt = manager.get_compaction_prompt()
+        prompt = await manager.get_compaction_prompt()
 
         assert prompt.role == "user"
         assert "Summarize the conversation above" in prompt.content
@@ -682,7 +682,7 @@ class TestDeferredCompression:
         for msg in simple_messages:
             await manager.add_message(msg)
 
-        prompt = manager.get_compaction_prompt()
+        prompt = await manager.get_compaction_prompt()
 
         assert "[Current Tasks]" in prompt.content
         assert "Test task" in prompt.content
@@ -777,3 +777,44 @@ class TestDeferredCompression:
         assert has_summary
         # With selective strategy and tool messages, should preserve more than just the summary
         assert len(context) > 1
+
+
+class TestLTMExtractionToDaily:
+    """Test that compaction saves extracted LTM to daily file, not memory.md."""
+
+    async def test_extract_and_save_ltm_writes_daily_file(
+        self, set_memory_config, mock_llm, simple_messages, tmp_path
+    ):
+        """Extracted <long_term_memories> should be appended to today's YYYY-MM-DD.md."""
+        import asyncio
+        from datetime import date
+
+        set_memory_config(
+            LONG_TERM_MEMORY_ENABLED=True,
+            MEMORY_COMPRESSION_THRESHOLD=200000,
+        )
+        memory_dir = str(tmp_path / "mem")
+        manager = MemoryManager(mock_llm, memory_dir=memory_dir)
+
+        for msg in simple_messages:
+            await manager.add_message(msg)
+
+        summary_with_ltm = (
+            "Summary of conversation.\n"
+            "<long_term_memories>\n"
+            "- User prefers dark theme\n"
+            "</long_term_memories>"
+        )
+        manager.apply_compression(summary_with_ltm)
+
+        # Give the fire-and-forget task a moment to complete
+        await asyncio.sleep(0.1)
+
+        # Daily file should contain the extracted memories
+        today = date.today()
+        daily_content = await manager.long_term.store.load_daily(today)
+        assert "User prefers dark theme" in daily_content
+
+        # Permanent memory.md should NOT have been written
+        permanent = await manager.long_term.store.load()
+        assert permanent == ""

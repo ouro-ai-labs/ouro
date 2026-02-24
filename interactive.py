@@ -338,25 +338,45 @@ class InteractiveSession:
             return
 
         if args == "clear":
-            terminal_ui.print_warning("This will clear all long-term memories.")
+            terminal_ui.print_warning("This will clear all long-term memories (durable + daily).")
             confirm = await self.input_handler.prompt_async("Type 'yes' to confirm: ")
             if confirm.strip().lower() == "yes":
-                await ltm.store.save(
-                    "",
-                )
-                terminal_ui.print_success("Long-term memory cleared.")
+                await ltm.store.save("")
+                # Clear daily files in the window
+                for dt, _ in await ltm.store.load_recent_dailies(
+                    Config.LONG_TERM_MEMORY_DAILY_WINDOW
+                ):
+                    await ltm.store.save_daily(dt, "")
+                terminal_ui.print_success("Long-term memory cleared (durable + daily).")
             else:
                 terminal_ui.print_info("Cancelled.")
             return
 
-        content = await ltm.store.load()
-        if not content.strip():
-            terminal_ui.print_info(f"Long-term memory is empty. ({ltm.memory_dir}/memory.md)")
-            return
+        colors = Theme.get_colors()
 
-        terminal_ui.print_info(f"Long-term memory — {ltm.memory_dir}/memory.md")
-        terminal_ui.console.print()
-        terminal_ui.console.print(Markdown(content))
+        # Show durable memories
+        content = await ltm.store.load()
+        if content.strip():
+            terminal_ui.print_info(f"Durable memories — {ltm.memory_dir}/memory.md")
+            terminal_ui.console.print()
+            terminal_ui.console.print(Markdown(content))
+        else:
+            terminal_ui.print_info(f"Durable memories are empty. ({ltm.memory_dir}/memory.md)")
+
+        # Show recent daily notes
+        dailies = await ltm.store.load_recent_dailies(Config.LONG_TERM_MEMORY_DAILY_WINDOW)
+        if dailies:
+            terminal_ui.console.print()
+            terminal_ui.print_info("Recent daily notes:")
+            for dt, daily_content in dailies:
+                terminal_ui.console.print(
+                    f"\n[{colors.text_muted}]--- {dt.isoformat()} ---[/{colors.text_muted}]"
+                )
+                terminal_ui.console.print(Markdown(daily_content))
+        elif not content.strip():
+            terminal_ui.console.print()
+            terminal_ui.print_info("No recent daily notes.")
+
         terminal_ui.console.print()
 
     def _update_status_bar(self) -> None:

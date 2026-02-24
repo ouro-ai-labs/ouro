@@ -98,8 +98,10 @@ class Config:
     # Long-term Memory
     LONG_TERM_MEMORY_ENABLED = _cfg.get("LONG_TERM_MEMORY_ENABLED", "false").lower() == "true"
     LONG_TERM_MEMORY_CONSOLIDATION_THRESHOLD = int(
-        _cfg.get("LONG_TERM_MEMORY_CONSOLIDATION_THRESHOLD", "5000")
+        _cfg.get("LONG_TERM_MEMORY_CONSOLIDATION_THRESHOLD", "1000")
     )
+    LONG_TERM_MEMORY_DAILY_WINDOW = int(_cfg.get("LONG_TERM_MEMORY_DAILY_WINDOW", "2"))
+    LONG_TERM_MEMORY_DAILY_RETENTION = int(_cfg.get("LONG_TERM_MEMORY_DAILY_RETENTION", "30"))
 
     # Logging Configuration
     # Note: Logging is now controlled via --verbose flag
