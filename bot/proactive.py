@@ -84,41 +84,6 @@ def _has_checklist_items(text: str) -> bool:
     return any(line.strip().startswith("- [ ] ") for line in text.splitlines())
 
 
-def is_active_hours(
-    now: datetime | None = None,
-    *,
-    start: int | None = None,
-    end: int | None = None,
-    tz_name: str | None = None,
-) -> bool:
-    """Return True if the current hour falls within the active window.
-
-    Parameters default to Config values when not explicitly provided.
-    """
-    start = start if start is not None else Config.BOT_ACTIVE_HOURS_START
-    end = end if end is not None else Config.BOT_ACTIVE_HOURS_END
-    tz_name = tz_name if tz_name is not None else Config.BOT_ACTIVE_HOURS_TZ
-
-    if now is None:
-        if tz_name:
-            try:
-                import zoneinfo
-
-                tz = zoneinfo.ZoneInfo(tz_name)
-            except Exception:
-                tz = None
-        else:
-            tz = None
-        now = datetime.now(tz=tz)
-
-    hour = now.hour
-    if start <= end:
-        # e.g. 8–22
-        return start <= hour < end
-    # Wraps midnight, e.g. 22–6
-    return hour >= start or hour < end
-
-
 # ---------------------------------------------------------------------------
 # IsolatedAgentRunner — isolated execution + broadcast
 # ---------------------------------------------------------------------------
@@ -156,7 +121,7 @@ class IsolatedAgentRunner:
             return "[Proactive task timed out]"
 
     async def broadcast(self, text: str) -> int:
-        """Push *text* to all active sessions, skipping busy ones.
+        """Push *text* to all active sessions.
 
         Returns the number of sessions successfully reached.
         """
@@ -172,11 +137,6 @@ class IsolatedAgentRunner:
         sent = 0
 
         for channel_name, conversation_id in sessions:
-            if self._router.is_session_busy(channel_name, conversation_id):
-                logger.debug(
-                    "broadcast: skipping busy session %s:%s", channel_name, conversation_id
-                )
-                continue
             ch = channel_map.get(channel_name)
             if ch is None:
                 continue
@@ -245,18 +205,6 @@ class HeartbeatScheduler:
     async def _tick(self) -> None:
         """Single heartbeat tick."""
         try:
-            if not is_active_hours():
-                logger.debug("Heartbeat skipped: outside active hours")
-                return
-
-            # Skip if all sessions are busy
-            sessions = self._executor._router.iter_active_sessions()
-            if sessions and all(
-                self._executor._router.is_session_busy(ch, cid) for ch, cid in sessions
-            ):
-                logger.debug("Heartbeat skipped: all sessions busy")
-                return
-
             self._last_run = datetime.now(tz=timezone.utc)
             checklist = load_heartbeat()
 
@@ -382,11 +330,6 @@ class CronScheduler:
             except (ValueError, TypeError):
                 continue
             if now < next_dt:
-                continue
-
-            if not is_active_hours():
-                logger.debug("Cron job %s skipped: outside active hours", job.id)
-                self._compute_next_run(job)
                 continue
 
             await self._execute_job(job)

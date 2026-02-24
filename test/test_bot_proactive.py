@@ -15,7 +15,6 @@ from bot.proactive import (
     HeartbeatScheduler,
     IsolatedAgentRunner,
     _has_checklist_items,
-    is_active_hours,
     load_heartbeat,
 )
 from bot.session_router import SessionRouter
@@ -79,37 +78,6 @@ def _make_executor(
         router.is_session_busy = _busy  # type: ignore[assignment]
 
     return IsolatedAgentRunner(factory, channels, router)
-
-
-# ---------------------------------------------------------------------------
-# is_active_hours
-# ---------------------------------------------------------------------------
-
-
-class TestIsActiveHours:
-    def test_within_window(self):
-        dt = datetime(2025, 6, 15, 10, 0)
-        assert is_active_hours(dt, start=8, end=22) is True
-
-    def test_outside_window(self):
-        dt = datetime(2025, 6, 15, 23, 0)
-        assert is_active_hours(dt, start=8, end=22) is False
-
-    def test_boundary_start(self):
-        dt = datetime(2025, 6, 15, 8, 0)
-        assert is_active_hours(dt, start=8, end=22) is True
-
-    def test_boundary_end_excluded(self):
-        dt = datetime(2025, 6, 15, 22, 0)
-        assert is_active_hours(dt, start=8, end=22) is False
-
-    def test_wrap_midnight_inside(self):
-        dt = datetime(2025, 6, 15, 23, 0)
-        assert is_active_hours(dt, start=22, end=6) is True
-
-    def test_wrap_midnight_outside(self):
-        dt = datetime(2025, 6, 15, 10, 0)
-        assert is_active_hours(dt, start=22, end=6) is False
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +153,7 @@ class TestIsolatedAgentRunner:
         assert len(ch.sent) == 2
         assert ch.sent[0].text == "hello"
 
-    async def test_broadcast_skips_busy_sessions(self):
+    async def test_broadcast_sends_to_busy_sessions(self):
         ch = FakeChannel("test")
         executor = _make_executor(
             channels=[ch],
@@ -193,8 +161,8 @@ class TestIsolatedAgentRunner:
             busy_sessions={("test", "c1")},
         )
         count = await executor.broadcast("hello")
-        assert count == 1
-        assert ch.sent[0].conversation_id == "c2"
+        assert count == 2
+        assert len(ch.sent) == 2
 
     async def test_broadcast_no_sessions(self):
         executor = _make_executor()
@@ -213,9 +181,7 @@ class TestHeartbeatScheduler:
         executor.broadcast = AsyncMock(return_value=0)
         runner = HeartbeatScheduler(executor, interval=10)
 
-        with patch("bot.proactive.is_active_hours", return_value=True), patch(
-            "bot.proactive.load_heartbeat", return_value="- [ ] Check servers"
-        ):
+        with patch("bot.proactive.load_heartbeat", return_value="- [ ] Check servers"):
             await runner._tick()
 
         executor.broadcast.assert_not_awaited()
@@ -228,9 +194,7 @@ class TestHeartbeatScheduler:
         executor.broadcast = AsyncMock(return_value=0)
         runner = HeartbeatScheduler(executor, interval=10)
 
-        with patch("bot.proactive.is_active_hours", return_value=True), patch(
-            "bot.proactive.load_heartbeat", return_value="- [ ] Check servers"
-        ):
+        with patch("bot.proactive.load_heartbeat", return_value="- [ ] Check servers"):
             await runner._tick()
 
         executor.broadcast.assert_not_awaited()
@@ -246,8 +210,7 @@ class TestHeartbeatScheduler:
         executor.broadcast = AsyncMock()
         runner = HeartbeatScheduler(executor, interval=10)
 
-        with patch("bot.proactive.is_active_hours", return_value=True):
-            await runner._tick()
+        await runner._tick()
 
         executor.run_isolated.assert_not_awaited()
         executor.broadcast.assert_not_awaited()
@@ -257,9 +220,7 @@ class TestHeartbeatScheduler:
         executor.broadcast = AsyncMock(return_value=2)
         runner = HeartbeatScheduler(executor, interval=10)
 
-        with patch("bot.proactive.is_active_hours", return_value=True), patch(
-            "bot.proactive.load_heartbeat", return_value="- [ ] Check disk space"
-        ):
+        with patch("bot.proactive.load_heartbeat", return_value="- [ ] Check disk space"):
             await runner._tick()
 
         executor.broadcast.assert_awaited_once()
@@ -267,39 +228,13 @@ class TestHeartbeatScheduler:
         assert "[Heartbeat]" in call_text
         assert "disk" in call_text
 
-    async def test_heartbeat_skips_outside_active_hours(self):
-        executor = _make_executor("should not run")
-        executor.run_isolated = AsyncMock()
-        runner = HeartbeatScheduler(executor, interval=10)
-
-        with patch("bot.proactive.is_active_hours", return_value=False):
-            await runner._tick()
-
-        executor.run_isolated.assert_not_awaited()
-
-    async def test_heartbeat_skips_all_busy(self):
-        ch = FakeChannel("test")
-        executor = _make_executor(
-            channels=[ch],
-            sessions=[("test", "c1")],
-            busy_sessions={("test", "c1")},
-        )
-        executor.run_isolated = AsyncMock()
-        runner = HeartbeatScheduler(executor, interval=10)
-
-        with patch("bot.proactive.is_active_hours", return_value=True):
-            await runner._tick()
-
-        executor.run_isolated.assert_not_awaited()
-
     async def test_heartbeat_exception_does_not_crash(self):
         executor = _make_executor()
         executor.run_isolated = AsyncMock(side_effect=RuntimeError("boom"))
         runner = HeartbeatScheduler(executor, interval=10)
 
-        with patch("bot.proactive.is_active_hours", return_value=True):
-            # Should not raise
-            await runner._tick()
+        # Should not raise
+        await runner._tick()
 
     def test_disabled_when_interval_zero(self):
         executor = _make_executor()
@@ -327,8 +262,7 @@ class TestHeartbeatScheduler:
         executor.run_isolated = capture_run  # type: ignore[assignment]
         runner = HeartbeatScheduler(executor, interval=10)
 
-        with patch("bot.proactive.is_active_hours", return_value=True):
-            await runner._tick()
+        await runner._tick()
 
         assert captured_prompt is not None
         assert "Check disk space" in captured_prompt
@@ -389,26 +323,13 @@ class TestCronScheduler:
         past = datetime(2020, 1, 1, tzinfo=timezone.utc).isoformat()
         job.next_run_at = past
 
-        with patch("bot.proactive.is_active_hours", return_value=True):
-            await sched._tick()
+        await sched._tick()
 
         executor.broadcast.assert_awaited_once()
         call_text = executor.broadcast.call_args[0][0]
         assert "[Cron: test-job]" in call_text
         # next_run_at should have been recomputed
         assert job.next_run_at != past
-
-    async def test_tick_skips_outside_active_hours(self):
-        executor = _make_executor()
-        executor.run_isolated = AsyncMock()
-        sched = CronScheduler(executor)
-        job = sched.add_job("300", "test")
-        job.next_run_at = datetime(2020, 1, 1, tzinfo=timezone.utc).isoformat()
-
-        with patch("bot.proactive.is_active_hours", return_value=False):
-            await sched._tick()
-
-        executor.run_isolated.assert_not_awaited()
 
     async def test_tick_not_due_yet(self):
         executor = _make_executor()
@@ -417,8 +338,7 @@ class TestCronScheduler:
         sched.add_job("300", "test")
         # next_run_at is already in the future from add_job
 
-        with patch("bot.proactive.is_active_hours", return_value=True):
-            await sched._tick()
+        await sched._tick()
 
         executor.run_isolated.assert_not_awaited()
 
@@ -464,8 +384,7 @@ class TestCronScheduler:
         assert job.schedule_type == "once"
         assert len(sched.jobs) == 1
 
-        with patch("bot.proactive.is_active_hours", return_value=True):
-            await sched._tick()
+        await sched._tick()
 
         executor.broadcast.assert_awaited_once()
         # Job should be auto-removed after execution
@@ -478,8 +397,7 @@ class TestCronScheduler:
         sched.add_job("2099-12-31T23:59:59+00:00", "Far future task")
         assert len(sched.jobs) == 1
 
-        with patch("bot.proactive.is_active_hours", return_value=True):
-            await sched._tick()
+        await sched._tick()
 
         executor.run_isolated.assert_not_awaited()
         assert len(sched.jobs) == 1
@@ -492,9 +410,8 @@ class TestCronScheduler:
         job = sched.add_job("300", "test")
         job.next_run_at = datetime(2020, 1, 1, tzinfo=timezone.utc).isoformat()
 
-        with patch("bot.proactive.is_active_hours", return_value=True):
-            # Should not raise
-            await sched._tick()
+        # Should not raise
+        await sched._tick()
 
         # last_run_at should still be set
         assert job.last_run_at is not None
