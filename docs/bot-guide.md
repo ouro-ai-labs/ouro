@@ -10,9 +10,32 @@ Bot data is isolated under `~/.ouro/bot/` (sessions, memory, skills) so it never
 pip install ouro-ai[bot]
 ```
 
+## Configure Models
+
+The bot uses the same `~/.ouro/models.yaml` as CLI mode. On first run it is created with a template — add your provider and API key:
+
+```yaml
+models:
+  openai/gpt-4o:
+    api_key: sk-...
+
+  anthropic/claude-sonnet-4:
+    api_key: sk-ant-...
+
+  ollama/llama2:
+    api_base: http://localhost:11434
+
+default: openai/gpt-4o
+current: openai/gpt-4o
+```
+
+See [LiteLLM Providers](https://docs.litellm.ai/docs/providers) for the full list. For advanced model settings, see [Configuration](configuration.md).
+
+> **Note:** Bot mode does not support OAuth (`chatgpt/*`) models yet. Use API-key-based providers.
+
 ## Quick Start
 
-Add credentials to `~/.ouro/config`:
+Add IM platform credentials to `~/.ouro/config`:
 
 ```
 # Lark
