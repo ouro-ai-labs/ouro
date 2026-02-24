@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-02-24
+
+### Added
+
+- Bot Mode — long-connection channels with Feishu WebSocket and Slack Socket Mode support (#119)
+- Bot proactive mechanisms with `manage_cron` & `manage_heartbeat` tools for scheduled and periodic tasks (#129)
+- Bot session isolation with persistent data paths and session resume across restarts (#130)
+- Long-term memory split into `memory.md` + daily files for better organization (#133)
+- `/memory` interactive command for viewing and managing long-term memory (#120)
+
+### Changed
+
+- Simplify long-term memory to single-file architecture with compaction-integrated memory extraction (#120)
+- Unify skills directory structure, `/skills` command, and remove dead code (#123)
+- Token-only compaction trigger replacing heuristic-based memory compaction (#127)
+- Update README to reflect CLI + Bot dual-mode positioning (#132)
+
+### Fixed
+
+- Bot: load skills registry correctly in bot mode (#125)
+- Bot: reload skills from disk on new session creation (#126)
+- Bot: remove redundant default heartbeat checklist (#131)
+- Bot: skip heartbeat when checklist is empty + fix `HEARTBEAT_OK` detection (#134)
+- Bot: remove active-hours gating from proactive tasks (#136)
+
 ## [0.2.4] - 2026-02-21
 
 ### Added
