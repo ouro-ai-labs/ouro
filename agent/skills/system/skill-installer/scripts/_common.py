@@ -15,6 +15,9 @@ def ouro_home() -> Path:
 
 def skills_dir() -> Path:
     """Get skills installation directory."""
+    override = os.environ.get("OURO_SKILLS_DIR")
+    if override:
+        return Path(override)
     return ouro_home() / "skills"
 
 

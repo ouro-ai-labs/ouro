@@ -618,6 +618,11 @@ async def run_bot(model_id: str | None = None) -> None:
     bot_memory_dir = get_bot_memory_dir()
     bot_skills_dir = Path(get_bot_skills_dir())
 
+    # Tell skill-installer scripts to write into the bot skills directory
+    import os
+
+    os.environ["OURO_SKILLS_DIR"] = str(bot_skills_dir)
+
     channels = _build_channels()
     if not channels:
         print(
