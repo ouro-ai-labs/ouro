@@ -243,6 +243,9 @@ def main():
     # Bot mode: start webhook server (before login/logout/task checks)
     if args.bot:
         terminal_ui.console = Console(quiet=True)
+        # Bot is a long-running daemon — always enable file logging.
+        ensure_runtime_dirs(create_logs=True)
+        setup_logger()
 
         try:
             Config.validate()
