@@ -460,7 +460,7 @@ class BotServer:
                     msg.conversation_id,
                     msg.text[:80],
                 )
-                result = await agent.run(msg.text)
+                result = await agent.run(msg.text, images=msg.images if msg.images else None)
 
                 # Persist session mapping so conversation survives restarts
                 await self._router.update_session_mapping(msg.channel, msg.conversation_id)

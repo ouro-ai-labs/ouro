@@ -15,7 +15,7 @@ from slack_sdk.socket_mode.request import SocketModeRequest
 from slack_sdk.socket_mode.response import SocketModeResponse
 from slack_sdk.web.async_client import AsyncWebClient
 
-from bot.channel.base import IncomingMessage, OutgoingMessage
+from bot.channel.base import ImageData, IncomingMessage, OutgoingMessage
 
 if TYPE_CHECKING:
     from bot.channel.base import MessageCallback
@@ -40,6 +40,7 @@ class SlackChannel:
         self._callback: MessageCallback | None = None
         self._web_client = AsyncWebClient(token=self._bot_token)
         self._socket_client: AsyncSocketModeClient | None = None
+        self._bot_user_id: str = ""
 
         # Bounded dedup set: OrderedDict used as an ordered set.
         self._seen: OrderedDict[str, None] = OrderedDict()
@@ -51,6 +52,16 @@ class SlackChannel:
     async def start(self, message_callback: MessageCallback) -> None:
         """Open the Socket Mode connection and begin dispatching messages."""
         self._callback = message_callback
+
+        # Fetch the bot's own user ID for mention filtering.
+        try:
+            auth_resp = await self._web_client.auth_test()
+            self._bot_user_id = auth_resp.get("user_id", "") or ""
+            logger.info("Fetched bot user_id: %s", self._bot_user_id)
+        except Exception:
+            logger.warning(
+                "Could not fetch bot user ID — mention filtering may not work", exc_info=True
+            )
 
         self._socket_client = AsyncSocketModeClient(
             app_token=self._app_token,
@@ -94,12 +105,34 @@ class SlackChannel:
         if event.get("type") != "message":
             return
 
-        # Skip bot messages, message edits/deletes, and subtypes.
-        if event.get("bot_id") or event.get("subtype"):
+        # Skip bot messages, message edits/deletes, and subtypes
+        # (but allow "file_share" subtype so image-only messages come through).
+        subtype = event.get("subtype")
+        if event.get("bot_id") or (subtype and subtype != "file_share"):
             return
 
         text = (event.get("text") or "").strip()
-        if not text:
+
+        # --- Download image attachments ---
+        images: list[ImageData] = []
+        for f in event.get("files", []):
+            mime = f.get("mimetype", "")
+            if mime.startswith("image/"):
+                url = f.get("url_private_download") or f.get("url_private", "")
+                if url:
+                    img_data = await self._download_file(url)
+                    if img_data:
+                        images.append(ImageData(data=img_data, mime_type=mime))
+
+        # --- @ mention filtering for group/channel messages ---
+        channel_type = event.get("channel_type", "")
+        if channel_type != "im" and self._bot_user_id:
+            mention_tag = f"<@{self._bot_user_id}>"
+            if mention_tag not in text:
+                return
+            text = text.replace(mention_tag, "").strip()
+
+        if not text and not images:
             return
 
         # Dedup by client_msg_id (set by Slack clients).
@@ -118,10 +151,28 @@ class SlackChannel:
             text=text,
             message_id=msg_id,
             raw=req.payload or {},
+            images=images,
         )
 
         if self._callback is not None:
             await self._callback(incoming)
+
+    async def _download_file(self, url: str) -> bytes | None:
+        """Download a file from Slack using bot token for auth."""
+        import aiohttp
+
+        headers = {"Authorization": f"Bearer {self._bot_token}"}
+        try:
+            async with (
+                aiohttp.ClientSession() as session,
+                session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as resp,
+            ):
+                if resp.status == 200:
+                    return await resp.read()
+                logger.error("Failed to download Slack file: status=%d", resp.status)
+        except Exception:
+            logger.exception("Error downloading Slack file")
+        return None
 
     def _is_duplicate(self, msg_id: str) -> bool:
         """Check and record a message ID for deduplication."""

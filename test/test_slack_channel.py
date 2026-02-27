@@ -23,6 +23,8 @@ def _make_socket_request(
     req_type: str = "events_api",
     bot_id: str | None = None,
     subtype: str | None = None,
+    channel_type: str = "im",
+    files: list | None = None,
 ) -> MagicMock:
     """Build a mock SocketModeRequest."""
     event: dict = {
@@ -31,6 +33,7 @@ def _make_socket_request(
         "channel": channel_id,
         "user": user_id,
         "ts": ts,
+        "channel_type": channel_type,
     }
     if client_msg_id:
         event["client_msg_id"] = client_msg_id
@@ -38,6 +41,8 @@ def _make_socket_request(
         event["bot_id"] = bot_id
     if subtype:
         event["subtype"] = subtype
+    if files:
+        event["files"] = files
 
     req = MagicMock()
     req.type = req_type
@@ -99,7 +104,9 @@ def _mock_slack():
 @pytest.fixture
 def channel(_mock_slack):
     slack_mod, _, _, _ = _mock_slack
-    return slack_mod.SlackChannel()
+    ch = slack_mod.SlackChannel()
+    ch._bot_user_id = "UBOTID"
+    return ch
 
 
 @pytest.fixture
@@ -241,6 +248,151 @@ async def test_on_request_always_acks(channel):
     await channel._on_request(client, req)
 
     client.send_socket_mode_response.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# @ Mention filtering tests
+# ---------------------------------------------------------------------------
+
+
+async def test_on_request_channel_mention_dispatches(channel):
+    """Channel message with @bot mention should dispatch."""
+    received: list[IncomingMessage] = []
+
+    async def cb(msg: IncomingMessage) -> None:
+        received.append(msg)
+
+    channel._callback = cb
+
+    client = AsyncMock()
+    req = _make_socket_request(
+        text="<@UBOTID> what is this?",
+        channel_type="channel",
+    )
+    await channel._on_request(client, req)
+
+    assert len(received) == 1
+
+
+async def test_on_request_channel_no_mention_ignored(channel):
+    """Channel message without @bot mention should be ignored."""
+    received: list[IncomingMessage] = []
+
+    async def cb(msg: IncomingMessage) -> None:
+        received.append(msg)
+
+    channel._callback = cb
+
+    client = AsyncMock()
+    req = _make_socket_request(
+        text="hey everyone",
+        channel_type="channel",
+    )
+    await channel._on_request(client, req)
+
+    assert len(received) == 0
+
+
+async def test_on_request_dm_always_dispatches(channel):
+    """DM messages should always dispatch, even without mention."""
+    received: list[IncomingMessage] = []
+
+    async def cb(msg: IncomingMessage) -> None:
+        received.append(msg)
+
+    channel._callback = cb
+
+    client = AsyncMock()
+    req = _make_socket_request(
+        text="hello",
+        channel_type="im",
+    )
+    await channel._on_request(client, req)
+
+    assert len(received) == 1
+
+
+async def test_on_request_mention_stripped(channel):
+    """Bot's mention tag should be stripped from the text."""
+    received: list[IncomingMessage] = []
+
+    async def cb(msg: IncomingMessage) -> None:
+        received.append(msg)
+
+    channel._callback = cb
+
+    client = AsyncMock()
+    req = _make_socket_request(
+        text="<@UBOTID> summarize this",
+        channel_type="channel",
+    )
+    await channel._on_request(client, req)
+
+    assert len(received) == 1
+    assert received[0].text == "summarize this"
+
+
+async def test_on_request_image_attachment(channel):
+    """Message with image file attachment should populate images."""
+    received: list[IncomingMessage] = []
+
+    async def cb(msg: IncomingMessage) -> None:
+        received.append(msg)
+
+    channel._callback = cb
+
+    client = AsyncMock()
+    files = [
+        {
+            "mimetype": "image/png",
+            "url_private_download": "https://files.slack.com/img.png",
+        }
+    ]
+    req = _make_socket_request(
+        text="look at this image",
+        files=files,
+    )
+
+    with patch.object(channel, "_download_file", new_callable=AsyncMock) as mock_dl:
+        mock_dl.return_value = b"\x89PNGfakedata"
+        await channel._on_request(client, req)
+
+    assert len(received) == 1
+    assert len(received[0].images) == 1
+    assert received[0].images[0].mime_type == "image/png"
+    assert received[0].images[0].data == b"\x89PNGfakedata"
+
+
+async def test_on_request_image_only_no_text(channel):
+    """Image-only message (no text) should still dispatch."""
+    received: list[IncomingMessage] = []
+
+    async def cb(msg: IncomingMessage) -> None:
+        received.append(msg)
+
+    channel._callback = cb
+
+    client = AsyncMock()
+    files = [
+        {
+            "mimetype": "image/jpeg",
+            "url_private_download": "https://files.slack.com/photo.jpg",
+        }
+    ]
+    req = _make_socket_request(
+        text="",
+        files=files,
+        subtype="file_share",
+    )
+
+    with patch.object(channel, "_download_file", new_callable=AsyncMock) as mock_dl:
+        mock_dl.return_value = b"\xff\xd8\xff\xe0fakejpeg"
+        await channel._on_request(client, req)
+
+    assert len(received) == 1
+    assert received[0].text == ""
+    assert len(received[0].images) == 1
+    assert received[0].images[0].mime_type == "image/jpeg"
 
 
 # ---------------------------------------------------------------------------

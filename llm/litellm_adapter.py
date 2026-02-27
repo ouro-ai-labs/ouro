@@ -193,13 +193,12 @@ class LiteLLMAdapter:
 
             # Handle tool messages (new OpenAI format)
             elif msg.role == "tool":
-                litellm_messages.append(
-                    {
-                        "role": "tool",
-                        "content": msg.content or "",
-                        "tool_call_id": msg.tool_call_id or "",
-                    }
-                )
+                tool_msg: Dict[str, Any] = {
+                    "role": "tool",
+                    "content": msg.content or "",
+                    "tool_call_id": msg.tool_call_id or "",
+                }
+                litellm_messages.append(tool_msg)
 
             # Handle user messages
             elif msg.role == "user":
@@ -212,9 +211,13 @@ class LiteLLMAdapter:
                     if tool_messages:
                         litellm_messages.extend(tool_messages)
                     else:
-                        # Not tool results, extract text
-                        content = extract_text(msg.content)
-                        litellm_messages.append({"role": "user", "content": content})
+                        # Pass through as multimodal content blocks (text + image_url).
+                        # LiteLLM supports OpenAI vision format natively.
+                        multimodal_msg: Dict[str, Any] = {
+                            "role": "user",
+                            "content": msg.content,
+                        }
+                        litellm_messages.append(multimodal_msg)
                 else:
                     content = extract_text(msg.content)
                     litellm_messages.append({"role": "user", "content": content})

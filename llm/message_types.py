@@ -5,7 +5,7 @@ All types follow the OpenAI/LiteLLM format for consistency and serialization.
 """
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from typing_extensions import TypedDict
 
@@ -72,7 +72,7 @@ class LLMMessage:
 
     Follows OpenAI/LiteLLM format:
     - role: "system", "user", "assistant", or "tool"
-    - content: Text content (str or None for assistant with tool_calls)
+    - content: Text content (str), multimodal content blocks (list), or None
     - tool_calls: For assistant role, list of tool calls
     - tool_call_id: For tool role, ID of the tool call this responds to
     - name: For tool role, name of the tool
@@ -81,7 +81,7 @@ class LLMMessage:
     """
 
     role: Literal["system", "user", "assistant", "tool"]
-    content: Optional[str] = None
+    content: Optional[Union[str, List[Dict[str, Any]]]] = None
     tool_calls: Optional[List[ToolCallBlock]] = None
     tool_call_id: Optional[str] = None  # For tool role
     name: Optional[str] = None  # Tool name (for tool role)

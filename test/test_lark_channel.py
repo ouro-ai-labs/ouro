@@ -15,12 +15,24 @@ from bot.channel.base import IncomingMessage, OutgoingMessage
 # ---------------------------------------------------------------------------
 
 
+def _make_mention(open_id: str, key: str = "@_user_1") -> MagicMock:
+    """Build a mock mention entry."""
+    m = MagicMock()
+    m.id = MagicMock()
+    m.id.open_id = open_id
+    m.key = key
+    return m
+
+
 def _make_sdk_event(
     text: str = "hello",
     chat_id: str = "oc_abc123",
     message_id: str = "msg_001",
     user_id: str = "ou_user1",
     message_type: str = "text",
+    chat_type: str = "p2p",
+    mentions: list | None = None,
+    content: str | None = None,
 ) -> MagicMock:
     """Build a mock P2ImMessageReceiveV1 object matching lark SDK structure."""
     sender_id = MagicMock()
@@ -33,7 +45,16 @@ def _make_sdk_event(
     msg.chat_id = chat_id
     msg.message_id = message_id
     msg.message_type = message_type
-    msg.content = json.dumps({"text": text})
+    msg.chat_type = chat_type
+    msg.mentions = mentions
+    if content is not None:
+        msg.content = content
+    elif message_type == "text":
+        msg.content = json.dumps({"text": text})
+    elif message_type == "image":
+        msg.content = json.dumps({"image_key": "img_key_123"})
+    else:
+        msg.content = "{}"
 
     event = MagicMock()
     event.message = msg
@@ -73,7 +94,14 @@ def _mock_lark():
     mock_lark.LogLevel.WARNING = 3
 
     with (
-        patch.dict("sys.modules", {"lark_oapi": mock_lark, "lark_oapi.api.im.v1": MagicMock()}),
+        patch.dict(
+            "sys.modules",
+            {
+                "lark_oapi": mock_lark,
+                "lark_oapi.api.im.v1": MagicMock(),
+                "lark_oapi.api.bot.v3": MagicMock(),
+            },
+        ),
         patch("config.Config") as mock_config,
     ):
         mock_config.LARK_APP_ID = "test_app_id"
@@ -92,7 +120,9 @@ def _mock_lark():
 @pytest.fixture
 def channel(_mock_lark):
     lark_mod, _ = _mock_lark
-    return lark_mod.LarkChannel()
+    ch = lark_mod.LarkChannel()
+    ch._bot_open_id = "bot_open_id_123"
+    return ch
 
 
 # ---------------------------------------------------------------------------
@@ -124,7 +154,8 @@ async def test_on_message_dispatches_text(channel):
     assert received[0].message_id == "m1"
 
 
-async def test_on_message_ignores_non_text(channel):
+async def test_on_message_ignores_unsupported_type(channel):
+    """Non-text, non-image message types should be ignored."""
     received: list[IncomingMessage] = []
 
     async def cb(msg: IncomingMessage) -> None:
@@ -133,7 +164,7 @@ async def test_on_message_ignores_non_text(channel):
     channel._callback = cb
     channel._loop = asyncio.get_running_loop()
 
-    data = _make_sdk_event(message_type="image")
+    data = _make_sdk_event(message_type="audio")
     channel._on_message(data)
     await asyncio.sleep(0.05)
 
@@ -174,6 +205,156 @@ async def test_on_message_none_event(channel):
 
 
 # ---------------------------------------------------------------------------
+# @ Mention filtering tests
+# ---------------------------------------------------------------------------
+
+
+async def test_on_message_group_mention_dispatches(channel):
+    """Group chat with bot mention should dispatch."""
+    received: list[IncomingMessage] = []
+
+    async def cb(msg: IncomingMessage) -> None:
+        received.append(msg)
+
+    channel._callback = cb
+    channel._loop = asyncio.get_running_loop()
+
+    mention = _make_mention(open_id="bot_open_id_123", key="@_user_1")
+    data = _make_sdk_event(
+        text="@_user_1 what is this?",
+        chat_type="group",
+        mentions=[mention],
+    )
+    channel._on_message(data)
+    await asyncio.sleep(0.05)
+
+    assert len(received) == 1
+
+
+async def test_on_message_group_no_mention_ignored(channel):
+    """Group chat without bot mention should be ignored."""
+    received: list[IncomingMessage] = []
+
+    async def cb(msg: IncomingMessage) -> None:
+        received.append(msg)
+
+    channel._callback = cb
+    channel._loop = asyncio.get_running_loop()
+
+    data = _make_sdk_event(
+        text="hey everyone",
+        chat_type="group",
+        mentions=[],
+    )
+    channel._on_message(data)
+    await asyncio.sleep(0.05)
+
+    assert len(received) == 0
+
+
+async def test_on_message_dm_always_dispatches(channel):
+    """DM (p2p) messages should always dispatch, even without mention."""
+    received: list[IncomingMessage] = []
+
+    async def cb(msg: IncomingMessage) -> None:
+        received.append(msg)
+
+    channel._callback = cb
+    channel._loop = asyncio.get_running_loop()
+
+    data = _make_sdk_event(
+        text="hello",
+        chat_type="p2p",
+        mentions=[],
+    )
+    channel._on_message(data)
+    await asyncio.sleep(0.05)
+
+    assert len(received) == 1
+
+
+async def test_on_message_mention_stripped_from_text(channel):
+    """Bot's mention tag should be stripped from the text."""
+    received: list[IncomingMessage] = []
+
+    async def cb(msg: IncomingMessage) -> None:
+        received.append(msg)
+
+    channel._callback = cb
+    channel._loop = asyncio.get_running_loop()
+
+    mention = _make_mention(open_id="bot_open_id_123", key="@_user_1")
+    data = _make_sdk_event(
+        text="@_user_1 summarize this",
+        chat_type="group",
+        mentions=[mention],
+    )
+    channel._on_message(data)
+    await asyncio.sleep(0.05)
+
+    assert len(received) == 1
+    assert received[0].text == "summarize this"
+
+
+# ---------------------------------------------------------------------------
+# Image message tests
+# ---------------------------------------------------------------------------
+
+
+async def test_on_message_image_dispatches(channel):
+    """Image message should dispatch with images populated."""
+    received: list[IncomingMessage] = []
+
+    async def cb(msg: IncomingMessage) -> None:
+        received.append(msg)
+
+    channel._callback = cb
+    channel._loop = asyncio.get_running_loop()
+
+    # Mock image download
+    mock_file = MagicMock()
+    mock_file.read.return_value = b"\x89PNG\r\n\x1a\nfakeimage"
+    mock_response = MagicMock()
+    mock_response.success.return_value = True
+    mock_response.file = mock_file
+    channel._api_client.im.v1.message_resource.get.return_value = mock_response
+
+    data = _make_sdk_event(message_type="image")
+    channel._on_message(data)
+    await asyncio.sleep(0.05)
+
+    assert len(received) == 1
+    assert len(received[0].images) == 1
+    assert received[0].images[0].mime_type == "image/png"
+    assert received[0].images[0].data == b"\x89PNG\r\n\x1a\nfakeimage"
+    assert received[0].text == ""
+
+
+async def test_on_message_image_download_failure(channel):
+    """Image download failure should drop the message."""
+    received: list[IncomingMessage] = []
+
+    async def cb(msg: IncomingMessage) -> None:
+        received.append(msg)
+
+    channel._callback = cb
+    channel._loop = asyncio.get_running_loop()
+
+    # Mock failed download
+    mock_response = MagicMock()
+    mock_response.success.return_value = False
+    mock_response.code = 99999
+    mock_response.msg = "not found"
+    channel._api_client.im.v1.message_resource.get.return_value = mock_response
+
+    data = _make_sdk_event(message_type="image")
+    channel._on_message(data)
+    await asyncio.sleep(0.05)
+
+    assert len(received) == 0
+
+
+# ---------------------------------------------------------------------------
 # send_message tests
 # ---------------------------------------------------------------------------
 
@@ -198,7 +379,10 @@ async def test_start_spawns_thread(channel, _mock_lark):
     _, mock_lark = _mock_lark
 
     cb = AsyncMock()
-    with patch("bot.channel.lark.threading.Thread") as MockThread:
+    with (
+        patch("bot.channel.lark.threading.Thread") as MockThread,
+        patch("bot.channel.lark.asyncio.to_thread", new_callable=AsyncMock),
+    ):
         mock_thread_instance = MagicMock()
         MockThread.return_value = mock_thread_instance
 

@@ -1,7 +1,10 @@
 """Loop agent implementation."""
 
+from __future__ import annotations
+
+import base64
 import logging
-from typing import Optional
+from typing import TYPE_CHECKING
 
 from config import Config
 from llm import LLMMessage
@@ -11,6 +14,9 @@ from utils.tui.progress import AsyncSpinner
 from .base import BaseAgent
 from .context import format_context_prompt
 
+if TYPE_CHECKING:
+    from bot.channel.base import ImageData
+
 logger = logging.getLogger(__name__)
 
 
@@ -18,10 +24,10 @@ class LoopAgent(BaseAgent):
     """Primary agent implementation — one unified loop for all tasks."""
 
     # Optional sections injected into system prompt (set by caller)
-    _skills_section: Optional[str] = None
-    _soul_section: Optional[str] = None
+    _skills_section: str | None = None
+    _soul_section: str | None = None
 
-    def set_skills_section(self, skills_section: Optional[str]) -> None:
+    def set_skills_section(self, skills_section: str | None) -> None:
         """Set the skills section to inject into system prompt.
 
         Args:
@@ -30,7 +36,7 @@ class LoopAgent(BaseAgent):
         """
         self._skills_section = skills_section
 
-    def set_soul_section(self, soul_section: Optional[str]) -> None:
+    def set_soul_section(self, soul_section: str | None) -> None:
         """Set the soul/personality section to prepend to the system prompt.
 
         Args:
@@ -75,13 +81,19 @@ AGENTS.md is optional. If not found, proceed normally.
 
 """
 
-    async def run(self, task: str, verify: bool = False) -> str:
+    async def run(
+        self,
+        task: str,
+        verify: bool = False,
+        images: list[ImageData] | None = None,
+    ) -> str:
         """Execute ReAct loop until task is complete.
 
         Args:
             task: The task to complete
             verify: If True, use ralph loop (outer verification). If False, use
                     plain react loop (suitable for interactive multi-turn sessions).
+            images: Optional list of image attachments to include with the task.
 
         Returns:
             Final answer as a string
@@ -129,8 +141,23 @@ AGENTS.md is optional. If not found, proceed normally.
             # Add system message only on first turn
             await self.memory.add_message(LLMMessage(role="system", content=system_content))
 
-        # Add user task/message
-        await self.memory.add_message(LLMMessage(role="user", content=task))
+        # Add user task/message (with optional images as multimodal content blocks)
+        if images:
+            content_blocks: list[dict] = []
+            if task:
+                content_blocks.append({"type": "text", "text": task})
+            for img in images:
+                b64 = base64.b64encode(img.data).decode()
+                content_blocks.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{img.mime_type};base64,{b64}"},
+                    }
+                )
+            user_msg = LLMMessage(role="user", content=content_blocks)
+        else:
+            user_msg = LLMMessage(role="user", content=task)
+        await self.memory.add_message(user_msg)
 
         tools = self.tool_executor.get_tool_schemas()
         self.memory.set_tool_schemas(tools)
@@ -154,6 +181,18 @@ AGENTS.md is optional. If not found, proceed normally.
                 save_to_memory=True,
                 task=task,
             )
+
+        # Replace image content blocks with text placeholders to prevent
+        # session/memory bloat (base64 images can be 1-10MB each).
+        if images and isinstance(user_msg.content, list):
+            user_msg.content = [
+                (
+                    block
+                    if block.get("type") != "image_url"
+                    else {"type": "text", "text": "[Image was provided and analyzed]"}
+                )
+                for block in user_msg.content
+            ]
 
         self._print_memory_stats()
 

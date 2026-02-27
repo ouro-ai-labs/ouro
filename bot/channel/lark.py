@@ -18,10 +18,11 @@ import lark_oapi as lark
 from lark_oapi.api.im.v1 import (
     CreateMessageRequest,
     CreateMessageRequestBody,
+    GetMessageResourceRequest,
     P2ImMessageReceiveV1,
 )
 
-from bot.channel.base import IncomingMessage, OutgoingMessage
+from bot.channel.base import ImageData, IncomingMessage, OutgoingMessage
 
 if TYPE_CHECKING:
     from bot.channel.base import MessageCallback
@@ -44,6 +45,7 @@ class LarkChannel:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._ws_client: lark.ws.Client | None = None
         self._thread: threading.Thread | None = None
+        self._bot_open_id: str = ""
 
         # Sync lark client for sending messages.
         self._api_client = (
@@ -58,6 +60,9 @@ class LarkChannel:
         """Open the WebSocket connection and begin dispatching messages."""
         self._callback = message_callback
         self._loop = asyncio.get_running_loop()
+
+        # Fetch bot's own open_id so we can filter group @mentions.
+        await asyncio.to_thread(self._fetch_bot_info)
 
         # Build the event handler for im.message.receive_v1
         event_handler = (
@@ -81,7 +86,7 @@ class LarkChannel:
             name="lark-ws",
         )
         self._thread.start()
-        logger.info("Lark WebSocket channel started")
+        logger.info("Lark WebSocket channel started (bot_open_id=%s)", self._bot_open_id)
 
     async def stop(self) -> None:
         """Shut down the WebSocket connection."""
@@ -99,6 +104,27 @@ class LarkChannel:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _fetch_bot_info(self) -> None:
+        """Fetch the bot's own open_id via the Lark bot info API."""
+        try:
+            from lark_oapi.api.bot.v3 import GetBotInfoRequest
+
+            request = GetBotInfoRequest.builder().build()
+            response = self._api_client.bot.v3.bot_info.get(request)
+            if response.success() and response.data and response.data.bot:
+                self._bot_open_id = response.data.bot.open_id or ""
+                logger.info("Fetched bot open_id: %s", self._bot_open_id)
+            else:
+                logger.warning(
+                    "Failed to fetch bot info: code=%s msg=%s",
+                    getattr(response, "code", "?"),
+                    getattr(response, "msg", "?"),
+                )
+        except Exception:
+            logger.warning(
+                "Could not fetch bot info — mention filtering may not work", exc_info=True
+            )
 
     def _run_ws(self) -> None:
         """Thread target: create a fresh event loop for the SDK.
@@ -135,19 +161,59 @@ class LarkChannel:
         if msg_obj is None or sender is None:
             return
 
-        # Only handle text messages for MVP.
-        if msg_obj.message_type != "text":
+        # --- @ mention filtering for group chats ---
+        chat_type = getattr(msg_obj, "chat_type", "p2p")
+        if chat_type == "group" and self._bot_open_id:
+            mentions = getattr(msg_obj, "mentions", None) or []
+            bot_mentioned = any(
+                getattr(m, "id", None) and getattr(m.id, "open_id", None) == self._bot_open_id
+                for m in mentions
+            )
+            if not bot_mentioned:
+                logger.debug("Ignoring group message without bot mention")
+                return
+
+        # --- Parse by message type ---
+        text = ""
+        images: list[ImageData] = []
+
+        if msg_obj.message_type == "text":
+            # Parse text content (Lark wraps it in JSON: {"text": "hello"}).
+            try:
+                content = json.loads(msg_obj.content or "{}")
+                text = content.get("text", "")
+            except json.JSONDecodeError:
+                text = msg_obj.content or ""
+        elif msg_obj.message_type == "image":
+            try:
+                content = json.loads(msg_obj.content or "{}")
+                image_key = content.get("image_key", "")
+            except json.JSONDecodeError:
+                image_key = ""
+            if image_key:
+                image_bytes = self._download_image(msg_obj.message_id or "", image_key)
+                if image_bytes:
+                    images.append(ImageData(data=image_bytes, mime_type="image/png"))
+                else:
+                    logger.warning("Failed to download image, dropping message")
+                    return
+            else:
+                return
+        else:
             logger.debug("Ignoring message type: %s", msg_obj.message_type)
             return
 
-        # Parse text content (Lark wraps it in JSON: {"text": "hello"}).
-        try:
-            content = json.loads(msg_obj.content or "{}")
-            text = content.get("text", "")
-        except json.JSONDecodeError:
-            text = msg_obj.content or ""
+        # Strip bot mention placeholder from text in group chats.
+        if chat_type == "group" and self._bot_open_id:
+            mentions = getattr(msg_obj, "mentions", None) or []
+            for m in mentions:
+                m_id = getattr(m, "id", None)
+                if m_id and getattr(m_id, "open_id", None) == self._bot_open_id:
+                    key = getattr(m, "key", None)
+                    if key:
+                        text = text.replace(key, "").strip()
 
-        if not text.strip():
+        if not text.strip() and not images:
             return
 
         incoming = IncomingMessage(
@@ -156,11 +222,33 @@ class LarkChannel:
             user_id=(sender.sender_id.open_id if sender.sender_id else "") or "",
             text=text.strip(),
             message_id=msg_obj.message_id or "",
+            images=images,
         )
 
         # Bridge into the asyncio event loop.
         coro = self._callback(incoming)
         asyncio.run_coroutine_threadsafe(coro, self._loop)  # type: ignore[arg-type]
+
+    def _download_image(self, message_id: str, file_key: str) -> bytes:
+        """Download image from Lark using message resource API."""
+        try:
+            request = (
+                GetMessageResourceRequest.builder()
+                .message_id(message_id)
+                .file_key(file_key)
+                .type("image")
+                .build()
+            )
+            response = self._api_client.im.v1.message_resource.get(request)
+            if not response.success():
+                logger.error(
+                    "Failed to download image: code=%s msg=%s", response.code, response.msg
+                )
+                return b""
+            return response.file.read()
+        except Exception:
+            logger.exception("Error downloading image from Lark")
+            return b""
 
     def _send_sync(self, message: OutgoingMessage) -> None:
         """Blocking send via the sync lark client."""

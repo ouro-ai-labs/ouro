@@ -8,6 +8,14 @@ from typing import Protocol, runtime_checkable
 
 
 @dataclass
+class ImageData:
+    """An image attachment from an IM message."""
+
+    data: bytes  # Raw image bytes
+    mime_type: str  # e.g. "image/png", "image/jpeg"
+
+
+@dataclass
 class IncomingMessage:
     """A message received from an IM channel."""
 
@@ -17,6 +25,7 @@ class IncomingMessage:
     text: str
     message_id: str  # for deduplication
     raw: dict = field(default_factory=dict)
+    images: list[ImageData] = field(default_factory=list)
 
 
 @dataclass
