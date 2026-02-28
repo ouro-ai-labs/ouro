@@ -34,8 +34,9 @@ _BOT_DIR = os.path.join(os.path.expanduser("~"), ".ouro", "bot")
 _HEARTBEAT_FILE = os.path.join(_BOT_DIR, "heartbeat.md")
 _CRON_JOBS_FILE = os.path.join(_BOT_DIR, "cron_jobs.json")
 
-# Execution timeout for isolated agent runs (seconds)
-_ISOLATED_TIMEOUT = 120
+# Execution timeout for isolated agent runs (seconds).
+# Configured via BOT_PROACTIVE_TIMEOUT; defaults to 1200 (20 min).
+_ISOLATED_TIMEOUT = Config.BOT_PROACTIVE_TIMEOUT
 
 _DEFAULT_HEARTBEAT = """\
 # Heartbeat Checklist
