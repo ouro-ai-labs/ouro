@@ -34,11 +34,15 @@ Under **Subscribe to bot events**, add:
 
 Go to **OAuth & Permissions** -> **Scopes** -> **Bot Token Scopes**, add:
 
-| Scope | Description |
-|-------|-------------|
-| `chat:write` | Send messages |
-| `im:history` | Read DM history |
-| `channels:history` | Read channel history (if using `message.channels`) |
+| Scope | Description | Required for |
+|-------|-------------|--------------|
+| `chat:write` | Send messages | Sending text messages |
+| `im:history` | Read DM history | Receiving direct messages |
+| `files:read` | Read files shared in channels | Receiving image/file attachments |
+| `files:write` | Upload and share files | Sending images/files to users |
+| `channels:history` | Read channel history | Receiving messages in public channels (optional) |
+
+**Note**: Without `files:read` and `files:write`, the bot can send/receive text but image and file operations will fail.
 
 ## 5. Install the App
 
@@ -95,6 +99,11 @@ Bot server listening on 0.0.0.0:8080
 - Check that Socket Mode is enabled in the Slack app settings
 - Verify the bot has been invited to the channel (for non-DM channels)
 - Check that the `xapp-` token has the `connections:write` scope
+
+### "upload failed" or images/files not working
+
+- Ensure `files:read` and `files:write` scopes are added in **OAuth & Permissions**
+- After adding new scopes, **re-install the app** to your workspace (OAuth & Permissions -> Install to Workspace)
 
 ### "invalid_auth" errors
 

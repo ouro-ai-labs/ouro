@@ -454,11 +454,11 @@ class BotServer:
                     )
                 )
 
-                # Save incoming file attachments to a temp directory so the
-                # agent can read them with file tools.
+                # Save incoming file/image attachments to a temp directory so
+                # the agent can read them with file tools.
                 task_text = msg.text
                 tmp_dir: str | None = None
-                if msg.files:
+                if msg.files or msg.images:
                     import tempfile
                     from pathlib import Path
 
@@ -469,6 +469,14 @@ class BotServer:
                         task_text += (
                             f"\n[Attached file: {fa.filename} ({fa.mime_type})"
                             f" saved at: {dest}]"
+                        )
+                    for idx, img in enumerate(msg.images):
+                        ext = img.mime_type.split("/")[-1] if img.mime_type else "png"
+                        img_name = f"image_{idx}.{ext}"
+                        dest = Path(tmp_dir) / img_name
+                        dest.write_bytes(img.data)
+                        task_text += (
+                            f"\n[Attached image: {img_name} ({img.mime_type})" f" saved at: {dest}]"
                         )
 
                 # Wire send_file context if agent has one

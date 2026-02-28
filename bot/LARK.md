@@ -44,8 +44,13 @@ Go to **Events & Callbacks** -> **Event Configuration** -> Add event:
 
 Go to **Permissions & Scopes** -> search and enable:
 
-- `im:message` -- Read messages in chats
-- `im:message:send_as_bot` -- Send messages as the bot
+| Scope | Description | Required for |
+|-------|-------------|--------------|
+| `im:message` | Read messages in chats | Receiving messages |
+| `im:message:send_as_bot` | Send messages as the bot | Sending text/image/file messages |
+| `im:resource` | Upload & download message resources | Sending and receiving images/files |
+
+**Note**: Without `im:resource`, the bot can send/receive text but image and file operations will fail with "upload failed".
 
 ## 7. Publish the App
 
@@ -92,6 +97,10 @@ pip install "python-socks[asyncio]"
 ### "This event loop is already running"
 
 This should not happen with the current implementation (we create a dedicated event loop for the SDK thread). If you see this, please file an issue.
+
+### "channel not available or upload failed" when sending images/files
+
+The bot app is missing the `im:resource` permission. Go to **Permissions & Scopes** in the Lark developer console, enable `im:resource`, and re-publish the app version. Check bot logs for the specific Lark error code (e.g. `Failed to upload image to Lark: code=... msg=...`).
 
 ### Event subscription fails with "app has not established long connection"
 
