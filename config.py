@@ -138,6 +138,9 @@ class Config:
     BOT_ACTIVE_HOURS_START = int(_cfg.get("BOT_ACTIVE_HOURS_START", "8"))  # 24h format
     BOT_ACTIVE_HOURS_END = int(_cfg.get("BOT_ACTIVE_HOURS_END", "22"))  # 24h format
     BOT_ACTIVE_HOURS_TZ = _cfg.get("BOT_ACTIVE_HOURS_TZ", "")  # empty = local timezone
+    BOT_PROACTIVE_TIMEOUT = int(
+        _cfg.get("BOT_PROACTIVE_TIMEOUT", "1200")
+    )  # seconds; timeout for isolated agent runs (heartbeat/cron)
 
     @classmethod
     def get_retry_delay(cls, attempt: int) -> float:
