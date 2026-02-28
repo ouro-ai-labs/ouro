@@ -60,14 +60,31 @@ class LiteLLMAdapter:
             _LITELLM = importlib.import_module("litellm")
 
             # Suppress LiteLLM's verbose logging to console.
+            # LiteLLM adds its own StreamHandler(stderr) on import; remove it
+            # to prevent debug messages leaking to the terminal in bot mode.
             litellm_logger = logging.getLogger("LiteLLM")
+            litellm_logger.handlers = [
+                h
+                for h in litellm_logger.handlers
+                if not (
+                    isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
+                )
+            ]
             litellm_logger.setLevel(logging.WARNING)
             litellm_logger.propagate = False
 
             # Also suppress httpx and upstream provider loggers that LiteLLM uses.
-            logging.getLogger("httpx").setLevel(logging.WARNING)
-            logging.getLogger("openai").setLevel(logging.WARNING)
-            logging.getLogger("anthropic").setLevel(logging.WARNING)
+            for name in ("httpx", "openai", "anthropic", "LiteLLM Proxy", "LiteLLM Router"):
+                lg = logging.getLogger(name)
+                lg.setLevel(logging.WARNING)
+                lg.handlers = [
+                    h
+                    for h in lg.handlers
+                    if not (
+                        isinstance(h, logging.StreamHandler)
+                        and not isinstance(h, logging.FileHandler)
+                    )
+                ]
 
         return _LITELLM
 
