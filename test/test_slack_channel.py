@@ -553,3 +553,48 @@ async def test_send_file_calls_upload_v2(channel):
     assert call_kwargs["channel"] == "C1"
     assert call_kwargs["content"] == b"hello"
     assert call_kwargs["filename"] == "test.txt"
+
+
+# ---------------------------------------------------------------------------
+# Reaction tests
+# ---------------------------------------------------------------------------
+
+
+async def test_add_reaction(channel):
+    """add_reaction calls reactions_add with correct params."""
+    channel._web_client.reactions_add = AsyncMock(return_value={"ok": True})
+
+    result = await channel.add_reaction("C1", "1234567890.000100", "eyes")
+
+    channel._web_client.reactions_add.assert_called_once_with(
+        channel="C1", name="eyes", timestamp="1234567890.000100"
+    )
+    assert result is None  # Slack reactions_add doesn't return an ID
+
+
+async def test_remove_reaction(channel):
+    """remove_reaction calls reactions_remove with correct params."""
+    channel._web_client.reactions_remove = AsyncMock(return_value={"ok": True})
+
+    await channel.remove_reaction("C1", "1234567890.000100", "eyes")
+
+    channel._web_client.reactions_remove.assert_called_once_with(
+        channel="C1", name="eyes", timestamp="1234567890.000100"
+    )
+
+
+async def test_platform_message_id_populated(channel, mock_response_cls):
+    """platform_message_id should be set to ts from the event."""
+    received: list[IncomingMessage] = []
+
+    async def cb(msg: IncomingMessage) -> None:
+        received.append(msg)
+
+    channel._callback = cb
+
+    client = AsyncMock()
+    req = _make_socket_request(text="hello", ts="9999.1234")
+    await channel._on_request(client, req)
+
+    assert len(received) == 1
+    assert received[0].platform_message_id == "9999.1234"

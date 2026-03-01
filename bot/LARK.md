@@ -49,6 +49,7 @@ Go to **Permissions & Scopes** -> search and enable:
 | `im:message` | Read messages in chats | Receiving messages |
 | `im:message:send_as_bot` | Send messages as the bot | Sending text/image/file messages |
 | `im:resource` | Upload & download message resources | Sending and receiving images/files |
+| `im:message.reactions:write_as_bot` | Add/remove emoji reactions | Processing status indicators |
 
 **Note**: Without `im:resource`, the bot can send/receive text but image and file operations will fail with "upload failed".
 
@@ -82,7 +83,7 @@ Bot server listening on 0.0.0.0:8080
 
 ## 9. Test
 
-Find your bot in Lark and send a message. You should receive "Working on it..." followed by the agent's response.
+Find your bot in Lark and send a message. You should see an eyes emoji reaction on your message (indicating the bot is processing), followed by the agent's response and a checkmark reaction.
 
 ## Troubleshooting
 

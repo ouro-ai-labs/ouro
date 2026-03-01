@@ -36,6 +36,7 @@ class IncomingMessage:
     raw: dict = field(default_factory=dict)
     images: list[ImageData] = field(default_factory=list)
     files: list[FileAttachment] = field(default_factory=list)
+    platform_message_id: str = ""  # platform-native ID for reactions (Slack ts, Lark message_id)
 
 
 @dataclass
@@ -90,4 +91,18 @@ class Channel(Protocol):
         mime_type: str | None = None,
     ) -> bool:
         """Upload and send a file to the IM channel. Returns True on success."""
+        ...
+
+    async def add_reaction(self, conversation_id: str, message_id: str, emoji: str) -> str | None:
+        """Add an emoji reaction to a message. Returns a reaction ID if available."""
+        ...
+
+    async def remove_reaction(
+        self,
+        conversation_id: str,
+        message_id: str,
+        emoji: str,
+        reaction_id: str | None = None,
+    ) -> None:
+        """Remove an emoji reaction from a message."""
         ...

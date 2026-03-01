@@ -101,9 +101,84 @@ class LarkChannel:
         """Send a text message to a Lark chat (async-safe)."""
         await asyncio.to_thread(self._send_sync, message)
 
+    async def add_reaction(self, conversation_id: str, message_id: str, emoji: str) -> str | None:
+        """Add an emoji reaction to a Lark message. Returns the reaction_id."""
+        return await asyncio.to_thread(self._add_reaction_sync, message_id, emoji)
+
+    async def remove_reaction(
+        self,
+        conversation_id: str,
+        message_id: str,
+        emoji: str,
+        reaction_id: str | None = None,
+    ) -> None:
+        """Remove an emoji reaction from a Lark message."""
+        if reaction_id:
+            await asyncio.to_thread(self._delete_reaction_sync, message_id, reaction_id)
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    # Lark uses uppercase emoji type names; map common Slack-style names.
+    _EMOJI_MAP: dict[str, str] = {
+        "eyes": "EYES",
+        "white_check_mark": "OK",
+    }
+
+    def _add_reaction_sync(self, message_id: str, emoji: str) -> str | None:
+        """Blocking: add a reaction via the Lark API."""
+        try:
+            from lark_oapi.api.im.v1 import (
+                CreateMessageReactionRequest,
+                CreateMessageReactionRequestBody,
+                Emoji,
+            )
+
+            emoji_type = self._EMOJI_MAP.get(emoji, emoji.upper())
+            body = (
+                CreateMessageReactionRequestBody.builder()
+                .reaction_type(Emoji.builder().emoji_type(emoji_type).build())
+                .build()
+            )
+            request = (
+                CreateMessageReactionRequest.builder()
+                .message_id(message_id)
+                .request_body(body)
+                .build()
+            )
+            response = self._api_client.im.v1.message_reaction.create(request)
+            if response.success() and response.data:
+                return getattr(response.data, "reaction_id", None)
+            logger.warning(
+                "Failed to add Lark reaction: code=%s msg=%s",
+                getattr(response, "code", "?"),
+                getattr(response, "msg", "?"),
+            )
+        except Exception:
+            logger.warning("Error adding Lark reaction", exc_info=True)
+        return None
+
+    def _delete_reaction_sync(self, message_id: str, reaction_id: str) -> None:
+        """Blocking: delete a reaction via the Lark API."""
+        try:
+            from lark_oapi.api.im.v1 import DeleteMessageReactionRequest
+
+            request = (
+                DeleteMessageReactionRequest.builder()
+                .message_id(message_id)
+                .reaction_id(reaction_id)
+                .build()
+            )
+            response = self._api_client.im.v1.message_reaction.delete(request)
+            if not response.success():
+                logger.warning(
+                    "Failed to remove Lark reaction: code=%s msg=%s",
+                    getattr(response, "code", "?"),
+                    getattr(response, "msg", "?"),
+                )
+        except Exception:
+            logger.warning("Error removing Lark reaction", exc_info=True)
 
     def _fetch_bot_info(self) -> None:
         """Fetch the bot's own open_id via the Lark bot info API."""
@@ -247,6 +322,7 @@ class LarkChannel:
             message_id=msg_obj.message_id or "",
             images=images,
             files=files,
+            platform_message_id=msg_obj.message_id or "",
         )
 
         # Bridge into the asyncio event loop.
