@@ -6,7 +6,7 @@ allowed-tools: Bash(npx agent-browser:*), Bash(agent-browser:*)
 
 # Browser Automation with agent-browser
 
-## Anti-Detection (反指纹检测)
+## Anti-Detection (Bot Fingerprint Evasion)
 
 When visiting sites with aggressive bot detection (e.g. xiaohongshu.com, ctrip.com, trip.com, taobao.com, jd.com), the default headless Playwright browser **will be blocked**. Follow these steps to avoid detection:
 
@@ -96,7 +96,7 @@ When automating a site with bot detection, verify:
 
 ## Core Workflow
 
-> **Important**: For sites with strong anti-bot measures (xiaohongshu.com, ctrip.com, trip.com, taobao.com, jd.com, etc.), you **must** use CDP connection (`--cdp 9222` or `--auto-connect`) to a real Chrome instance. Do not use the default headless mode — it will be detected and blocked. See [Anti-Detection](#anti-detection-反指纹检测) above.
+> **Important**: For sites with strong anti-bot measures (xiaohongshu.com, ctrip.com, trip.com, taobao.com, jd.com, etc.), you **must** use CDP connection (`--cdp 9222` or `--auto-connect`) to a real Chrome instance. Do not use the default headless mode — it will be detected and blocked. See [Anti-Detection](#anti-detection-bot-fingerprint-evasion) above.
 
 Every browser automation follows this pattern:
 
