@@ -14,7 +14,7 @@ from bot.proactive import (
     CronScheduler,
     HeartbeatScheduler,
     IsolatedAgentRunner,
-    _has_checklist_items,
+    _has_meaningful_content,
     load_heartbeat,
 )
 from bot.session_router import SessionRouter
@@ -73,21 +73,38 @@ def _make_executor(
 # ---------------------------------------------------------------------------
 
 
-class TestHasChecklistItems:
+class TestHasMeaningfulContent:
     def test_empty_string(self):
-        assert _has_checklist_items("") is False
+        assert _has_meaningful_content("") is False
 
-    def test_default_template(self):
-        text = "# Heartbeat Checklist\n\nUse the manage_heartbeat tool.\n"
-        assert _has_checklist_items(text) is False
+    def test_only_headers(self):
+        text = "# Heartbeat\n\n## Section\n"
+        assert _has_meaningful_content(text) is False
 
-    def test_with_items(self):
-        text = "# Heartbeat Checklist\n\n- [ ] Check disk space\n- [ ] Check logs\n"
-        assert _has_checklist_items(text) is True
+    def test_header_without_space_is_content(self):
+        """'#hashtag' is not a valid ATX header — treated as content."""
+        assert _has_meaningful_content("#hashtag") is True
 
-    def test_checked_items_not_counted(self):
-        text = "- [x] Already done\n"
-        assert _has_checklist_items(text) is False
+    def test_with_body_text(self):
+        text = "# Heartbeat\n\nCheck disk space every hour.\n"
+        assert _has_meaningful_content(text) is True
+
+    def test_with_checklist(self):
+        text = "# Heartbeat\n\n- [ ] Check disk space\n"
+        assert _has_meaningful_content(text) is True
+
+    def test_empty_checklist_items_skipped(self):
+        text = "# Heartbeat\n\n- [ ]\n- \n* [ ]\n"
+        assert _has_meaningful_content(text) is False
+
+    def test_only_blank_lines(self):
+        text = "\n\n\n"
+        assert _has_meaningful_content(text) is False
+
+    def test_default_template_skipped(self):
+        from bot.proactive import _DEFAULT_HEARTBEAT
+
+        assert _has_meaningful_content(_DEFAULT_HEARTBEAT) is False
 
 
 class TestLoadHeartbeat:
@@ -97,7 +114,7 @@ class TestLoadHeartbeat:
         monkeypatch.setattr("bot.proactive._BOT_DIR", str(tmp_path))
         content = load_heartbeat()
         assert hb_file.exists()
-        assert "Heartbeat Checklist" in content
+        assert "Heartbeat" in content
 
     def test_reads_existing_file(self, tmp_path, monkeypatch):
         hb_file = tmp_path / "heartbeat.md"
@@ -152,97 +169,83 @@ class TestIsolatedAgentRunner:
 # ---------------------------------------------------------------------------
 
 
+def _make_heartbeat_scheduler(
+    agent_result: str = "HEARTBEAT_OK",
+    *,
+    interval: int = 10,
+    has_session: bool = True,
+) -> tuple[HeartbeatScheduler, FakeChannel, MagicMock]:
+    """Build a HeartbeatScheduler with a mock router/agent for testing."""
+    mock_agent = MagicMock()
+    mock_agent.run = AsyncMock(return_value=agent_result)
+    factory = lambda: mock_agent  # noqa: E731
+
+    ch = FakeChannel("test")
+    router = SessionRouter(agent_factory=factory)
+
+    if has_session:
+        key = router._session_key("test", "c1")
+        router._sessions[key] = mock_agent
+        router._last_active[key] = 1.0
+
+    scheduler = HeartbeatScheduler(router=router, channels=[ch], interval=interval)
+    return scheduler, ch, mock_agent
+
+
 class TestHeartbeatScheduler:
     async def test_heartbeat_ok_silently_dropped(self):
-        executor = _make_executor("HEARTBEAT_OK")
-        executor.broadcast = AsyncMock(return_value=0)
-        runner = HeartbeatScheduler(executor, interval=10)
+        scheduler, ch, _agent = _make_heartbeat_scheduler("HEARTBEAT_OK")
 
-        with patch("bot.proactive.load_heartbeat", return_value="- [ ] Check servers"):
-            await runner._tick()
+        with patch("bot.proactive.load_heartbeat", return_value="Check disk space daily"):
+            await scheduler._tick()
 
-        executor.broadcast.assert_not_awaited()
+        assert len(ch.sent) == 0
 
-    async def test_heartbeat_ok_detected_with_surrounding_text(self):
-        """LLM may wrap HEARTBEAT_OK in extra text — must still be detected."""
-        executor = _make_executor(
-            "The heartbeat checklist is empty. Nothing needs attention.\n\nHEARTBEAT_OK"
-        )
-        executor.broadcast = AsyncMock(return_value=0)
-        runner = HeartbeatScheduler(executor, interval=10)
+    async def test_heartbeat_skips_no_content(self):
+        """No agent call when the heartbeat file has no meaningful content."""
+        scheduler, ch, mock_agent = _make_heartbeat_scheduler()
 
-        with patch("bot.proactive.load_heartbeat", return_value="- [ ] Check servers"):
-            await runner._tick()
+        with patch("bot.proactive.load_heartbeat", return_value="# Heartbeat\n\n"):
+            await scheduler._tick()
 
-        executor.broadcast.assert_not_awaited()
+        mock_agent.run.assert_not_awaited()
+        assert len(ch.sent) == 0
 
-    async def test_heartbeat_skips_empty_checklist(self, tmp_path, monkeypatch):
-        """No LLM call when the checklist has no items."""
-        hb_file = tmp_path / "heartbeat.md"
-        hb_file.write_text("# Heartbeat Checklist\n\nNo items here.\n")
-        monkeypatch.setattr("bot.proactive._HEARTBEAT_FILE", str(hb_file))
+    async def test_heartbeat_skips_no_active_session(self):
+        """No agent call when there are no active sessions."""
+        scheduler, ch, mock_agent = _make_heartbeat_scheduler(has_session=False)
 
-        executor = _make_executor()
-        executor.run_isolated = AsyncMock()
-        executor.broadcast = AsyncMock()
-        runner = HeartbeatScheduler(executor, interval=10)
+        with patch("bot.proactive.load_heartbeat", return_value="Check servers"):
+            await scheduler._tick()
 
-        await runner._tick()
+        mock_agent.run.assert_not_awaited()
+        assert len(ch.sent) == 0
 
-        executor.run_isolated.assert_not_awaited()
-        executor.broadcast.assert_not_awaited()
+    async def test_heartbeat_sends_to_last_active(self):
+        scheduler, ch, _agent = _make_heartbeat_scheduler("Server disk is 95% full")
 
-    async def test_heartbeat_broadcasts_non_ok(self):
-        executor = _make_executor("Server disk is 95% full")
-        executor.broadcast = AsyncMock(return_value=2)
-        runner = HeartbeatScheduler(executor, interval=10)
+        with patch("bot.proactive.load_heartbeat", return_value="Check disk space"):
+            await scheduler._tick()
 
-        with patch("bot.proactive.load_heartbeat", return_value="- [ ] Check disk space"):
-            await runner._tick()
-
-        executor.broadcast.assert_awaited_once()
-        call_text = executor.broadcast.call_args[0][0]
-        assert "[Heartbeat]" in call_text
-        assert "disk" in call_text
+        assert len(ch.sent) == 1
+        assert "[Heartbeat]" in ch.sent[0].text
+        assert "disk" in ch.sent[0].text
 
     async def test_heartbeat_exception_does_not_crash(self):
-        executor = _make_executor()
-        executor.run_isolated = AsyncMock(side_effect=RuntimeError("boom"))
-        runner = HeartbeatScheduler(executor, interval=10)
+        scheduler, ch, mock_agent = _make_heartbeat_scheduler()
+        mock_agent.run = AsyncMock(side_effect=RuntimeError("boom"))
 
-        # Should not raise
-        await runner._tick()
+        with patch("bot.proactive.load_heartbeat", return_value="Check servers"):
+            # Should not raise
+            await scheduler._tick()
 
     def test_disabled_when_interval_zero(self):
-        executor = _make_executor()
-        runner = HeartbeatScheduler(executor, interval=0)
-        assert runner.enabled is False
+        scheduler, _, _ = _make_heartbeat_scheduler(interval=0)
+        assert scheduler.enabled is False
 
     def test_enabled_when_interval_positive(self):
-        executor = _make_executor()
-        runner = HeartbeatScheduler(executor, interval=60)
-        assert runner.enabled is True
-
-    async def test_heartbeat_injects_checklist(self, tmp_path, monkeypatch):
-        hb_file = tmp_path / "heartbeat.md"
-        hb_file.write_text("- [ ] Check disk space")
-        monkeypatch.setattr("bot.proactive._HEARTBEAT_FILE", str(hb_file))
-
-        captured_prompt = None
-
-        async def capture_run(prompt):
-            nonlocal captured_prompt
-            captured_prompt = prompt
-            return "HEARTBEAT_OK"
-
-        executor = _make_executor()
-        executor.run_isolated = capture_run  # type: ignore[assignment]
-        runner = HeartbeatScheduler(executor, interval=10)
-
-        await runner._tick()
-
-        assert captured_prompt is not None
-        assert "Check disk space" in captured_prompt
+        scheduler, _, _ = _make_heartbeat_scheduler(interval=60)
+        assert scheduler.enabled is True
 
 
 # ---------------------------------------------------------------------------
@@ -417,7 +420,7 @@ class TestProactiveSlashCommands:
 
         ch = FakeChannel("test")
         executor = _make_executor(channels=[ch], router=router)
-        hb = HeartbeatScheduler(executor, interval=1800)
+        hb = HeartbeatScheduler(router=router, channels=[ch], interval=1800)
         cron = CronScheduler(executor)
 
         server = BotServer(

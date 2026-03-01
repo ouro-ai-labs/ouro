@@ -811,7 +811,7 @@ async def run_bot(model_id: str | None = None) -> None:
 
     # Proactive mechanisms (heartbeat + cron)
     executor = IsolatedAgentRunner(agent_factory, channels, router)
-    heartbeat = HeartbeatScheduler(executor)
+    heartbeat = HeartbeatScheduler(router=router, channels=channels)
     cron = CronScheduler(executor)
     _shared["cron"] = cron
 
