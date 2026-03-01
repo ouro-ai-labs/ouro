@@ -8,23 +8,15 @@ allowed-tools: Bash(npx agent-browser:*), Bash(agent-browser:*)
 
 ## Anti-Detection (Bot Fingerprint Evasion)
 
-When visiting sites with aggressive bot detection (e.g. xiaohongshu.com, ctrip.com, trip.com, taobao.com, jd.com), the default headless mode **will be blocked**. Always use `--headed` mode or connect via CDP to avoid detection.
+When visiting sites with aggressive bot detection (e.g. xiaohongshu.com, ctrip.com, trip.com, taobao.com, jd.com), the default headless mode **will be blocked**. Always use `--headed` mode to avoid detection.
 
-### Use Headed Mode or CDP
+### Use Headed Mode
 
-The default headless Chromium exposes detectable fingerprints (`navigator.webdriver`, headless-specific WebGL/Canvas values, etc.). Switching to headed mode or connecting via CDP avoids these issues.
+The default headless Chromium exposes detectable fingerprints (`navigator.webdriver`, headless-specific WebGL/Canvas values, etc.). Using `--headed` launches a visible browser window that behaves like a normal user's browser.
 
 ```bash
-# Option 1: Headed mode (simplest — launches a visible browser window)
 agent-browser --headed open https://xiaohongshu.com
 agent-browser snapshot -i
-
-# Option 2: CDP connection (attach to an already-running Chrome)
-agent-browser --cdp 9222 open https://xiaohongshu.com
-agent-browser --cdp 9222 snapshot -i
-
-# Option 3: Auto-discover a running Chrome with remote debugging
-agent-browser --auto-connect open https://xiaohongshu.com
 ```
 
 ### Session Persistence (Avoid Repeated Logins)
@@ -85,7 +77,7 @@ agent-browser snapshot -i
 ### Anti-Detection Checklist
 
 When automating a site with bot detection, verify:
-- [ ] Using `--headed`, `--cdp`, or `--auto-connect` (not default headless)
+- [ ] Using `--headed` (not default headless)
 - [ ] Session name set with `--session-name` for state persistence
 - [ ] Device/viewport configured consistently
 - [ ] Random delays (`wait <ms>`) between interactions
@@ -94,7 +86,7 @@ When automating a site with bot detection, verify:
 
 ## Core Workflow
 
-> **Important**: For sites with strong anti-bot measures (xiaohongshu.com, ctrip.com, trip.com, taobao.com, jd.com, etc.), do **not** use the default headless mode — it will be detected and blocked. Use `--headed`, `--cdp`, or `--auto-connect` instead. See [Anti-Detection](#anti-detection-bot-fingerprint-evasion) above.
+> **Important**: For sites with strong anti-bot measures (xiaohongshu.com, ctrip.com, trip.com, taobao.com, jd.com, etc.), do **not** use the default headless mode — it will be detected and blocked. Use `--headed` instead. See [Anti-Detection](#anti-detection-bot-fingerprint-evasion) above.
 
 Every browser automation follows this pattern:
 
