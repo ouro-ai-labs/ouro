@@ -27,6 +27,8 @@ class FakeChannel:
     def __init__(self):
         self.sent_messages: list[OutgoingMessage] = []
         self.sent_files: list[dict] = []
+        self.reactions_added: list[tuple[str, str, str]] = []  # (conv_id, msg_id, emoji)
+        self.reactions_removed: list[tuple[str, str, str, str | None]] = []
         self._callback = None
         self._started = False
         self._stopped = False
@@ -60,6 +62,19 @@ class FakeChannel:
             }
         )
         return True
+
+    async def add_reaction(self, conversation_id: str, message_id: str, emoji: str) -> str | None:
+        self.reactions_added.append((conversation_id, message_id, emoji))
+        return f"reaction_{emoji}"
+
+    async def remove_reaction(
+        self,
+        conversation_id: str,
+        message_id: str,
+        emoji: str,
+        reaction_id: str | None = None,
+    ) -> None:
+        self.reactions_removed.append((conversation_id, message_id, emoji, reaction_id))
 
     async def inject_message(self, msg: IncomingMessage) -> None:
         """Simulate an incoming message from the IM platform."""
@@ -124,15 +139,20 @@ async def test_process_message_sends_ack_and_result(bot_server, fake_channel, mo
         user_id="user_1",
         text="What is 2+2?",
         message_id="msg_1",
+        platform_message_id="ts_1",
     )
 
     await bot_server._process_message(fake_channel, msg)
 
-    # Should have sent 2 messages: ack + result
-    assert len(fake_channel.sent_messages) == 2
-    assert fake_channel.sent_messages[0].text == "Working on it..."
-    assert fake_channel.sent_messages[1].text == "Agent response"
+    # Should have sent 1 message (agent result only, no "Working on it..." ack)
+    assert len(fake_channel.sent_messages) == 1
+    assert fake_channel.sent_messages[0].text == "Agent response"
     assert fake_channel.sent_messages[0].conversation_id == "conv_1"
+
+    # Reactions: processing emoji added then removed, done emoji added
+    assert ("conv_1", "ts_1", "eyes") in fake_channel.reactions_added
+    assert ("conv_1", "ts_1", "white_check_mark") in fake_channel.reactions_added
+    assert any(r[:3] == ("conv_1", "ts_1", "eyes") for r in fake_channel.reactions_removed)
 
 
 async def test_process_message_error_sends_error_message(bot_server, fake_channel, mock_router):
@@ -146,13 +166,17 @@ async def test_process_message_error_sends_error_message(bot_server, fake_channe
         user_id="user_1",
         text="Do something",
         message_id="msg_err",
+        platform_message_id="ts_err",
     )
 
     await bot_server._process_message(fake_channel, msg)
 
-    assert len(fake_channel.sent_messages) == 2
-    assert "Working on it..." in fake_channel.sent_messages[0].text
-    assert "went wrong" in fake_channel.sent_messages[1].text
+    # Only error message sent (no "Working on it..." text)
+    assert len(fake_channel.sent_messages) == 1
+    assert "went wrong" in fake_channel.sent_messages[0].text
+
+    # Processing reaction should have been cleaned up
+    assert any(r[:3] == ("conv_err", "ts_err", "eyes") for r in fake_channel.reactions_removed)
 
 
 # ---------------------------------------------------------------------------
@@ -238,7 +262,9 @@ def test_build_channels_empty():
 # ---------------------------------------------------------------------------
 
 
-def _make_msg(text: str, conv: str = "conv_cmd") -> IncomingMessage:
+def _make_msg(
+    text: str, conv: str = "conv_cmd", platform_message_id: str = "platform_msg_cmd"
+) -> IncomingMessage:
     """Helper: build an IncomingMessage with the given text."""
     return IncomingMessage(
         channel="test",
@@ -246,6 +272,7 @@ def _make_msg(text: str, conv: str = "conv_cmd") -> IncomingMessage:
         user_id="user_1",
         text=text,
         message_id="msg_cmd",
+        platform_message_id=platform_message_id,
     )
 
 
@@ -346,19 +373,18 @@ async def test_non_command_passes_through(bot_server, fake_channel, mock_router)
     """A regular message (no / prefix) goes to agent.run()."""
     await bot_server._process_message(fake_channel, _make_msg("hello world"))
 
-    # Should see ack + agent response = 2 messages
-    assert len(fake_channel.sent_messages) == 2
-    assert fake_channel.sent_messages[0].text == "Working on it..."
-    assert fake_channel.sent_messages[1].text == "Agent response"
+    # Should see only agent response (ack is via reaction, not text)
+    assert len(fake_channel.sent_messages) == 1
+    assert fake_channel.sent_messages[0].text == "Agent response"
 
 
 async def test_unknown_command_passes_through(bot_server, fake_channel, mock_router):
     """An unknown /command is forwarded to agent.run() as a regular message."""
     await bot_server._process_message(fake_channel, _make_msg("/unknown_cmd"))
 
-    # Should see ack + agent response (command not handled)
-    assert len(fake_channel.sent_messages) == 2
-    assert fake_channel.sent_messages[0].text == "Working on it..."
+    # Should see only agent response (ack is via reaction)
+    assert len(fake_channel.sent_messages) == 1
+    assert fake_channel.sent_messages[0].text == "Agent response"
 
 
 async def test_command_with_extra_args(bot_server, fake_channel, mock_router):
@@ -437,3 +463,38 @@ async def test_send_file_context_lifecycle(bot_server, fake_channel, mock_router
 
     # After processing, the context should be cleared
     assert ctx._send_fn is None
+
+
+# ---------------------------------------------------------------------------
+# Reaction acknowledgment tests
+# ---------------------------------------------------------------------------
+
+
+async def test_no_platform_id_skips_reactions(bot_server, fake_channel, mock_router):
+    """When platform_message_id is empty, no reactions are added."""
+    msg = _make_msg("hello world", platform_message_id="")
+
+    await bot_server._process_message(fake_channel, msg)
+
+    assert len(fake_channel.reactions_added) == 0
+    assert len(fake_channel.reactions_removed) == 0
+    # Agent response should still be sent
+    assert len(fake_channel.sent_messages) == 1
+    assert fake_channel.sent_messages[0].text == "Agent response"
+
+
+async def test_reaction_failure_does_not_block(bot_server, fake_channel, mock_router):
+    """add_reaction raising an exception should not block message processing."""
+
+    async def _failing_add(conv_id, msg_id, emoji):
+        raise RuntimeError("API down")
+
+    fake_channel.add_reaction = _failing_add  # type: ignore[assignment]
+
+    msg = _make_msg("hello world")
+
+    await bot_server._process_message(fake_channel, msg)
+
+    # Processing should complete normally — agent response sent
+    assert len(fake_channel.sent_messages) == 1
+    assert fake_channel.sent_messages[0].text == "Agent response"

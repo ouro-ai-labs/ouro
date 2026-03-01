@@ -534,3 +534,63 @@ async def test_send_file_document(channel):
             import os
 
             os.unlink(path)
+
+
+# ---------------------------------------------------------------------------
+# Reaction tests
+# ---------------------------------------------------------------------------
+
+
+async def test_add_reaction_calls_api(channel):
+    """add_reaction calls message_reaction.create and returns reaction_id."""
+    mock_response = MagicMock()
+    mock_response.success.return_value = True
+    mock_response.data = MagicMock()
+    mock_response.data.reaction_id = "react_123"
+    channel._api_client.im.v1.message_reaction.create.return_value = mock_response
+
+    with patch("bot.channel.lark.asyncio.to_thread", new_callable=AsyncMock) as mock_thread:
+        mock_thread.side_effect = lambda fn, *a, **kw: fn(*a, **kw)
+        result = await channel.add_reaction("oc_1", "msg_001", "eyes")
+
+    assert result == "react_123"
+    channel._api_client.im.v1.message_reaction.create.assert_called_once()
+
+
+async def test_remove_reaction_calls_api(channel):
+    """remove_reaction calls message_reaction.delete with correct params."""
+    mock_response = MagicMock()
+    mock_response.success.return_value = True
+    channel._api_client.im.v1.message_reaction.delete.return_value = mock_response
+
+    with patch("bot.channel.lark.asyncio.to_thread", new_callable=AsyncMock) as mock_thread:
+        mock_thread.side_effect = lambda fn, *a, **kw: fn(*a, **kw)
+        await channel.remove_reaction("oc_1", "msg_001", "eyes", reaction_id="react_123")
+
+    channel._api_client.im.v1.message_reaction.delete.assert_called_once()
+
+
+async def test_remove_reaction_skips_without_reaction_id(channel):
+    """remove_reaction with no reaction_id should be a no-op."""
+    with patch("bot.channel.lark.asyncio.to_thread", new_callable=AsyncMock) as mock_thread:
+        await channel.remove_reaction("oc_1", "msg_001", "eyes", reaction_id=None)
+
+    mock_thread.assert_not_called()
+
+
+async def test_platform_message_id_populated(channel):
+    """platform_message_id should be set to message_id from the Lark event."""
+    received: list[IncomingMessage] = []
+
+    async def cb(msg: IncomingMessage) -> None:
+        received.append(msg)
+
+    channel._callback = cb
+    channel._loop = asyncio.get_running_loop()
+
+    data = _make_sdk_event(text="hello", message_id="lark_msg_001")
+    channel._on_message(data)
+    await asyncio.sleep(0.05)
+
+    assert len(received) == 1
+    assert received[0].platform_message_id == "lark_msg_001"

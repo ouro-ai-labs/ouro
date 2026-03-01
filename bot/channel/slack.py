@@ -151,6 +151,8 @@ class SlackChannel:
         channel_id = event.get("channel", "")
         user_id = event.get("user", "")
 
+        ts = event.get("ts", "")
+
         incoming = IncomingMessage(
             channel=self.name,
             conversation_id=channel_id,
@@ -160,10 +162,40 @@ class SlackChannel:
             raw=req.payload or {},
             images=images,
             files=files,
+            platform_message_id=ts,
         )
 
         if self._callback is not None:
             await self._callback(incoming)
+
+    async def add_reaction(self, conversation_id: str, message_id: str, emoji: str) -> str | None:
+        """Add an emoji reaction to a Slack message."""
+        try:
+            resp = await self._web_client.reactions_add(
+                channel=conversation_id, name=emoji, timestamp=message_id
+            )
+            if not resp.get("ok"):
+                logger.warning("Failed to add Slack reaction: %s", resp.get("error"))
+        except Exception:
+            logger.warning("Error adding Slack reaction", exc_info=True)
+        return None
+
+    async def remove_reaction(
+        self,
+        conversation_id: str,
+        message_id: str,
+        emoji: str,
+        reaction_id: str | None = None,
+    ) -> None:
+        """Remove an emoji reaction from a Slack message."""
+        try:
+            resp = await self._web_client.reactions_remove(
+                channel=conversation_id, name=emoji, timestamp=message_id
+            )
+            if not resp.get("ok"):
+                logger.warning("Failed to remove Slack reaction: %s", resp.get("error"))
+        except Exception:
+            logger.warning("Error removing Slack reaction", exc_info=True)
 
     async def send_file(
         self,

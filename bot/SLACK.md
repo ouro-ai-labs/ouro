@@ -37,6 +37,7 @@ Go to **OAuth & Permissions** -> **Scopes** -> **Bot Token Scopes**, add:
 | Scope | Description | Required for |
 |-------|-------------|--------------|
 | `chat:write` | Send messages | Sending text messages |
+| `reactions:write` | Add/remove emoji reactions | Processing status indicators |
 | `im:history` | Read DM history | Receiving direct messages |
 | `files:read` | Read files shared in channels | Receiving image/file attachments |
 | `files:write` | Upload and share files | Sending images/files to users |
@@ -74,7 +75,7 @@ Bot server listening on 0.0.0.0:8080
 
 ## 7. Test
 
-Open a DM with your bot in Slack and send a message. You should receive "Working on it..." followed by the agent's response.
+Open a DM with your bot in Slack and send a message. You should see an :eyes: emoji reaction on your message (indicating the bot is processing), followed by the agent's response and a :white_check_mark: reaction.
 
 ## Running Both Lark and Slack
 

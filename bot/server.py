@@ -434,8 +434,13 @@ class BotServer:
 
     # ---- Message processing ---------------------------------------------------
 
+    # Emoji constants for reaction-based acknowledgment.
+    _PROCESSING_EMOJI = "eyes"
+    _DONE_EMOJI = "white_check_mark"
+
     async def _process_message(self, channel: Channel, msg: IncomingMessage) -> None:
-        """Process a message: command check -> lock -> ack -> agent.run -> send result."""
+        """Process a message: command check -> reaction ack -> lock -> agent.run -> send result."""
+        reaction_id: str | None = None
         try:
             # Fast path: slash commands that don't need the agent lock
             # (/new, /help are stateless; /compact and /status acquire no external lock
@@ -443,17 +448,20 @@ class BotServer:
             if await self._handle_command(channel, msg):
                 return
 
+            # Instant feedback: add 👀 reaction *before* the lock so the user
+            # knows we received the message even while a previous one is processing.
+            if msg.platform_message_id:
+                try:
+                    reaction_id = await channel.add_reaction(
+                        msg.conversation_id, msg.platform_message_id, self._PROCESSING_EMOJI
+                    )
+                except Exception:
+                    logger.debug("Failed to add processing reaction", exc_info=True)
+
             agent = await self._router.get_or_create_agent(msg.channel, msg.conversation_id)
             lock = self._router.get_lock(msg.channel, msg.conversation_id)
 
             async with lock:
-                await channel.send_message(
-                    OutgoingMessage(
-                        conversation_id=msg.conversation_id,
-                        text="Working on it...",
-                    )
-                )
-
                 # Save incoming file/image attachments to a temp directory so
                 # the agent can read them with file tools.
                 task_text = msg.text
@@ -532,6 +540,24 @@ class BotServer:
                     len(result),
                 )
 
+            # Swap reactions: remove 👀, add ✅ (after lock released)
+            if msg.platform_message_id:
+                try:
+                    await channel.remove_reaction(
+                        msg.conversation_id,
+                        msg.platform_message_id,
+                        self._PROCESSING_EMOJI,
+                        reaction_id,
+                    )
+                except Exception:
+                    logger.debug("Failed to remove processing reaction", exc_info=True)
+                try:
+                    await channel.add_reaction(
+                        msg.conversation_id, msg.platform_message_id, self._DONE_EMOJI
+                    )
+                except Exception:
+                    logger.debug("Failed to add done reaction", exc_info=True)
+
         except Exception:
             logger.exception(
                 "Error processing message %s from %s:%s",
@@ -539,6 +565,17 @@ class BotServer:
                 msg.channel,
                 msg.conversation_id,
             )
+            # Clean up processing reaction on error
+            if msg.platform_message_id:
+                try:
+                    await channel.remove_reaction(
+                        msg.conversation_id,
+                        msg.platform_message_id,
+                        self._PROCESSING_EMOJI,
+                        reaction_id,
+                    )
+                except Exception:
+                    logger.debug("Failed to remove processing reaction on error", exc_info=True)
             try:
                 await channel.send_message(
                     OutgoingMessage(
