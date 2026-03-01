@@ -19,21 +19,43 @@ agent-browser --headed open https://xiaohongshu.com
 agent-browser snapshot -i
 ```
 
-### Login via QR Code
+### Login Strategy
 
-When a site requires login, prefer QR code scanning over filling in credentials — it avoids CAPTCHAs and SMS verification triggers. Take a screenshot of the QR code and send it to the user so they can scan it with their phone.
+When a site requires login, prefer these methods in order:
+
+1. **SMS verification code** (preferred) — fill in the user's phone number, ask the user for the verification code they receive, then complete login. This is the most reliable method and rarely triggers extra risk checks.
+2. **QR code scanning** (fallback) — switch to the QR code login tab, take a screenshot of the QR code, and send it to the user so they can scan it with their phone.
+
+Avoid username/password login when possible — it is more likely to trigger CAPTCHAs and additional verification.
 
 ```bash
+# SMS login flow
 agent-browser --headed open https://xiaohongshu.com/login
 agent-browser snapshot -i
-# Switch to QR code login tab if needed
+# Switch to SMS login tab if needed
+agent-browser click @e1
+agent-browser snapshot -i
+# Fill phone number (ask user for it)
+agent-browser fill @e2 "13800138000"
+agent-browser click @e3  # Send verification code
+# Ask user for the SMS code they received, then fill it in
+agent-browser fill @e4 "123456"
+agent-browser click @e5  # Submit
+agent-browser wait --url "**/explore" --timeout 60000
+agent-browser state save xhs-auth.json
+```
+
+```bash
+# QR code login flow (fallback)
+agent-browser --headed open https://xiaohongshu.com/login
+agent-browser snapshot -i
+# Switch to QR code login tab
 agent-browser click @e1
 agent-browser wait 2000
 # Capture the QR code and send to user
 agent-browser screenshot qr-code.png
 # Send qr-code.png to the user, then wait for them to scan
 agent-browser wait --url "**/explore" --timeout 120000
-# Save state after successful login
 agent-browser state save xhs-auth.json
 ```
 
@@ -42,7 +64,7 @@ agent-browser state save xhs-auth.json
 Frequent logins trigger risk control systems. Always reuse saved sessions to skip login entirely:
 
 ```bash
-# First run: login (via QR code above) and save state
+# First run: login (via SMS or QR code above) and save state
 agent-browser --headed --session-name xiaohongshu open https://xiaohongshu.com
 # ... login flow ...
 agent-browser state save xhs-auth.json
