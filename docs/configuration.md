@@ -57,7 +57,7 @@ For `chatgpt/*` models, login with OAuth before first use:
 - After login, use `/model` to pick one of the added `chatgpt/*` models.
 - The added set comes from ouro's bundled OAuth catalog (synced from pi-ai `openai-codex` model list).
 
-Login uses a browser-based OAuth (PKCE) flow with a localhost callback server, which works in workspaces that disable the OAuth device-code grant. If browser launch is blocked, ouro prints a URL you can open manually. For remote machines, you may need SSH port-forwarding to reach the localhost callback server.
+Login supports two flows. On desktop environments, it uses a browser-based OAuth (PKCE) flow with a localhost callback server. In headless environments (SSH sessions, containers, or when no display server is available), it automatically uses a device code flow where you visit a URL on any device and enter a short code — no browser or port-forwarding needed. Set `OURO_CHATGPT_DEVICE_CODE=1` to force the device code flow, or `=0` to force browser PKCE.
 
 Credentials are stored under `~/.ouro/auth/chatgpt/` (LiteLLM-compatible `auth.json`).
 
@@ -67,6 +67,7 @@ Advanced environment overrides (rarely needed; defaults work for most users):
 |--------|---------|------|
 | `CHATGPT_TOKEN_DIR` | `~/.ouro/auth/chatgpt/` | Where `auth.json` is stored (also used by LiteLLM). |
 | `CHATGPT_AUTH_FILE` | `auth.json` | Override the auth filename under `CHATGPT_TOKEN_DIR`. |
+| `OURO_CHATGPT_DEVICE_CODE` | auto-detect | Set to `1` to force device code flow (headless login), or `0` to force browser PKCE. |
 | `OURO_NO_BROWSER` | unset | Set to `1` to disable auto-opening the browser (URL is still printed). |
 | `OURO_CHATGPT_OAUTH_TIMEOUT_SECONDS` | `600` | How long to wait for the localhost callback before prompting for manual paste. |
 | `OURO_CHATGPT_OAUTH_CALLBACK_HOST` | `127.0.0.1` | Address to bind the local callback server to. The browser redirect is always `http://localhost:<port>/auth/callback`. |

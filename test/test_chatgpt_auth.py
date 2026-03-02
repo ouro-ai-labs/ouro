@@ -10,6 +10,7 @@ import httpx
 from llm.chatgpt_auth import (
     ChatGPTAuthStatus,
     ChatGPTLoginRequiredError,
+    _is_headless_environment,
     _prompt_for_redirect_code,
     configure_chatgpt_auth_env,
     ensure_chatgpt_access_token,
@@ -464,3 +465,196 @@ def test_is_auth_status_logged_in():
 
     status.has_access_token = False
     assert is_auth_status_logged_in(status) is False
+
+
+# ---------------------------------------------------------------------------
+# Device code flow: headless detection
+# ---------------------------------------------------------------------------
+
+
+def test_headless_detection_explicit_opt_in(monkeypatch):
+    monkeypatch.setenv("OURO_CHATGPT_DEVICE_CODE", "1")
+    monkeypatch.delenv("SSH_CONNECTION", raising=False)
+    monkeypatch.setenv("DISPLAY", ":0")
+    assert _is_headless_environment() is True
+
+
+def test_headless_detection_explicit_opt_out(monkeypatch):
+    monkeypatch.setenv("OURO_CHATGPT_DEVICE_CODE", "0")
+    monkeypatch.setenv("SSH_CONNECTION", "1.2.3.4 5678 5.6.7.8 22")
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    assert _is_headless_environment() is False
+
+
+def test_headless_detection_ssh_without_display(monkeypatch):
+    monkeypatch.delenv("OURO_CHATGPT_DEVICE_CODE", raising=False)
+    monkeypatch.setenv("SSH_CONNECTION", "1.2.3.4 5678 5.6.7.8 22")
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    assert _is_headless_environment() is True
+
+
+def test_headless_detection_ssh_with_display(monkeypatch):
+    monkeypatch.delenv("OURO_CHATGPT_DEVICE_CODE", raising=False)
+    monkeypatch.setenv("SSH_CONNECTION", "1.2.3.4 5678 5.6.7.8 22")
+    monkeypatch.setenv("DISPLAY", "localhost:10.0")
+    assert _is_headless_environment() is False
+
+
+def test_headless_detection_desktop_environment(monkeypatch):
+    monkeypatch.delenv("OURO_CHATGPT_DEVICE_CODE", raising=False)
+    monkeypatch.delenv("SSH_CONNECTION", raising=False)
+    monkeypatch.setenv("DISPLAY", ":0")
+    assert _is_headless_environment() is False
+
+
+# ---------------------------------------------------------------------------
+# Device code flow: orchestration tests
+# ---------------------------------------------------------------------------
+
+
+async def test_device_code_flow_happy_path(tmp_path, monkeypatch):
+    auth_dir = tmp_path / "chatgpt-auth"
+    auth_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("CHATGPT_TOKEN_DIR", str(auth_dir))
+
+    messages: list[str] = []
+    monkeypatch.setattr(
+        "builtins.print",
+        lambda *args, **kwargs: messages.append(" ".join(str(a) for a in args)),
+    )
+
+    async def fake_request_device_code():
+        return {"device_auth_id": "dev_123", "user_code": "ABCD-1234", "interval": 5}
+
+    async def fake_poll(data):  # noqa: ARG001
+        return {
+            "authorization_code": "auth_code_xyz",
+            "code_verifier": "cv_123",
+            "code_challenge": "cc_123",
+        }
+
+    async def fake_exchange(auth_code_data):  # noqa: ARG001
+        return {"access_token": "at_device", "refresh_token": "rt_device", "id_token": "id_device"}
+
+    monkeypatch.setattr("llm.chatgpt_auth._request_device_code", fake_request_device_code)
+    monkeypatch.setattr("llm.chatgpt_auth._poll_device_code_authorization", fake_poll)
+    monkeypatch.setattr("llm.chatgpt_auth._exchange_device_code_for_tokens", fake_exchange)
+
+    # Force headless to trigger device code path
+    monkeypatch.setenv("OURO_CHATGPT_DEVICE_CODE", "1")
+
+    status = await login_chatgpt()
+
+    assert status.exists is True
+    assert status.has_access_token is True
+    assert (auth_dir / "auth.json").exists()
+    assert any("ABCD-1234" in msg for msg in messages)
+
+
+async def test_device_code_falls_back_to_pkce_on_failure(tmp_path, monkeypatch):
+    auth_dir = tmp_path / "chatgpt-auth"
+    auth_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("CHATGPT_TOKEN_DIR", str(auth_dir))
+
+    called = {"device": 0, "oauth": 0}
+
+    async def fake_device_code_login():
+        called["device"] += 1
+        raise RuntimeError("Device code not supported")
+
+    async def fake_oauth_login():
+        called["oauth"] += 1
+        (auth_dir / "auth.json").write_text(
+            json.dumps(
+                {
+                    "access_token": "token-pkce",
+                    "refresh_token": "rt_pkce",
+                    "id_token": "id_pkce",
+                    "expires_at": int(time.time()) + 120,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr("llm.chatgpt_auth._login_chatgpt_device_code_flow", fake_device_code_login)
+    monkeypatch.setattr("llm.chatgpt_auth._login_chatgpt_oauth_via_local_server", fake_oauth_login)
+    monkeypatch.setenv("OURO_CHATGPT_DEVICE_CODE", "1")
+
+    status = await login_chatgpt()
+
+    assert called["device"] == 1
+    assert called["oauth"] == 1
+    assert status.exists is True
+    assert status.has_access_token is True
+
+
+async def test_login_uses_device_code_in_headless(tmp_path, monkeypatch):
+    auth_dir = tmp_path / "chatgpt-auth"
+    auth_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("CHATGPT_TOKEN_DIR", str(auth_dir))
+
+    called = {"device": 0, "oauth": 0}
+
+    async def fake_device_code_login():
+        called["device"] += 1
+        (auth_dir / "auth.json").write_text(
+            json.dumps(
+                {
+                    "access_token": "token-dev",
+                    "refresh_token": "rt_dev",
+                    "id_token": "id_dev",
+                    "expires_at": int(time.time()) + 120,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    async def fake_oauth_login():
+        called["oauth"] += 1
+
+    monkeypatch.setattr("llm.chatgpt_auth._login_chatgpt_device_code_flow", fake_device_code_login)
+    monkeypatch.setattr("llm.chatgpt_auth._login_chatgpt_oauth_via_local_server", fake_oauth_login)
+    monkeypatch.setenv("OURO_CHATGPT_DEVICE_CODE", "1")
+
+    status = await login_chatgpt()
+
+    assert called["device"] == 1
+    assert called["oauth"] == 0
+    assert status.exists is True
+
+
+async def test_login_uses_pkce_when_not_headless(tmp_path, monkeypatch):
+    auth_dir = tmp_path / "chatgpt-auth"
+    auth_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("CHATGPT_TOKEN_DIR", str(auth_dir))
+
+    called = {"device": 0, "oauth": 0}
+
+    async def fake_device_code_login():
+        called["device"] += 1
+
+    async def fake_oauth_login():
+        called["oauth"] += 1
+        (auth_dir / "auth.json").write_text(
+            json.dumps(
+                {
+                    "access_token": "token-pkce",
+                    "refresh_token": "rt_pkce",
+                    "id_token": "id_pkce",
+                    "expires_at": int(time.time()) + 120,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr("llm.chatgpt_auth._login_chatgpt_device_code_flow", fake_device_code_login)
+    monkeypatch.setattr("llm.chatgpt_auth._login_chatgpt_oauth_via_local_server", fake_oauth_login)
+    monkeypatch.setenv("OURO_CHATGPT_DEVICE_CODE", "0")
+
+    status = await login_chatgpt()
+
+    assert called["device"] == 0
+    assert called["oauth"] == 1
+    assert status.exists is True

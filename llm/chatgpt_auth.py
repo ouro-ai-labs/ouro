@@ -46,6 +46,14 @@ CHATGPT_OAUTH_HTTP_TIMEOUT_SECONDS = 30
 CHATGPT_OAUTH_ERROR_BODY_LIMIT = 2000
 TOKEN_EXPIRY_SKEW_SECONDS = 60
 
+# Device code flow (headless / SSH / container environments)
+CHATGPT_DEVICE_CODE_URL = "https://auth.openai.com/api/accounts/deviceauth/usercode"
+CHATGPT_DEVICE_TOKEN_URL = "https://auth.openai.com/api/accounts/deviceauth/token"
+CHATGPT_DEVICE_VERIFY_URL = "https://auth.openai.com/codex/device"
+CHATGPT_DEVICE_CODE_REDIRECT_URI = "https://auth.openai.com/deviceauth/callback"
+CHATGPT_DEVICE_CODE_POLL_INTERVAL_SECONDS = 5
+CHATGPT_DEVICE_CODE_TIMEOUT_SECONDS = 15 * 60
+
 
 @dataclass
 class ChatGPTAuthStatus:
@@ -470,6 +478,39 @@ async def _open_url_best_effort(url: str) -> bool:
     return False
 
 
+def _is_headless_environment() -> bool:
+    """Detect when device code flow should be used instead of browser PKCE.
+
+    Checked in order:
+    - ``OURO_CHATGPT_DEVICE_CODE=1`` forces device code flow.
+    - ``OURO_CHATGPT_DEVICE_CODE=0`` forces browser PKCE flow.
+    - SSH session without DISPLAY → headless.
+    - Linux without DISPLAY or WAYLAND_DISPLAY → headless.
+    - ``/.dockerenv`` exists → container.
+    """
+    explicit = (os.environ.get("OURO_CHATGPT_DEVICE_CODE") or "").strip().lower()
+    if explicit in {"1", "true", "yes"}:
+        return True
+    if explicit in {"0", "false", "no"}:
+        return False
+
+    has_display = bool(
+        (os.environ.get("DISPLAY") or "").strip()
+        or (os.environ.get("WAYLAND_DISPLAY") or "").strip()
+    )
+
+    # SSH session without a forwarded display
+    if os.environ.get("SSH_CONNECTION") and not has_display:
+        return True
+
+    # Linux without any display server
+    if sys.platform == "linux" and not has_display:
+        return True
+
+    # Docker container
+    return bool(os.path.exists("/.dockerenv"))
+
+
 async def _exchange_chatgpt_oauth_code_for_tokens(
     *, code: str, redirect_uri: str, code_verifier: str
 ) -> dict[str, str]:
@@ -505,6 +546,110 @@ async def _exchange_chatgpt_oauth_code_for_tokens(
     if not isinstance(id_token, str) or not id_token:
         raise RuntimeError(f"Token exchange response missing id_token: {data}")
     return {"access_token": access_token, "refresh_token": refresh_token, "id_token": id_token}
+
+
+async def _request_device_code() -> dict[str, Any]:
+    """Request a device code from the OpenAI device authorization endpoint."""
+    timeout = httpx.Timeout(_get_chatgpt_http_timeout_seconds())
+    async with httpx.AsyncClient(timeout=timeout, headers=_chatgpt_default_headers()) as client:
+        try:
+            resp = await client.post(
+                CHATGPT_DEVICE_CODE_URL,
+                data={
+                    "client_id": CHATGPT_OAUTH_CLIENT_ID,
+                    "scope": CHATGPT_OAUTH_SCOPES,
+                },
+            )
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise RuntimeError(f"Device code request failed: {_http_error_details(exc)}") from exc
+        except httpx.RequestError as exc:
+            raise RuntimeError(f"Device code request failed: {exc}") from exc
+
+    data = resp.json()
+    if not isinstance(data, dict) or "user_code" not in data:
+        raise RuntimeError(f"Unexpected device code response: {data}")
+    return data
+
+
+async def _poll_device_code_authorization(device_code_data: dict[str, Any]) -> dict[str, str]:
+    """Poll the device token endpoint until the user authorizes or timeout."""
+    device_auth_id = device_code_data.get("device_auth_id") or device_code_data.get("device_code")
+    if not device_auth_id:
+        raise RuntimeError("Device code response missing device_auth_id/device_code.")
+
+    interval = int(device_code_data.get("interval", CHATGPT_DEVICE_CODE_POLL_INTERVAL_SECONDS))
+    timeout = httpx.Timeout(_get_chatgpt_http_timeout_seconds())
+    deadline = time.monotonic() + CHATGPT_DEVICE_CODE_TIMEOUT_SECONDS
+
+    async with httpx.AsyncClient(timeout=timeout, headers=_chatgpt_default_headers()) as client:
+        while time.monotonic() < deadline:
+            await asyncio.sleep(interval)
+            try:
+                resp = await client.post(
+                    CHATGPT_DEVICE_TOKEN_URL,
+                    data={"device_auth_id": device_auth_id},
+                )
+            except httpx.RequestError:
+                continue
+
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, dict) and data.get("authorization_code"):
+                    return {
+                        "authorization_code": data["authorization_code"],
+                        "code_verifier": data.get("code_verifier", ""),
+                        "code_challenge": data.get("code_challenge", ""),
+                    }
+
+            # 400/403 with "authorization_pending" → keep polling
+            if resp.status_code in {400, 403}:
+                body = {}
+                with suppress(Exception):
+                    body = resp.json()
+                error = body.get("error", "") if isinstance(body, dict) else ""
+                if error == "authorization_pending":
+                    continue
+                if error == "slow_down":
+                    interval = min(interval + 5, 30)
+                    continue
+                raise RuntimeError(f"Device code authorization denied: {body}")
+
+            # Other unexpected status
+            with suppress(Exception):
+                resp.raise_for_status()
+
+    raise RuntimeError("Device code authorization timed out.")
+
+
+async def _exchange_device_code_for_tokens(auth_code_data: dict[str, str]) -> dict[str, str]:
+    """Exchange a device-code authorization for OAuth tokens."""
+    return await _exchange_chatgpt_oauth_code_for_tokens(
+        code=auth_code_data["authorization_code"],
+        redirect_uri=CHATGPT_DEVICE_CODE_REDIRECT_URI,
+        code_verifier=auth_code_data.get("code_verifier", ""),
+    )
+
+
+async def _login_chatgpt_device_code_flow() -> None:
+    """Run device code login flow and persist resulting tokens to auth.json."""
+    device_code_data = await _request_device_code()
+    user_code = device_code_data.get("user_code", "")
+    verification_url = CHATGPT_DEVICE_VERIFY_URL
+
+    print(  # noqa: T201
+        f"\nTo sign in, open this URL on any device:\n"
+        f"  {verification_url}\n\n"
+        f"Then enter the code: {user_code}\n\n"
+        f"Warning: Only enter this code on the official OpenAI website.\n"
+        f"Waiting for authorization...",
+        flush=True,
+    )
+
+    auth_code_data = await _poll_device_code_authorization(device_code_data)
+    tokens = await _exchange_device_code_for_tokens(auth_code_data)
+    record = _build_auth_record(tokens)
+    await _write_json(_get_chatgpt_auth_file_path(), record)
 
 
 async def _login_chatgpt_oauth_via_local_server() -> None:
@@ -733,7 +878,14 @@ async def ensure_chatgpt_access_token(*, interactive: bool) -> str:
     if not interactive:
         raise ChatGPTLoginRequiredError("ChatGPT is not logged in.")
 
-    await _login_chatgpt_oauth_via_local_server()
+    if _is_headless_environment():
+        try:
+            await _login_chatgpt_device_code_flow()
+        except RuntimeError:
+            # Device code not enabled for this account — fall back to PKCE
+            await _login_chatgpt_oauth_via_local_server()
+    else:
+        await _login_chatgpt_oauth_via_local_server()
     data_after = await _read_json(auth_file) or {}
     token_after = data_after.get("access_token")
     if not isinstance(token_after, str) or not token_after:
@@ -744,8 +896,10 @@ async def ensure_chatgpt_access_token(*, interactive: bool) -> str:
 async def login_chatgpt() -> ChatGPTAuthStatus:
     """Ensure ChatGPT OAuth credentials exist and return resulting status.
 
-    Uses a browser-based OAuth (PKCE) flow with a localhost callback server, with
-    a manual paste fallback when the callback cannot be reached.
+    In headless environments (SSH, containers, no display) or when
+    ``OURO_CHATGPT_DEVICE_CODE=1``, uses a device code flow where the user
+    visits a URL and enters a short code on any device. Otherwise, uses a
+    browser-based OAuth (PKCE) flow with a localhost callback server.
     """
     await _ensure_auth_dir()
 
