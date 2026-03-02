@@ -25,6 +25,7 @@ class LoopAgent(BaseAgent):
 
     # Optional sections injected into system prompt (set by caller)
     _skills_section: str | None = None
+    _heartbeat_section: str | None = None
     _soul_section: str | None = None
 
     def set_skills_section(self, skills_section: str | None) -> None:
@@ -35,6 +36,14 @@ class LoopAgent(BaseAgent):
                            or None to disable skills injection.
         """
         self._skills_section = skills_section
+
+    def set_heartbeat_section(self, content: str | None) -> None:
+        """Set the heartbeat file content to inject into system prompt.
+
+        Args:
+            content: Raw content from ~/.ouro/bot/heartbeat.md, or None to skip.
+        """
+        self._heartbeat_section = content
 
     def set_soul_section(self, soul_section: str | None) -> None:
         """Set the soul/personality section to prepend to the system prompt.
@@ -124,6 +133,15 @@ AGENTS.md is optional. If not found, proceed normally.
             # Inject skills section if available
             if self._skills_section:
                 system_content = system_content + "\n\n" + self._skills_section
+
+            # Inject heartbeat file content (bot mode only)
+            if self._heartbeat_section:
+                system_content = (
+                    system_content
+                    + '\n\n<heartbeat path="~/.ouro/bot/heartbeat.md">\n'
+                    + self._heartbeat_section
+                    + "\n</heartbeat>"
+                )
 
             # Append soul/personality section at the end (bot mode only).
             # Placed last so it benefits from recency bias for style influence

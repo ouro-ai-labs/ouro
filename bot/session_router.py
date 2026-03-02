@@ -259,6 +259,14 @@ class SessionRouter:
 
         return await MemoryManager.find_session_by_prefix(prefix, sessions_dir=self._sessions_dir)
 
+    def get_last_active_session(self) -> tuple[str, str] | None:
+        """Return (channel_name, conversation_id) for the most recently active session."""
+        if not self._last_active:
+            return None
+        best_key = max(self._last_active, key=self._last_active.get)  # type: ignore[arg-type]
+        channel, conversation_id = best_key.split(":", 1)
+        return (channel, conversation_id)
+
     @property
     def active_session_count(self) -> int:
         """Number of active sessions."""

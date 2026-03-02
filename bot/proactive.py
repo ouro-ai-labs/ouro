@@ -1,8 +1,8 @@
 """Proactive mechanisms: heartbeat checks and cron-scheduled tasks.
 
-All proactive tasks run in *isolated sessions* (one-shot agents without
-conversation history) to keep token costs low. Results are broadcast to
-all active IM sessions.
+Heartbeat checks run in the most recently active session (main-session
+mode). Cron jobs run in isolated one-shot sessions and broadcast results
+to all active IM sessions.
 """
 
 from __future__ import annotations
@@ -39,25 +39,17 @@ _CRON_JOBS_FILE = os.path.join(_BOT_DIR, "cron_jobs.json")
 _ISOLATED_TIMEOUT = Config.BOT_PROACTIVE_TIMEOUT
 
 _DEFAULT_HEARTBEAT = """\
-# Heartbeat Checklist
+# Heartbeat
 
-This file is read every heartbeat cycle. Edit it to define periodic checks.
-Use the manage_heartbeat tool to add or remove items.
+# Keep this file empty (or with only headers) to skip heartbeat API calls.
+# Add tasks below when you want the agent to check something periodically.
 """
 
-_HEARTBEAT_PROMPT = """\
-You are running a periodic heartbeat check. This is an isolated session \
-with no conversation history.
-
-Read the following heartbeat checklist and follow it strictly. \
-Do not infer tasks from prior conversations.
-
-If nothing needs attention, respond with exactly: HEARTBEAT_OK
-If something needs attention, write a concise message.
-
----
-{checklist}
-"""
+_HEARTBEAT_PROMPT = (
+    "Read HEARTBEAT.md (~/.ouro/bot/heartbeat.md). Follow it strictly. "
+    "Do not infer or repeat old tasks from prior chats. "
+    "If nothing needs attention, reply HEARTBEAT_OK."
+)
 
 
 # ---------------------------------------------------------------------------
@@ -80,9 +72,26 @@ def load_heartbeat() -> str:
         return ""
 
 
-def _has_checklist_items(text: str) -> bool:
-    """Return True if *text* contains at least one ``- [ ] …`` item."""
-    return any(line.strip().startswith("- [ ] ") for line in text.splitlines())
+def _has_meaningful_content(text: str) -> bool:
+    """Return True if *text* has actionable content.
+
+    Skips blank lines, markdown headers (``# …``), and empty list items
+    (``- [ ]``, ``- ``).  Mirrors OpenClaw's ``isHeartbeatContentEffectivelyEmpty``.
+    """
+    import re
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # Markdown ATX headers: # followed by space or EOL
+        if re.match(r"^#+(\s|$)", stripped):
+            continue
+        # Empty list items: "- [ ]", "* [ ]", "- ", "* ", etc.
+        if re.match(r"^[-*+]\s*(\[[\sXx]?\]\s*)?$", stripped):
+            continue
+        return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -160,10 +169,16 @@ class IsolatedAgentRunner:
 
 
 class HeartbeatScheduler:
-    """Periodically execute a heartbeat check and broadcast if needed."""
+    """Periodically trigger a heartbeat check in the most-recently-active session."""
 
-    def __init__(self, executor: IsolatedAgentRunner, interval: int | None = None) -> None:
-        self._executor = executor
+    def __init__(
+        self,
+        router: SessionRouter,
+        channels: list[Channel],
+        interval: int | None = None,
+    ) -> None:
+        self._router = router
+        self._channels = channels
         self._interval = interval if interval is not None else Config.BOT_HEARTBEAT_INTERVAL
         self._last_run: datetime | None = None
         self._next_run: datetime | None = None
@@ -204,24 +219,41 @@ class HeartbeatScheduler:
             self._running = False
 
     async def _tick(self) -> None:
-        """Single heartbeat tick."""
+        """Single heartbeat tick — run prompt in the last active session."""
         try:
             self._last_run = datetime.now(tz=timezone.utc)
-            checklist = load_heartbeat()
+            content = load_heartbeat()
 
-            if not _has_checklist_items(checklist):
-                logger.debug("Heartbeat skipped: checklist has no items")
+            if not _has_meaningful_content(content):
+                logger.debug("Heartbeat skipped: no meaningful content")
                 return
 
-            prompt = _HEARTBEAT_PROMPT.format(checklist=checklist)
-            result = await self._executor.run_isolated(prompt)
+            target = self._router.get_last_active_session()
+            if target is None:
+                logger.debug("Heartbeat skipped: no active session")
+                return
+
+            channel_name, conversation_id = target
+            agent = await self._router.get_or_create_agent(channel_name, conversation_id)
+
+            result = await asyncio.wait_for(agent.run(_HEARTBEAT_PROMPT), timeout=_ISOLATED_TIMEOUT)
 
             if "HEARTBEAT_OK" in result:
                 logger.info("Heartbeat: OK (nothing to report)")
                 return
 
-            count = await self._executor.broadcast(f"[Heartbeat] {result}")
-            logger.info("Heartbeat: broadcast to %d sessions", count)
+            # Send response to the last-active channel
+            channel_map = {ch.name: ch for ch in self._channels}
+            ch = channel_map.get(channel_name)
+            if ch:
+                from bot.channel.base import OutgoingMessage
+
+                await ch.send_message(
+                    OutgoingMessage(conversation_id=conversation_id, text=f"[Heartbeat] {result}")
+                )
+                logger.info("Heartbeat: sent to %s:%s", channel_name, conversation_id)
+        except asyncio.TimeoutError:
+            logger.warning("Heartbeat agent timed out after %ds", _ISOLATED_TIMEOUT)
         except Exception:
             logger.exception("Heartbeat tick failed")
 
