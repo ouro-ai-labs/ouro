@@ -881,8 +881,13 @@ async def ensure_chatgpt_access_token(*, interactive: bool) -> str:
     if _is_headless_environment():
         try:
             await _login_chatgpt_device_code_flow()
-        except RuntimeError:
-            # Device code not enabled for this account — fall back to PKCE
+        except RuntimeError as exc:
+            print(  # noqa: T201
+                f"Device code flow failed: {exc}\n" "Falling back to browser-based PKCE flow...",
+                flush=True,
+            )
+            # Suppress browser launch in headless — it would open lynx/w3m
+            os.environ.setdefault("OURO_NO_BROWSER", "1")
             await _login_chatgpt_oauth_via_local_server()
     else:
         await _login_chatgpt_oauth_via_local_server()
