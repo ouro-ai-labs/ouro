@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from aiohttp import web
 
 from bot.channel.base import Channel, IncomingMessage, OutgoingMessage
+from bot.message_queue import ConversationQueue, coalesce_messages
 from bot.proactive import CronScheduler, HeartbeatScheduler, IsolatedAgentRunner
 from bot.session_router import SessionRouter
 from config import Config
@@ -45,16 +46,27 @@ class BotServer:
         *,
         heartbeat: HeartbeatScheduler | None = None,
         cron_scheduler: CronScheduler | None = None,
+        debounce_seconds: float = 1.5,
+        max_batch_size: int = 20,
     ) -> None:
         self._router = session_router
         self._channels = channels
         self._heartbeat = heartbeat
         self._cron_scheduler = cron_scheduler
+        self._debounce = debounce_seconds
+        self._max_batch = max_batch_size
         self._app = web.Application()
         self._app.router.add_get("/health", self._handle_health)
         self._cleanup_task: asyncio.Task | None = None
         self._heartbeat_task: asyncio.Task | None = None
         self._cron_task: asyncio.Task | None = None
+
+        # Channel lookup for batch processing
+        self._channel_map: dict[str, Channel] = {ch.name: ch for ch in channels}
+        # Per-conversation queues (created lazily)
+        self._queues: dict[str, ConversationQueue] = {}
+        # Tracks reaction IDs for 👀 cleanup: platform_message_id -> reaction_id
+        self._reaction_ids: dict[str, str | None] = {}
 
     async def _handle_health(self, request: web.Request) -> web.Response:
         return web.json_response(
@@ -439,152 +451,166 @@ class BotServer:
     _DONE_EMOJI = "white_check_mark"
 
     async def _process_message(self, channel: Channel, msg: IncomingMessage) -> None:
-        """Process a message: command check -> reaction ack -> lock -> agent.run -> send result."""
-        reaction_id: str | None = None
+        """Command check -> 👀 reaction -> enqueue for debounced batch processing."""
         try:
-            # Fast path: slash commands that don't need the agent lock
-            # (/new, /help are stateless; /compact and /status acquire no external lock
-            #  but are safe because they only read/mutate their own session.)
             if await self._handle_command(channel, msg):
                 return
 
-            # Instant feedback: add 👀 reaction *before* the lock so the user
-            # knows we received the message even while a previous one is processing.
-            if msg.platform_message_id:
-                try:
-                    reaction_id = await channel.add_reaction(
-                        msg.conversation_id, msg.platform_message_id, self._PROCESSING_EMOJI
+            # Instant feedback: add 👀 so the user knows we received it
+            await self._try_add_processing_reaction(channel, msg)
+
+            # Route to per-conversation queue (created lazily)
+            key = f"{channel.name}:{msg.conversation_id}"
+            if key not in self._queues:
+                self._queues[key] = ConversationQueue(
+                    key,
+                    self._process_batch,
+                    debounce_seconds=self._debounce,
+                    max_batch_size=self._max_batch,
+                )
+            await self._queues[key].enqueue(msg)
+        except Exception:
+            logger.exception(
+                "Error enqueueing %s from %s:%s", msg.message_id, msg.channel, msg.conversation_id
+            )
+
+    async def _try_add_processing_reaction(self, channel: Channel, msg: IncomingMessage) -> None:
+        """Add 👀 reaction and track the reaction ID for later cleanup."""
+        if not msg.platform_message_id:
+            return
+        try:
+            rid = await channel.add_reaction(
+                msg.conversation_id, msg.platform_message_id, self._PROCESSING_EMOJI
+            )
+            self._reaction_ids[msg.platform_message_id] = rid
+        except Exception:
+            logger.debug("Failed to add processing reaction", exc_info=True)
+
+    async def _process_batch(self, messages: list[IncomingMessage]) -> None:
+        """Process a batch of messages: coalesce -> agent.run -> send result -> swap reactions."""
+        first = messages[0]
+        channel = self._channel_map.get(first.channel)
+        if channel is None:
+            logger.error("No channel found for %s", first.channel)
+            return
+
+        try:
+            agent = await self._router.get_or_create_agent(first.channel, first.conversation_id)
+
+            # Coalesce text; collect all images and files
+            task_text = coalesce_messages(messages)
+            all_images = [img for m in messages for img in m.images]
+            all_files = [f for m in messages for f in m.files]
+
+            # Save attachments to temp dir so the agent can read them
+            tmp_dir: str | None = None
+            if all_files or all_images:
+                import tempfile
+                from pathlib import Path
+
+                tmp_dir = tempfile.mkdtemp(prefix="ouro_files_")
+                for fa in all_files:
+                    dest = Path(tmp_dir) / fa.filename
+                    dest.write_bytes(fa.data)
+                    task_text += (
+                        f"\n[Attached file: {fa.filename} ({fa.mime_type}) saved at: {dest}]"
                     )
-                except Exception:
-                    logger.debug("Failed to add processing reaction", exc_info=True)
+                for idx, img in enumerate(all_images):
+                    ext = img.mime_type.split("/")[-1] if img.mime_type else "png"
+                    img_name = f"image_{idx}.{ext}"
+                    dest = Path(tmp_dir) / img_name
+                    dest.write_bytes(img.data)
+                    task_text += (
+                        f"\n[Attached image: {img_name} ({img.mime_type}) saved at: {dest}]"
+                    )
 
-            agent = await self._router.get_or_create_agent(msg.channel, msg.conversation_id)
-            lock = self._router.get_lock(msg.channel, msg.conversation_id)
+            # Wire send_file context if agent has one
+            send_file_ctx = getattr(agent, "_send_file_ctx", None)
+            if send_file_ctx is not None:
 
-            async with lock:
-                # Save incoming file/image attachments to a temp directory so
-                # the agent can read them with file tools.
-                task_text = msg.text
-                tmp_dir: str | None = None
-                if msg.files or msg.images:
-                    import tempfile
-                    from pathlib import Path
+                async def _send_fn(
+                    file_path: str | None = None,
+                    file_bytes: bytes | None = None,
+                    filename: str | None = None,
+                    mime_type: str | None = None,
+                ) -> bool:
+                    return await channel.send_file(
+                        conversation_id=first.conversation_id,
+                        file_path=file_path,
+                        file_bytes=file_bytes,
+                        filename=filename,
+                        mime_type=mime_type,
+                    )
 
-                    tmp_dir = tempfile.mkdtemp(prefix="ouro_files_")
-                    for fa in msg.files:
-                        dest = Path(tmp_dir) / fa.filename
-                        dest.write_bytes(fa.data)
-                        task_text += (
-                            f"\n[Attached file: {fa.filename} ({fa.mime_type})"
-                            f" saved at: {dest}]"
-                        )
-                    for idx, img in enumerate(msg.images):
-                        ext = img.mime_type.split("/")[-1] if img.mime_type else "png"
-                        img_name = f"image_{idx}.{ext}"
-                        dest = Path(tmp_dir) / img_name
-                        dest.write_bytes(img.data)
-                        task_text += (
-                            f"\n[Attached image: {img_name} ({img.mime_type})" f" saved at: {dest}]"
-                        )
+                send_file_ctx.set_send_fn(_send_fn)
 
-                # Wire send_file context if agent has one
-                send_file_ctx = getattr(agent, "_send_file_ctx", None)
+            logger.info(
+                "Processing %d message(s) from %s:%s — %s",
+                len(messages),
+                first.channel,
+                first.conversation_id,
+                task_text[:80],
+            )
+            try:
+                result = await agent.run(task_text, images=all_images or None)
+            finally:
                 if send_file_ctx is not None:
+                    send_file_ctx.clear()
+                if tmp_dir is not None:
+                    import shutil
 
-                    async def _send_fn(
-                        file_path: str | None = None,
-                        file_bytes: bytes | None = None,
-                        filename: str | None = None,
-                        mime_type: str | None = None,
-                    ) -> bool:
-                        return await channel.send_file(
-                            conversation_id=msg.conversation_id,
-                            file_path=file_path,
-                            file_bytes=file_bytes,
-                            filename=filename,
-                            mime_type=mime_type,
-                        )
+                    shutil.rmtree(tmp_dir, ignore_errors=True)
 
-                    send_file_ctx.set_send_fn(_send_fn)
+            await self._router.update_session_mapping(first.channel, first.conversation_id)
+            await channel.send_message(
+                OutgoingMessage(conversation_id=first.conversation_id, text=result)
+            )
+            logger.info(
+                "Replied to %s:%s — %d chars", first.channel, first.conversation_id, len(result)
+            )
 
-                logger.info(
-                    "Processing message from %s:%s — %s",
-                    msg.channel,
-                    msg.conversation_id,
-                    msg.text[:80],
-                )
-                try:
-                    result = await agent.run(task_text, images=msg.images if msg.images else None)
-                finally:
-                    if send_file_ctx is not None:
-                        send_file_ctx.clear()
-                    if tmp_dir is not None:
-                        import shutil
-
-                        shutil.rmtree(tmp_dir, ignore_errors=True)
-
-                # Persist session mapping so conversation survives restarts
-                await self._router.update_session_mapping(msg.channel, msg.conversation_id)
-
-                await channel.send_message(
-                    OutgoingMessage(
-                        conversation_id=msg.conversation_id,
-                        text=result,
-                    )
-                )
-
-                logger.info(
-                    "Replied to %s:%s — %d chars",
-                    msg.channel,
-                    msg.conversation_id,
-                    len(result),
-                )
-
-            # Swap reactions: remove 👀, add ✅ (after lock released)
-            if msg.platform_message_id:
-                try:
-                    await channel.remove_reaction(
-                        msg.conversation_id,
-                        msg.platform_message_id,
-                        self._PROCESSING_EMOJI,
-                        reaction_id,
-                    )
-                except Exception:
-                    logger.debug("Failed to remove processing reaction", exc_info=True)
-                try:
-                    await channel.add_reaction(
-                        msg.conversation_id, msg.platform_message_id, self._DONE_EMOJI
-                    )
-                except Exception:
-                    logger.debug("Failed to add done reaction", exc_info=True)
+            # Swap reactions on ALL source messages: 👀 → ✅
+            await self._finalize_reactions(channel, messages, done=True)
 
         except Exception:
             logger.exception(
-                "Error processing message %s from %s:%s",
-                msg.message_id,
-                msg.channel,
-                msg.conversation_id,
+                "Error processing batch from %s:%s", first.channel, first.conversation_id
             )
-            # Clean up processing reaction on error
-            if msg.platform_message_id:
-                try:
-                    await channel.remove_reaction(
-                        msg.conversation_id,
-                        msg.platform_message_id,
-                        self._PROCESSING_EMOJI,
-                        reaction_id,
-                    )
-                except Exception:
-                    logger.debug("Failed to remove processing reaction on error", exc_info=True)
+            await self._finalize_reactions(channel, messages, done=False)
             try:
                 await channel.send_message(
                     OutgoingMessage(
-                        conversation_id=msg.conversation_id,
+                        conversation_id=first.conversation_id,
                         text="Sorry, something went wrong while processing your message. Please try again.",
                     )
                 )
             except Exception:
                 logger.exception("Failed to send error message")
+
+    async def _finalize_reactions(
+        self, channel: Channel, messages: list[IncomingMessage], *, done: bool
+    ) -> None:
+        """Remove 👀 from all batch messages; add ✅ if *done*."""
+        for msg in messages:
+            pid = msg.platform_message_id
+            if not pid:
+                continue
+            rid = self._reaction_ids.pop(pid, None)
+            await self._safe_reaction(
+                channel.remove_reaction(msg.conversation_id, pid, self._PROCESSING_EMOJI, rid)
+            )
+            if done:
+                await self._safe_reaction(
+                    channel.add_reaction(msg.conversation_id, pid, self._DONE_EMOJI)
+                )
+
+    @staticmethod
+    async def _safe_reaction(coro) -> None:  # type: ignore[type-arg]
+        """Await a reaction coroutine, swallowing errors."""
+        try:
+            await coro
+        except Exception:
+            logger.debug("Reaction operation failed", exc_info=True)
 
     async def _periodic_cleanup(self) -> None:
         """Periodically delete stale sessions from disk."""
@@ -625,6 +651,9 @@ class BotServer:
         try:
             await asyncio.Event().wait()
         finally:
+            for q in self._queues.values():
+                q.shutdown()
+            self._queues.clear()
             if self._cleanup_task:
                 self._cleanup_task.cancel()
             if self._heartbeat_task:
@@ -758,17 +787,19 @@ async def run_bot(model_id: str | None = None) -> None:
             from tools.cron_tool import CronTool
 
             agent.tool_executor.add_tool(CronTool(_shared["cron"]))
-        # Give the agent a manage_heartbeat tool to edit the heartbeat checklist
-        from tools.heartbeat_tool import HeartbeatTool
+        # Inject heartbeat content into system prompt so the agent sees it
+        from bot.proactive import load_heartbeat
 
-        agent.tool_executor.add_tool(HeartbeatTool())
+        hb_content = load_heartbeat()
+        if hb_content:
+            agent.set_heartbeat_section(hb_content)
 
-        # Give the agent a send_file tool (context is set per-message in _process_message)
+        # Give the agent a send_file tool (context is set per-batch in _process_batch)
         from tools.send_file_tool import SendFileContext, SendFileTool
 
         ctx = SendFileContext()
         agent.tool_executor.add_tool(SendFileTool(ctx))
-        agent._send_file_ctx = ctx  # type: ignore[attr-defined]  # stash for _process_message
+        agent._send_file_ctx = ctx  # type: ignore[attr-defined]  # stash for _process_batch
 
         return agent
 
@@ -789,6 +820,8 @@ async def run_bot(model_id: str | None = None) -> None:
         channels=channels,
         heartbeat=heartbeat,
         cron_scheduler=cron,
+        debounce_seconds=Config.BOT_DEBOUNCE_SECONDS,
+        max_batch_size=Config.BOT_MAX_BATCH_SIZE,
     )
 
     host = Config.BOT_HOST

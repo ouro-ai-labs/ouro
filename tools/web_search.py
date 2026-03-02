@@ -11,8 +11,8 @@ from .base import BaseTool
 # Fix ddgs/primp compatibility: ddgs ships impersonate profiles that primp 1.0
 # no longer recognises.  Passing an unknown value triggers a Rust-side fallback
 # path that deadlocks under concurrent threads.  Override with valid values.
-HttpClient._impersonates = ("random",)  # type: ignore[misc]
-HttpClient._impersonates_os = ("macos", "linux", "windows")
+HttpClient._impersonates = ("random",)  # type: ignore[attr-defined]
+HttpClient._impersonates_os = ("macos", "linux", "windows")  # type: ignore[attr-defined]
 
 # Default timeout for web search operations
 DEFAULT_SEARCH_TIMEOUT = 30.0

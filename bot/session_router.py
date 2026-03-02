@@ -27,8 +27,8 @@ class SessionRouter:
     """Routes IM conversations to per-conversation agent instances.
 
     Each conversation (keyed by "{channel}:{conversation_id}") gets its own
-    LoopAgent with independent memory. A per-conversation lock serializes
-    message processing since agent memory is not concurrent-safe.
+    LoopAgent with independent memory. Serialization is handled externally
+    by the message queue (one consumer task per conversation).
 
     When ``sessions_dir`` is provided, the router persists a conversation map
     (conversation key -> session UUID) so sessions survive bot restarts.
@@ -47,7 +47,6 @@ class SessionRouter:
         self._agent_factory = agent_factory
         self._sessions_dir = sessions_dir
         self._sessions: dict[str, LoopAgent] = {}
-        self._locks: dict[str, asyncio.Lock] = {}
         self._last_active: dict[str, float] = {}
 
         # Persistent conversation map: conv_key -> session UUID
@@ -132,7 +131,6 @@ class SessionRouter:
                     )
 
             self._sessions[key] = result
-            self._locks[key] = asyncio.Lock()
         self._last_active[key] = time.time()
         return self._sessions[key]
 
@@ -149,23 +147,6 @@ class SessionRouter:
         if old != agent.memory.session_id:
             self._conversation_map[key] = agent.memory.session_id
             await self._save_conversation_map()
-
-    def get_lock(self, channel: str, conversation_id: str) -> asyncio.Lock:
-        """Get the per-conversation lock.
-
-        Must be called after get_or_create_agent() to ensure the lock exists.
-
-        Args:
-            channel: Channel name.
-            conversation_id: IM conversation/chat ID.
-
-        Returns:
-            asyncio.Lock for this conversation.
-        """
-        key = self._session_key(channel, conversation_id)
-        if key not in self._locks:
-            self._locks[key] = asyncio.Lock()
-        return self._locks[key]
 
     async def cleanup_stale_sessions(self, max_age_days: int = _DEFAULT_STALE_DAYS) -> int:
         """Delete persisted sessions that haven't been updated in *max_age_days*.
@@ -221,7 +202,6 @@ class SessionRouter:
         key = self._session_key(channel, conversation_id)
         existed = key in self._sessions
         self._sessions.pop(key, None)
-        self._locks.pop(key, None)
         self._last_active.pop(key, None)
         if key in self._conversation_map:
             del self._conversation_map[key]
@@ -245,14 +225,6 @@ class SessionRouter:
             channel, conversation_id = key.split(":", 1)
             result.append((channel, conversation_id))
         return result
-
-    def is_session_busy(self, channel: str, conversation_id: str) -> bool:
-        """Check whether the session lock is currently held (agent processing)."""
-        key = self._session_key(channel, conversation_id)
-        lock = self._locks.get(key)
-        if lock is None:
-            return False
-        return lock.locked()
 
     async def save_session(self, channel: str, conversation_id: str) -> None:
         """Save the current agent's memory to disk (no-op if no session exists)."""

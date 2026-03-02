@@ -14,6 +14,9 @@ from bot.session_router import SessionRouter
 aiohttp = pytest.importorskip("aiohttp")
 from aiohttp.test_utils import TestClient, TestServer  # noqa: E402
 
+# Short debounce for tests so batches process quickly.
+_TEST_DEBOUNCE = 0.05
+
 # ---------------------------------------------------------------------------
 # FakeChannel — satisfies the Channel protocol with start/stop
 # ---------------------------------------------------------------------------
@@ -102,10 +105,15 @@ def mock_router():
 
 @pytest.fixture
 def bot_server(mock_router, fake_channel):
-    return BotServer(
+    server = BotServer(
         session_router=mock_router,
         channels=[fake_channel],
+        debounce_seconds=_TEST_DEBOUNCE,
     )
+    yield server
+    for q in server._queues.values():
+        q.shutdown()
+    server._queues.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -127,12 +135,12 @@ async def test_health_endpoint(bot_server):
 
 
 # ---------------------------------------------------------------------------
-# _process_message
+# _process_message (enqueue path)
 # ---------------------------------------------------------------------------
 
 
 async def test_process_message_sends_ack_and_result(bot_server, fake_channel, mock_router):
-    """Test the background message processing flow."""
+    """Test the background message processing flow via queue."""
     msg = IncomingMessage(
         channel="test",
         conversation_id="conv_1",
@@ -143,8 +151,10 @@ async def test_process_message_sends_ack_and_result(bot_server, fake_channel, mo
     )
 
     await bot_server._process_message(fake_channel, msg)
+    # Wait for debounce + processing
+    await asyncio.sleep(_TEST_DEBOUNCE + 0.15)
 
-    # Should have sent 1 message (agent result only, no "Working on it..." ack)
+    # Should have sent 1 message (agent result only)
     assert len(fake_channel.sent_messages) == 1
     assert fake_channel.sent_messages[0].text == "Agent response"
     assert fake_channel.sent_messages[0].conversation_id == "conv_1"
@@ -170,8 +180,9 @@ async def test_process_message_error_sends_error_message(bot_server, fake_channe
     )
 
     await bot_server._process_message(fake_channel, msg)
+    await asyncio.sleep(_TEST_DEBOUNCE + 0.15)
 
-    # Only error message sent (no "Working on it..." text)
+    # Only error message sent
     assert len(fake_channel.sent_messages) == 1
     assert "went wrong" in fake_channel.sent_messages[0].text
 
@@ -186,7 +197,9 @@ async def test_process_message_error_sends_error_message(bot_server, fake_channe
 
 async def test_channel_start_called_with_callback(fake_channel, mock_router):
     """start() should call channel.start(callback) and register a callback."""
-    server = BotServer(session_router=mock_router, channels=[fake_channel])
+    server = BotServer(
+        session_router=mock_router, channels=[fake_channel], debounce_seconds=_TEST_DEBOUNCE
+    )
 
     # We can't call server.start() (it blocks), so test _make_callback + manual start.
     cb = server._make_callback(fake_channel)
@@ -194,11 +207,16 @@ async def test_channel_start_called_with_callback(fake_channel, mock_router):
 
     assert fake_channel._started is True
     assert fake_channel._callback is not None
+    for q in server._queues.values():
+        q.shutdown()
+    server._queues.clear()
 
 
 async def test_callback_triggers_process_message(fake_channel, mock_router):
     """Injecting a message through the channel callback triggers processing."""
-    server = BotServer(session_router=mock_router, channels=[fake_channel])
+    server = BotServer(
+        session_router=mock_router, channels=[fake_channel], debounce_seconds=_TEST_DEBOUNCE
+    )
     cb = server._make_callback(fake_channel)
     await fake_channel.start(cb)
 
@@ -211,10 +229,13 @@ async def test_callback_triggers_process_message(fake_channel, mock_router):
     )
     await fake_channel.inject_message(msg)
 
-    # The callback creates a task; give it a moment to run.
-    await asyncio.sleep(0.1)
+    # The callback creates a task + debounce; give it time to process.
+    await asyncio.sleep(_TEST_DEBOUNCE + 0.2)
 
     assert len(fake_channel.sent_messages) >= 1
+    for q in server._queues.values():
+        q.shutdown()
+    server._queues.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -370,8 +391,9 @@ async def test_command_help(bot_server, fake_channel):
 
 
 async def test_non_command_passes_through(bot_server, fake_channel, mock_router):
-    """A regular message (no / prefix) goes to agent.run()."""
+    """A regular message (no / prefix) goes to agent.run() via the queue."""
     await bot_server._process_message(fake_channel, _make_msg("hello world"))
+    await asyncio.sleep(_TEST_DEBOUNCE + 0.15)
 
     # Should see only agent response (ack is via reaction, not text)
     assert len(fake_channel.sent_messages) == 1
@@ -381,6 +403,7 @@ async def test_non_command_passes_through(bot_server, fake_channel, mock_router)
 async def test_unknown_command_passes_through(bot_server, fake_channel, mock_router):
     """An unknown /command is forwarded to agent.run() as a regular message."""
     await bot_server._process_message(fake_channel, _make_msg("/unknown_cmd"))
+    await asyncio.sleep(_TEST_DEBOUNCE + 0.15)
 
     # Should see only agent response (ack is via reaction)
     assert len(fake_channel.sent_messages) == 1
@@ -426,6 +449,7 @@ async def test_process_message_with_file_augments_text(bot_server, fake_channel,
     agent = await mock_router.get_or_create_agent("test", "conv_f")
 
     await bot_server._process_message(fake_channel, msg)
+    await asyncio.sleep(_TEST_DEBOUNCE + 0.15)
 
     # agent.run should have been called with augmented text
     call_args = agent.run.call_args
@@ -460,6 +484,7 @@ async def test_send_file_context_lifecycle(bot_server, fake_channel, mock_router
     )
 
     await bot_server._process_message(fake_channel, msg)
+    await asyncio.sleep(_TEST_DEBOUNCE + 0.15)
 
     # After processing, the context should be cleared
     assert ctx._send_fn is None
@@ -475,6 +500,7 @@ async def test_no_platform_id_skips_reactions(bot_server, fake_channel, mock_rou
     msg = _make_msg("hello world", platform_message_id="")
 
     await bot_server._process_message(fake_channel, msg)
+    await asyncio.sleep(_TEST_DEBOUNCE + 0.15)
 
     assert len(fake_channel.reactions_added) == 0
     assert len(fake_channel.reactions_removed) == 0
@@ -494,7 +520,118 @@ async def test_reaction_failure_does_not_block(bot_server, fake_channel, mock_ro
     msg = _make_msg("hello world")
 
     await bot_server._process_message(fake_channel, msg)
+    await asyncio.sleep(_TEST_DEBOUNCE + 0.15)
 
     # Processing should complete normally — agent response sent
     assert len(fake_channel.sent_messages) == 1
     assert fake_channel.sent_messages[0].text == "Agent response"
+
+
+# ---------------------------------------------------------------------------
+# Message queue batch integration tests
+# ---------------------------------------------------------------------------
+
+
+async def test_rapid_messages_coalesced_into_single_agent_call(fake_channel, mock_router):
+    """Multiple rapid messages should be coalesced into a single agent.run() call."""
+    server = BotServer(
+        session_router=mock_router,
+        channels=[fake_channel],
+        debounce_seconds=0.1,
+    )
+    try:
+        for i in range(3):
+            msg = IncomingMessage(
+                channel="test",
+                conversation_id="conv_batch",
+                user_id="user_1",
+                text=f"message {i}",
+                message_id=f"msg_{i}",
+                platform_message_id=f"ts_{i}",
+            )
+            await server._process_message(fake_channel, msg)
+
+        # Wait for debounce + processing
+        await asyncio.sleep(0.4)
+
+        # Should have exactly one agent response (batched)
+        assert len(fake_channel.sent_messages) == 1
+        assert fake_channel.sent_messages[0].text == "Agent response"
+
+        # agent.run should have been called once with combined text
+        agent = await mock_router.get_or_create_agent("test", "conv_batch")
+        assert agent.run.await_count == 1
+        call_text = agent.run.call_args[0][0]
+        assert "message 0" in call_text
+        assert "message 1" in call_text
+        assert "message 2" in call_text
+
+        # All 3 messages got 👀 reaction immediately
+        eyes_reactions = [r for r in fake_channel.reactions_added if r[2] == "eyes"]
+        assert len(eyes_reactions) == 3
+
+        # All 3 messages got ✅ after processing
+        done_reactions = [r for r in fake_channel.reactions_added if r[2] == "white_check_mark"]
+        assert len(done_reactions) == 3
+    finally:
+        for q in server._queues.values():
+            q.shutdown()
+        server._queues.clear()
+
+
+async def test_slash_commands_bypass_queue(fake_channel, mock_router):
+    """Slash commands are handled immediately without going through the queue."""
+    server = BotServer(
+        session_router=mock_router,
+        channels=[fake_channel],
+        debounce_seconds=5.0,  # Long debounce — commands should still be instant
+    )
+    try:
+        await mock_router.get_or_create_agent("test", "conv_cmd")
+
+        msg = _make_msg("/help")
+        await server._process_message(fake_channel, msg)
+
+        # No debounce wait needed — commands are synchronous
+        assert len(fake_channel.sent_messages) == 1
+        assert "/new" in fake_channel.sent_messages[0].text
+    finally:
+        for q in server._queues.values():
+            q.shutdown()
+        server._queues.clear()
+
+
+async def test_batch_error_cleans_up_all_reactions(fake_channel, mock_router):
+    """When agent.run() fails for a batch, all messages get reactions cleaned up."""
+    agent = await mock_router.get_or_create_agent("test", "conv_err_batch")
+    agent.run = AsyncMock(side_effect=RuntimeError("LLM timeout"))
+
+    server = BotServer(
+        session_router=mock_router,
+        channels=[fake_channel],
+        debounce_seconds=0.05,
+    )
+    try:
+        for i in range(2):
+            msg = IncomingMessage(
+                channel="test",
+                conversation_id="conv_err_batch",
+                user_id="user_1",
+                text=f"msg {i}",
+                message_id=f"msg_{i}",
+                platform_message_id=f"ts_{i}",
+            )
+            await server._process_message(fake_channel, msg)
+
+        await asyncio.sleep(0.3)
+
+        # Both processing reactions should have been cleaned up
+        eyes_removed = [r for r in fake_channel.reactions_removed if r[2] == "eyes"]
+        assert len(eyes_removed) == 2
+
+        # Error message should be sent
+        assert any("went wrong" in m.text for m in fake_channel.sent_messages)
+    finally:
+        for q in server._queues.values():
+            q.shutdown()
+        server._queues.clear()

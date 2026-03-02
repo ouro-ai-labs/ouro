@@ -49,7 +49,7 @@ Go to **Permissions & Scopes** -> search and enable:
 | `im:message` | Read messages in chats | Receiving messages |
 | `im:message:send_as_bot` | Send messages as the bot | Sending text/image/file messages |
 | `im:resource` | Upload & download message resources | Sending and receiving images/files |
-| `im:message.reactions:write_as_bot` | Add/remove emoji reactions | Processing status indicators |
+| `im:message.reactions:write_only` | Add/remove emoji reactions | Processing status indicators |
 
 **Note**: Without `im:resource`, the bot can send/receive text but image and file operations will fail with "upload failed".
 

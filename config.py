@@ -122,6 +122,8 @@ class Config:
     # Bot Mode
     BOT_HOST = _cfg.get("BOT_HOST", "0.0.0.0")
     BOT_PORT = int(_cfg.get("BOT_PORT", "8080"))
+    BOT_DEBOUNCE_SECONDS = float(_cfg.get("BOT_DEBOUNCE_SECONDS", "1.5"))
+    BOT_MAX_BATCH_SIZE = int(_cfg.get("BOT_MAX_BATCH_SIZE", "20"))
 
     # Lark Channel
     LARK_APP_ID = _cfg.get("LARK_APP_ID", "")

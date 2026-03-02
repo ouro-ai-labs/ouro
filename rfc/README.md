@@ -27,6 +27,7 @@ Tip: keep this list up to date when adding an RFC.
 - RFC 009: Codex Login via LiteLLM ChatGPT Provider
 - RFC 010: Multi-Model Configuration (v2)
 - RFC 011: Skills System MVP
+- RFC 012: Bot Message Queue with Intelligent Coalescing
 
 ## Note on numbering
 

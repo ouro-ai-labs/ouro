@@ -1,6 +1,5 @@
 """Tests for bot session router."""
 
-import asyncio
 from unittest.mock import MagicMock
 
 from bot.session_router import SessionRouter
@@ -47,46 +46,11 @@ async def test_different_channels_get_different_agents():
     assert router.active_session_count == 2
 
 
-async def test_get_lock_returns_asyncio_lock():
-    router = SessionRouter(agent_factory=_mock_agent_factory)
-    await router.get_or_create_agent("feishu", "chat_123")
-
-    lock = router.get_lock("feishu", "chat_123")
-    assert isinstance(lock, asyncio.Lock)
-
-
-async def test_same_conversation_gets_same_lock():
-    router = SessionRouter(agent_factory=_mock_agent_factory)
-    await router.get_or_create_agent("feishu", "chat_123")
-
-    lock1 = router.get_lock("feishu", "chat_123")
-    lock2 = router.get_lock("feishu", "chat_123")
-    assert lock1 is lock2
-
-
 async def test_cleanup_stale_sessions_no_sessions_dir():
     """cleanup_stale_sessions is a no-op without sessions_dir."""
     router = SessionRouter(agent_factory=_mock_agent_factory)
     removed = await router.cleanup_stale_sessions()
     assert removed == 0
-
-
-async def test_lock_serializes_access():
-    """Verify that the per-conversation lock serializes concurrent access."""
-    router = SessionRouter(agent_factory=_mock_agent_factory)
-    await router.get_or_create_agent("feishu", "chat_123")
-    lock = router.get_lock("feishu", "chat_123")
-
-    order: list[int] = []
-
-    async def task(n: int, delay: float):
-        async with lock:
-            order.append(n)
-            await asyncio.sleep(delay)
-
-    # Task 1 acquires the lock first, task 2 must wait
-    await asyncio.gather(task(1, 0.05), task(2, 0.0))
-    assert order == [1, 2]
 
 
 # ---------------------------------------------------------------------------
@@ -102,9 +66,7 @@ async def test_reset_session_destroys_agent():
     existed = await router.reset_session("feishu", "chat_123")
     assert existed is True
     assert router.active_session_count == 0
-    # Lock should also be removed
     key = router._session_key("feishu", "chat_123")
-    assert key not in router._locks
     assert key not in router._last_active
 
 

@@ -47,7 +47,6 @@ def _make_executor(
     channels: list | None = None,
     router: SessionRouter | None = None,
     sessions: list[tuple[str, str]] | None = None,
-    busy_sessions: set[tuple[str, str]] | None = None,
 ) -> IsolatedAgentRunner:
     """Build an IsolatedAgentRunner with mock agent and optional test sessions."""
     mock_agent = MagicMock()
@@ -64,18 +63,7 @@ def _make_executor(
             for ch, cid in sessions:
                 key = router._session_key(ch, cid)
                 router._sessions[key] = MagicMock()
-                router._locks[key] = asyncio.Lock()
                 router._last_active[key] = 0.0
-
-    if busy_sessions:
-        orig_busy = router.is_session_busy
-
-        def _busy(ch, cid):
-            if (ch, cid) in busy_sessions:
-                return True
-            return orig_busy(ch, cid)
-
-        router.is_session_busy = _busy  # type: ignore[assignment]
 
     return IsolatedAgentRunner(factory, channels, router)
 
@@ -152,17 +140,6 @@ class TestIsolatedAgentRunner:
         assert count == 2
         assert len(ch.sent) == 2
         assert ch.sent[0].text == "hello"
-
-    async def test_broadcast_sends_to_busy_sessions(self):
-        ch = FakeChannel("test")
-        executor = _make_executor(
-            channels=[ch],
-            sessions=[("test", "c1"), ("test", "c2")],
-            busy_sessions={("test", "c1")},
-        )
-        count = await executor.broadcast("hello")
-        assert count == 2
-        assert len(ch.sent) == 2
 
     async def test_broadcast_no_sessions(self):
         executor = _make_executor()
