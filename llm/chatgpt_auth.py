@@ -555,7 +555,7 @@ async def _request_device_code() -> dict[str, Any]:
         try:
             resp = await client.post(
                 CHATGPT_DEVICE_CODE_URL,
-                data={
+                json={
                     "client_id": CHATGPT_OAUTH_CLIENT_ID,
                     "scope": CHATGPT_OAUTH_SCOPES,
                 },
@@ -588,7 +588,7 @@ async def _poll_device_code_authorization(device_code_data: dict[str, Any]) -> d
             try:
                 resp = await client.post(
                     CHATGPT_DEVICE_TOKEN_URL,
-                    data={"device_auth_id": device_auth_id},
+                    json={"device_auth_id": device_auth_id},
                 )
             except httpx.RequestError:
                 continue
