@@ -575,6 +575,7 @@ async def _request_device_code() -> dict[str, Any]:
 async def _poll_device_code_authorization(device_code_data: dict[str, Any]) -> dict[str, str]:
     """Poll the device token endpoint until the user authorizes or timeout."""
     device_auth_id = device_code_data.get("device_auth_id") or device_code_data.get("device_code")
+    user_code = device_code_data.get("user_code", "")
     if not device_auth_id:
         raise RuntimeError("Device code response missing device_auth_id/device_code.")
 
@@ -588,7 +589,10 @@ async def _poll_device_code_authorization(device_code_data: dict[str, Any]) -> d
             try:
                 resp = await client.post(
                     CHATGPT_DEVICE_TOKEN_URL,
-                    json={"device_auth_id": device_auth_id},
+                    json={
+                        "device_auth_id": device_auth_id,
+                        "user_code": user_code,
+                    },
                 )
             except httpx.RequestError:
                 continue
