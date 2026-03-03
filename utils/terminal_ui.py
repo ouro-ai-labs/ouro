@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 from rich import box
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.markup import escape as rich_escape
 from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.table import Table
@@ -297,7 +298,7 @@ def print_error(message: str, title: str = "Error") -> None:
     colors = _get_colors()
     console.print(
         Panel(
-            f"[{colors.error}]{message}[/{colors.error}]",
+            f"[{colors.error}]{rich_escape(message)}[/{colors.error}]",
             title=f"[bold {colors.error}]{title}[/bold {colors.error}]",
             border_style=colors.error,
             box=box.ROUNDED,
@@ -312,7 +313,7 @@ def print_warning(message: str) -> None:
         message: Warning message
     """
     colors = _get_colors()
-    console.print(f"[{colors.warning}]{message}[/{colors.warning}]")
+    console.print(f"[{colors.warning}]{rich_escape(message)}[/{colors.warning}]")
 
 
 def print_success(message: str) -> None:
@@ -322,7 +323,7 @@ def print_success(message: str) -> None:
         message: Success message
     """
     colors = _get_colors()
-    console.print(f"[{colors.success}]✓ {message}[/{colors.success}]")
+    console.print(f"[{colors.success}]✓ {rich_escape(message)}[/{colors.success}]")
 
 
 def print_info(message: str) -> None:
@@ -332,7 +333,7 @@ def print_info(message: str) -> None:
         message: Info message
     """
     colors = _get_colors()
-    console.print(f"[{colors.primary}]ℹ {message}[/{colors.primary}]")
+    console.print(f"[{colors.primary}]ℹ {rich_escape(message)}[/{colors.primary}]")
 
 
 def print_log_location(log_file: str) -> None:
@@ -343,7 +344,9 @@ def print_log_location(log_file: str) -> None:
     """
     colors = _get_colors()
     console.print()
-    console.print(f"[{colors.text_muted}]Detailed logs: {log_file}[/{colors.text_muted}]")
+    console.print(
+        f"[{colors.text_muted}]Detailed logs: {rich_escape(log_file)}[/{colors.text_muted}]"
+    )
 
 
 def print_code(code: str, language: str = "python") -> None:
