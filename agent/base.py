@@ -67,6 +67,8 @@ class BaseAgent(ABC):
 
         # Run-scoped reasoning control. None means "omit reasoning_effort" (provider defaults).
         self._reasoning_effort: Optional[str] = None
+        # Reserved for future bidirectional protocol support (input_event ingestion).
+        self.reserved_input_events_path: Optional[str] = None
 
     def set_reasoning_effort(self, value: Optional[str]) -> None:
         """Set run-scoped reasoning effort for primary task calls.
