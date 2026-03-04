@@ -179,7 +179,7 @@ def _validate_run_end(payload: dict[str, Any]) -> None:
         raise _err("field 'final_answer' must be string when present")
 
 
-def _validate_input_event(payload: dict[str, Any]) -> None:
+def _validate_input_event_fields(payload: dict[str, Any]) -> None:
     input_id = _require_type(payload, "input_id", str)
     if not input_id:
         raise _err("field 'input_id' must be non-empty string")
@@ -252,7 +252,7 @@ def validate_input_event(payload: dict[str, Any]) -> None:
     if event != EVENT_INPUT_EVENT:
         raise _err(f"field 'event' must be {EVENT_INPUT_EVENT!r}")
 
-    _validate_input_event(payload)
+    _validate_input_event_fields(payload)
 
 
 def validate_event_stream(events: list[dict[str, Any]]) -> None:

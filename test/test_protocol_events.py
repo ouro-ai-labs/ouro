@@ -100,6 +100,19 @@ def test_input_event_rejects_invalid_target_step() -> None:
         validate_input_event(payload)
 
 
+def test_input_event_rejects_empty_input_id() -> None:
+    payload = _base(EVENT_INPUT_EVENT)
+    payload.update(
+        {
+            "input_id": "",
+            "input_type": "message.append",
+            "payload": {"text": "continue"},
+        }
+    )
+    with pytest.raises(ProtocolValidationError, match="input_id"):
+        validate_input_event(payload)
+
+
 def test_output_event_validator_rejects_reserved_input_event() -> None:
     payload = _base(EVENT_INPUT_EVENT)
     payload.update(
