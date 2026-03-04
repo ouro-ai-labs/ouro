@@ -407,6 +407,9 @@ def main():
     # models aren't configured yet, enter a setup session first.
     try:
         agent = create_agent(model_id=args.model, profile=agent_profile)
+    except ProfileValidationError as e:
+        terminal_ui.print_error(str(e), title="Agent Profile Error")
+        return
     except ValueError as e:
         if args.task:
             terminal_ui.print_error(str(e), title="Model Configuration Error")
