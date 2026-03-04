@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-03-04
+
+### Added
+
+- Bot: file sending/receiving support with image message handling (#142)
+- Bot: @mention filtering for multi-bot channels (#141)
+- Bot: message queue with intelligent coalescing for bursty inputs (#151)
+- Bot: configurable proactive task timeout (#143)
+- Bot: emoji reactions replacing text acknowledgements (#148)
+- Skills: add `agent-browser` as built-in system skill (#146)
+
+### Changed
+
+- Bot: migrate heartbeat from tool to system prompt injection (#149)
+- Docs: split README into separate CLI Guide and Bot Guide (#138)
+
+### Fixed
+
+- TUI: escape user messages in Rich markup to prevent `MarkupError` crash on bracket-containing content (#153)
+- LLM: remove LiteLLM StreamHandlers that leak debug logs to console (#144)
+- Bot: enable file logging in bot mode (#140)
+- Bot: skill installer writes to bot skills dir in bot mode (#139)
+- Bot: add missing permissions docs and save images to disk (#145)
+- Skills: only bootstrap system skills in bot mode (#147)
+
 ## [0.3.0] - 2026-02-24
 
 ### Added
