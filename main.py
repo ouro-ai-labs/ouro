@@ -289,6 +289,11 @@ def main():
 
     # Bot mode: start webhook server (before login/logout/task checks)
     if args.bot:
+        if args.agent:
+            terminal_ui.print_error(
+                "--agent is not yet supported in --bot mode.", title="Invalid Arguments"
+            )
+            return
         terminal_ui.console = Console(quiet=True)
         # Bot is a long-running daemon — always enable file logging.
         ensure_runtime_dirs(create_logs=True)

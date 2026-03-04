@@ -18,6 +18,7 @@ from typing import Any, Optional
 
 import yaml
 
+from llm.reasoning import REASONING_EFFORT_CHOICES, normalize_reasoning_effort
 from utils import get_logger
 
 logger = get_logger(__name__)
@@ -161,6 +162,17 @@ def load_profile(path: str | Path) -> AgentProfile:
                 f"'mode' must be one of {_VALID_MODES}, got {mode!r}"
             )
 
+    # Validate reasoning_effort early (before it hits set_reasoning_effort)
+    reasoning_effort = raw.get("reasoning_effort")
+    if reasoning_effort is not None:
+        try:
+            normalize_reasoning_effort(str(reasoning_effort))
+        except ValueError:
+            allowed = ", ".join(REASONING_EFFORT_CHOICES)
+            raise ProfileValidationError(
+                f"'reasoning_effort' must be one of [{allowed}], got {reasoning_effort!r}"
+            )
+
     return AgentProfile(
         name=raw.get("name"),
         model=raw.get("model"),
@@ -168,7 +180,7 @@ def load_profile(path: str | Path) -> AgentProfile:
         tools=_parse_tool_policy(raw.get("tools")),
         mode=mode,
         limits=_parse_limits(raw.get("limits")),
-        reasoning_effort=raw.get("reasoning_effort"),
+        reasoning_effort=reasoning_effort,
         _source=str(path),
     )
 

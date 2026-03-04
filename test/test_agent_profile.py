@@ -126,6 +126,16 @@ class TestValidation:
         with pytest.raises(ProfileValidationError, match="must be a YAML mapping"):
             load_profile(path)
 
+    def test_invalid_reasoning_effort(self, tmp_path):
+        path = _write_yaml(tmp_path, {"reasoning_effort": "turbo"})
+        with pytest.raises(ProfileValidationError, match="reasoning_effort"):
+            load_profile(path)
+
+    def test_valid_reasoning_effort(self, tmp_path):
+        path = _write_yaml(tmp_path, {"reasoning_effort": "medium"})
+        p = load_profile(path)
+        assert p.reasoning_effort == "medium"
+
 
 # ---------------------------------------------------------------------------
 # Merge
