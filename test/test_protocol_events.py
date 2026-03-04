@@ -244,3 +244,37 @@ def test_stream_invariant_rejects_unknown_tool_result_reference() -> None:
 
     with pytest.raises(ProtocolValidationError, match="unknown call_id"):
         validate_event_stream([start, result, end])
+
+
+def test_stream_requires_run_start_as_first_event() -> None:
+    step = _base(EVENT_STEP_START)
+    step.update({"step": 1})
+
+    start = _base(EVENT_RUN_START)
+    start.update(
+        {
+            "task": "x",
+            "model": "m",
+            "profile": None,
+            "tools": [],
+            "cwd": "/tmp",
+            "version": "0.1.0",
+        }
+    )
+
+    end = _base(EVENT_RUN_END)
+    end.update(
+        {
+            "status": "failed",
+            "usage": {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cost_usd": 0,
+                "total_steps": 0,
+            },
+            "duration_ms": 1,
+        }
+    )
+
+    with pytest.raises(ProtocolValidationError, match="must start with run_start"):
+        validate_event_stream([step, start, end])

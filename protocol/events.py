@@ -231,6 +231,8 @@ def validate_event_stream(events: list[dict[str, Any]]) -> None:
 
     for i, event in enumerate(events):
         validate_event(event)
+        if i == 0 and event["event"] != EVENT_RUN_START:
+            raise _err("event stream must start with run_start")
 
         current_run_id = event["run_id"]
         if run_id is None:
