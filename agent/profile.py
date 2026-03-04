@@ -11,10 +11,9 @@ CLI flags (--model, --reasoning-effort) always win over profile values.
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 
@@ -95,9 +94,7 @@ def _parse_limits(raw: Any) -> Limits:
     if raw is None:
         return Limits()
     if not isinstance(raw, dict):
-        raise ProfileValidationError(
-            f"'limits' must be a mapping, got {type(raw).__name__}"
-        )
+        raise ProfileValidationError(f"'limits' must be a mapping, got {type(raw).__name__}")
     max_iter = raw.get("max_iterations")
     max_cost = raw.get("max_cost_usd")
     if max_iter is not None:
@@ -106,14 +103,14 @@ def _parse_limits(raw: Any) -> Limits:
         except (TypeError, ValueError):
             raise ProfileValidationError(
                 f"'limits.max_iterations' must be an integer, got {max_iter!r}"
-            )
+            ) from None
     if max_cost is not None:
         try:
             max_cost = float(max_cost)
         except (TypeError, ValueError):
             raise ProfileValidationError(
                 f"'limits.max_cost_usd' must be a number, got {max_cost!r}"
-            )
+            ) from None
         logger.warning(
             "limits.max_cost_usd is reserved — will log warnings but not enforce a hard budget stop"
         )
@@ -158,9 +155,7 @@ def load_profile(path: str | Path) -> AgentProfile:
     if mode is not None:
         mode = str(mode).lower()
         if mode not in _VALID_MODES:
-            raise ProfileValidationError(
-                f"'mode' must be one of {_VALID_MODES}, got {mode!r}"
-            )
+            raise ProfileValidationError(f"'mode' must be one of {_VALID_MODES}, got {mode!r}")
 
     # Validate reasoning_effort early (before it hits set_reasoning_effort)
     reasoning_effort = raw.get("reasoning_effort")
@@ -171,7 +166,7 @@ def load_profile(path: str | Path) -> AgentProfile:
             allowed = ", ".join(REASONING_EFFORT_CHOICES)
             raise ProfileValidationError(
                 f"'reasoning_effort' must be one of [{allowed}], got {reasoning_effort!r}"
-            )
+            ) from None
 
     return AgentProfile(
         name=raw.get("name"),
@@ -190,14 +185,32 @@ def _merge_profiles(base: AgentProfile, override: AgentProfile) -> AgentProfile:
     return AgentProfile(
         name=override.name if override.name is not None else base.name,
         model=override.model if override.model is not None else base.model,
-        system_prompt=override.system_prompt if override.system_prompt is not None else base.system_prompt,
-        tools=override.tools if (override.tools.allow is not None or override.tools.deny is not None) else base.tools,
+        system_prompt=(
+            override.system_prompt if override.system_prompt is not None else base.system_prompt
+        ),
+        tools=(
+            override.tools
+            if (override.tools.allow is not None or override.tools.deny is not None)
+            else base.tools
+        ),
         mode=override.mode if override.mode is not None else base.mode,
         limits=Limits(
-            max_iterations=override.limits.max_iterations if override.limits.max_iterations is not None else base.limits.max_iterations,
-            max_cost_usd=override.limits.max_cost_usd if override.limits.max_cost_usd is not None else base.limits.max_cost_usd,
+            max_iterations=(
+                override.limits.max_iterations
+                if override.limits.max_iterations is not None
+                else base.limits.max_iterations
+            ),
+            max_cost_usd=(
+                override.limits.max_cost_usd
+                if override.limits.max_cost_usd is not None
+                else base.limits.max_cost_usd
+            ),
         ),
-        reasoning_effort=override.reasoning_effort if override.reasoning_effort is not None else base.reasoning_effort,
+        reasoning_effort=(
+            override.reasoning_effort
+            if override.reasoning_effort is not None
+            else base.reasoning_effort
+        ),
         _source=override._source or base._source,
     )
 

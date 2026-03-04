@@ -8,6 +8,12 @@ import warnings
 from rich.console import Console
 
 from agent.agent import LoopAgent
+from agent.profile import (
+    AgentProfile,
+    ProfileValidationError,
+    filter_tools,
+    load_merged_profile,
+)
 from agent.skills import SkillsRegistry, render_skills_section
 from config import Config
 from interactive import run_interactive_mode, run_model_setup_mode
@@ -29,12 +35,6 @@ from tools.shell import ShellTool
 from tools.smart_edit import SmartEditTool
 from tools.web_fetch import WebFetchTool
 from tools.web_search import WebSearchTool
-from agent.profile import (
-    AgentProfile,
-    ProfileValidationError,
-    filter_tools,
-    load_merged_profile,
-)
 from utils import setup_logger, terminal_ui
 from utils.runtime import ensure_runtime_dirs
 from utils.tui.oauth_ui import pick_oauth_provider

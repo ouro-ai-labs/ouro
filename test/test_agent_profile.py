@@ -1,9 +1,6 @@
 """Tests for agent/profile.py — agent profile loading, validation, and tool filtering."""
 
-import os
-import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 import yaml
@@ -20,10 +17,10 @@ from agent.profile import (
     validate_tool_names,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 class FakeTool:
     """Minimal stand-in for BaseTool."""
@@ -44,6 +41,7 @@ def _write_yaml(tmp: Path, data: dict | None) -> Path:
 # load_profile — basic parsing
 # ---------------------------------------------------------------------------
 
+
 class TestLoadProfile:
     def test_minimal(self, tmp_path):
         path = _write_yaml(tmp_path, {"name": "test"})
@@ -55,15 +53,18 @@ class TestLoadProfile:
         assert p.tools.deny is None
 
     def test_full(self, tmp_path):
-        path = _write_yaml(tmp_path, {
-            "name": "reviewer",
-            "model": "openai/gpt-4o",
-            "system_prompt": "You are a code reviewer.",
-            "tools": {"allow": ["read_file", "grep_content"]},
-            "mode": "readonly",
-            "limits": {"max_iterations": 50, "max_cost_usd": 1.0},
-            "reasoning_effort": "medium",
-        })
+        path = _write_yaml(
+            tmp_path,
+            {
+                "name": "reviewer",
+                "model": "openai/gpt-4o",
+                "system_prompt": "You are a code reviewer.",
+                "tools": {"allow": ["read_file", "grep_content"]},
+                "mode": "readonly",
+                "limits": {"max_iterations": 50, "max_cost_usd": 1.0},
+                "reasoning_effort": "medium",
+            },
+        )
         p = load_profile(path)
         assert p.name == "reviewer"
         assert p.model == "openai/gpt-4o"
@@ -92,11 +93,15 @@ class TestLoadProfile:
 # Validation errors
 # ---------------------------------------------------------------------------
 
+
 class TestValidation:
     def test_allow_and_deny_mutually_exclusive(self, tmp_path):
-        path = _write_yaml(tmp_path, {
-            "tools": {"allow": ["read_file"], "deny": ["shell"]},
-        })
+        path = _write_yaml(
+            tmp_path,
+            {
+                "tools": {"allow": ["read_file"], "deny": ["shell"]},
+            },
+        )
         with pytest.raises(ProfileValidationError, match="mutually exclusive"):
             load_profile(path)
 
@@ -141,6 +146,7 @@ class TestValidation:
 # Merge
 # ---------------------------------------------------------------------------
 
+
 class TestMerge:
     def test_override_wins(self):
         base = AgentProfile(name="base", model="m1", reasoning_effort="low")
@@ -170,6 +176,7 @@ class TestMerge:
 # Tool name validation
 # ---------------------------------------------------------------------------
 
+
 class TestToolNameValidation:
     def test_allow_unknown_is_fatal(self):
         policy = ToolPolicy(allow=["read_file", "nonexistent_tool"])
@@ -185,6 +192,7 @@ class TestToolNameValidation:
 # ---------------------------------------------------------------------------
 # filter_tools
 # ---------------------------------------------------------------------------
+
 
 class TestFilterTools:
     def _make_tools(self):
@@ -241,6 +249,7 @@ class TestFilterTools:
 # ---------------------------------------------------------------------------
 # load_merged_profile
 # ---------------------------------------------------------------------------
+
 
 class TestLoadMergedProfile:
     def test_no_files_returns_none(self, tmp_path, monkeypatch):
