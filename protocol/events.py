@@ -40,6 +40,7 @@ ERROR_CODES = {
 }
 
 RUN_END_STATUS = {"success", "failed", "cancelled"}
+RUN_MODES = {"cli", "bot", "interactive"}
 
 
 class ProtocolValidationError(ValueError):
@@ -97,6 +98,13 @@ def _validate_run_start(payload: dict[str, Any]) -> None:
     _require_type(payload, "cwd", str)
     _require_type(payload, "version", str)
 
+    mode = payload.get("mode")
+    if mode is not None:
+        if not isinstance(mode, str):
+            raise _err("field 'mode' must be string when present")
+        if mode not in RUN_MODES:
+            raise _err(f"field 'mode' must be one of {sorted(RUN_MODES)}")
+
 
 def _validate_step_start(payload: dict[str, Any]) -> None:
     _require_positive_int(payload, "step")
@@ -136,9 +144,8 @@ def _validate_assistant_message(payload: dict[str, Any]) -> None:
 
 def _validate_error(payload: dict[str, Any]) -> None:
     step = payload.get("step")
-    if step is not None:
-        if not isinstance(step, int) or step < 1:
-            raise _err("field 'step' must be >= 1 int or null")
+    if step is not None and (not isinstance(step, int) or step < 1):
+        raise _err("field 'step' must be >= 1 int or null")
 
     code = _require_type(payload, "code", str)
     if code not in ERROR_CODES:

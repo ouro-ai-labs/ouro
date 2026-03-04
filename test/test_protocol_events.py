@@ -11,8 +11,8 @@ from protocol.events import (
     EVENT_STEP_START,
     EVENT_TOOL_CALL,
     EVENT_TOOL_RESULT,
-    ProtocolValidationError,
     SCHEMA_VERSION,
+    ProtocolValidationError,
     validate_event,
     validate_event_stream,
 )
@@ -37,9 +37,28 @@ def test_validate_run_start_event() -> None:
             "tools": ["read_file", "grep_content"],
             "cwd": "/tmp/project",
             "version": "0.4.0",
+            "mode": "cli",
         }
     )
     validate_event(payload)
+
+
+def test_run_start_rejects_invalid_mode() -> None:
+    payload = _base(EVENT_RUN_START)
+    payload.update(
+        {
+            "task": "list files",
+            "model": "openai/gpt-4o",
+            "profile": "reviewer",
+            "tools": ["read_file"],
+            "cwd": "/tmp/project",
+            "version": "0.4.0",
+            "mode": "daemon",
+        }
+    )
+
+    with pytest.raises(ProtocolValidationError, match="field 'mode'"):
+        validate_event(payload)
 
 
 def test_invalid_common_field_rejected() -> None:
