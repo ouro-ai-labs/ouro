@@ -71,10 +71,6 @@ def create_agent(
         ShellTool(),
     ]
 
-    # Apply profile tool filtering (allow/deny + readonly mode)
-    if profile is not None:
-        tools = filter_tools(tools, profile)
-
     # Initialize model manager
     model_manager = ModelManager()
 
@@ -94,7 +90,15 @@ def create_agent(
         model_profile = model_manager.get_model(effective_model_id)
         if model_profile:
             model_manager.switch_model(effective_model_id)
+        elif profile is not None and profile.model is not None and model_id is None:
+            # Profile-specified model must exist — fail fast to avoid silent fallback
+            available = ", ".join(model_manager.get_model_ids())
+            raise ValueError(
+                f"Agent profile specifies model '{effective_model_id}' which was not found. "
+                f"Available: {available or '(none)'}"
+            )
         else:
+            # CLI --model fallback: warn and use default (existing behavior)
             available = ", ".join(model_manager.get_model_ids())
             terminal_ui.print_error(f"Model '{effective_model_id}' not found, using default")
             if available:
@@ -140,6 +144,14 @@ def create_agent(
 
     # Add tools that require agent reference
     agent.tool_executor.add_tool(MultiTaskTool(agent))
+
+    # Apply profile tool policy to the FINAL tool set (after all dynamic additions).
+    # BaseAgent.__init__ adds manage_todo_list, and we just added multi_task above.
+    # Both must be subject to allow/deny/readonly filtering.
+    if profile is not None:
+        final_tools = list(agent.tool_executor.tools.values())
+        filtered = filter_tools(final_tools, profile)
+        agent.tool_executor.tools = {t.name: t for t in filtered}
 
     return agent
 
