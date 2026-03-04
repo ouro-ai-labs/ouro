@@ -100,17 +100,17 @@ def _parse_limits(raw: Any) -> Limits:
     if max_iter is not None:
         try:
             max_iter = int(max_iter)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError) as exc:
             raise ProfileValidationError(
                 f"'limits.max_iterations' must be an integer, got {max_iter!r}"
-            ) from None
+            ) from exc
     if max_cost is not None:
         try:
             max_cost = float(max_cost)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError) as exc:
             raise ProfileValidationError(
                 f"'limits.max_cost_usd' must be a number, got {max_cost!r}"
-            ) from None
+            ) from exc
         logger.warning(
             "limits.max_cost_usd is reserved — will log warnings but not enforce a hard budget stop"
         )
@@ -162,11 +162,11 @@ def load_profile(path: str | Path) -> AgentProfile:
     if reasoning_effort is not None:
         try:
             normalize_reasoning_effort(str(reasoning_effort))
-        except ValueError:
+        except ValueError as exc:
             allowed = ", ".join(REASONING_EFFORT_CHOICES)
             raise ProfileValidationError(
                 f"'reasoning_effort' must be one of [{allowed}], got {reasoning_effort!r}"
-            ) from None
+            ) from exc
 
     return AgentProfile(
         name=raw.get("name"),

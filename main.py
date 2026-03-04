@@ -140,7 +140,7 @@ def create_agent(
         agent.set_reasoning_effort(profile.reasoning_effort)
 
     # Store profile on agent so downstream code (e.g. system prompt injection) can access it
-    agent._agent_profile = profile
+    agent._agent_profile = profile  # type: ignore[attr-defined]
 
     # Add tools that require agent reference
     agent.tool_executor.add_tool(MultiTaskTool(agent))
