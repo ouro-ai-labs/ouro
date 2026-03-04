@@ -17,6 +17,8 @@ from .context import format_context_prompt
 if TYPE_CHECKING:
     from bot.channel.base import ImageData
 
+    from .profile import AgentProfile
+
 logger = logging.getLogger(__name__)
 
 
@@ -27,6 +29,7 @@ class LoopAgent(BaseAgent):
     _skills_section: str | None = None
     _heartbeat_section: str | None = None
     _soul_section: str | None = None
+    _agent_profile: AgentProfile | None = None
 
     def set_skills_section(self, skills_section: str | None) -> None:
         """Set the skills section to inject into system prompt.
@@ -129,6 +132,19 @@ AGENTS.md is optional. If not found, proceed normally.
                         system_content = system_content + "\n" + ltm_section
                 except Exception:
                     logger.warning("Failed to load long-term memory", exc_info=True)
+
+            # Inject agent profile system prompt (from --agent / agent.yaml)
+            if (
+                hasattr(self, "_agent_profile")
+                and self._agent_profile
+                and self._agent_profile.system_prompt
+            ):
+                system_content = (
+                    system_content
+                    + "\n\n<agent_profile>\n"
+                    + self._agent_profile.system_prompt
+                    + "\n</agent_profile>"
+                )
 
             # Inject skills section if available
             if self._skills_section:
