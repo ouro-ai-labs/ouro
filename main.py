@@ -425,7 +425,11 @@ def main():
             return
 
         # Retry after setup.
-        agent = create_agent(model_id=args.model, profile=agent_profile)
+        try:
+            agent = create_agent(model_id=args.model, profile=agent_profile)
+        except ProfileValidationError as e:
+            terminal_ui.print_error(str(e), title="Agent Profile Error")
+            return
 
     async def _run() -> None:
         # Apply run-scoped reasoning control (affects primary task calls only).
