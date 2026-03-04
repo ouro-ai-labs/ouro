@@ -6,6 +6,7 @@ import pytest
 
 from protocol.events import (
     EVENT_ASSISTANT_MESSAGE,
+    EVENT_INPUT_EVENT,
     EVENT_RUN_END,
     EVENT_RUN_START,
     EVENT_STEP_START,
@@ -15,6 +16,7 @@ from protocol.events import (
     ProtocolValidationError,
     validate_event,
     validate_event_stream,
+    validate_input_event,
 )
 
 
@@ -67,6 +69,60 @@ def test_invalid_common_field_rejected() -> None:
     payload["step"] = 1
 
     with pytest.raises(ProtocolValidationError, match="unsupported schema_version"):
+        validate_event(payload)
+
+
+def test_validate_reserved_input_event() -> None:
+    payload = _base(EVENT_INPUT_EVENT)
+    payload.update(
+        {
+            "input_id": "in-1",
+            "input_type": "message.append",
+            "payload": {"text": "continue"},
+            "source": "orchestrator",
+            "target_step": 2,
+        }
+    )
+    validate_input_event(payload)
+
+
+def test_input_event_rejects_invalid_target_step() -> None:
+    payload = _base(EVENT_INPUT_EVENT)
+    payload.update(
+        {
+            "input_id": "in-1",
+            "input_type": "message.append",
+            "payload": {"text": "continue"},
+            "target_step": 0,
+        }
+    )
+    with pytest.raises(ProtocolValidationError, match="target_step"):
+        validate_input_event(payload)
+
+
+def test_input_event_rejects_empty_input_id() -> None:
+    payload = _base(EVENT_INPUT_EVENT)
+    payload.update(
+        {
+            "input_id": "",
+            "input_type": "message.append",
+            "payload": {"text": "continue"},
+        }
+    )
+    with pytest.raises(ProtocolValidationError, match="input_id"):
+        validate_input_event(payload)
+
+
+def test_output_event_validator_rejects_reserved_input_event() -> None:
+    payload = _base(EVENT_INPUT_EVENT)
+    payload.update(
+        {
+            "input_id": "in-1",
+            "input_type": "message.append",
+            "payload": {"text": "continue"},
+        }
+    )
+    with pytest.raises(ProtocolValidationError, match="field 'event' must be one of"):
         validate_event(payload)
 
 

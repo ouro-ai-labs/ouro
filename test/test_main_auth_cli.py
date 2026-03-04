@@ -69,6 +69,20 @@ def test_main_login_cancelled(monkeypatch):
     assert calls["success"] == []
 
 
+def test_main_warns_reserved_input_events_flag(monkeypatch):
+    calls, _ = _setup_common(monkeypatch, ["--input-events", "/tmp/in.ndjson", "--login"])
+
+    async def fake_pick(mode: str):
+        assert mode == "login"
+        return None
+
+    monkeypatch.setattr(ouro_main, "_pick_auth_provider_cli", fake_pick)
+
+    ouro_main.main()
+
+    assert any("--input-events is reserved" in msg for msg in calls["warning"])
+
+
 def test_main_login_success(monkeypatch):
     calls, console = _setup_common(monkeypatch, ["--login"])
     state = {"called": 0}

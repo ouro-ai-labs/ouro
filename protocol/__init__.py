@@ -4,6 +4,7 @@ from .events import (
     ERROR_CODES,
     EVENT_ASSISTANT_MESSAGE,
     EVENT_ERROR,
+    EVENT_INPUT_EVENT,
     EVENT_RUN_END,
     EVENT_RUN_START,
     EVENT_STEP_START,
@@ -16,12 +17,14 @@ from .events import (
     ProtocolValidationError,
     validate_event,
     validate_event_stream,
+    validate_input_event,
 )
 
 __all__ = [
     "ERROR_CODES",
     "EVENT_ASSISTANT_MESSAGE",
     "EVENT_ERROR",
+    "EVENT_INPUT_EVENT",
     "EVENT_RUN_END",
     "EVENT_RUN_START",
     "EVENT_STEP_START",
@@ -33,5 +36,6 @@ __all__ = [
     "RUN_END_STATUS",
     "SCHEMA_VERSION",
     "validate_event",
+    "validate_input_event",
     "validate_event_stream",
 ]
