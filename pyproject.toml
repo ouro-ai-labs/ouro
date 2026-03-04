@@ -77,7 +77,7 @@ ouro = "cli:main"
 
 [tool.setuptools]
 # Use current flat structure
-packages = ["agent", "agent.prompts", "agent.skills", "bot", "bot.channel", "llm", "memory", "memory.long_term", "memory.store", "ouro_harbor", "tools", "utils", "utils.tui"]
+packages = ["agent", "agent.prompts", "agent.skills", "bot", "bot.channel", "llm", "memory", "memory.long_term", "memory.store", "ouro_harbor", "protocol", "tools", "utils", "utils.tui"]
 py-modules = ["main", "interactive", "config", "cli"]
 
 [tool.setuptools.package-data]
