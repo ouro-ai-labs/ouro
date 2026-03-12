@@ -73,10 +73,7 @@ ouro --resume a1b2c3d4
 | `--logout` | - | Open OAuth provider selector and logout |
 | `--verify` | | Enable self-verification (Ralph Loop) in `--task` mode |
 | `--reasoning-effort LEVEL` | - | Set run-scoped reasoning effort (`default|none|minimal|low|medium|high|xhigh|off`) |
-| `--input-events PATH` | - | Reserved `input_event` NDJSON channel path (currently no-op) |
 | `--verbose` | `-v` | Enable verbose logging to `~/.ouro/logs/` |
-
-`--input-events` reserves CLI surface for future orchestrator-driven inbound protocol events. In current releases it is intentionally ignored to preserve existing single-run behavior.
 
 ## Interactive Commands
 

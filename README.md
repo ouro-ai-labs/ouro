@@ -91,7 +91,6 @@ Extra flags are forwarded to `harbor run`, so any Harbor CLI option works. See [
 
 - **[CLI Guide](docs/cli-guide.md)** -- interactive mode, task mode, commands, shortcuts
 - **[Bot Guide](docs/bot-guide.md)** -- IM bot setup, commands, proactive mechanisms, personality
-- [JSONL Protocol](docs/protocol-jsonl.md) -- event schema contracts and reserved input channel
 - [Configuration](docs/configuration.md) -- model setup, runtime settings, custom endpoints
 - [Examples](docs/examples.md) -- usage patterns and programmatic API
 - [Memory Management](docs/memory-management.md) -- compression, persistence, token tracking

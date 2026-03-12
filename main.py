@@ -47,7 +47,6 @@ def create_agent(
     sessions_dir: str | None = None,
     memory_dir: str | None = None,
     profile: AgentProfile | None = None,
-    input_events_path: str | None = None,
 ):
     """Factory function to create agents with tools.
 
@@ -56,8 +55,6 @@ def create_agent(
         sessions_dir: Optional custom sessions directory (for bot mode isolation)
         memory_dir: Optional custom long-term memory directory (for bot mode isolation)
         profile: Optional agent profile for tool filtering and behaviour overrides
-        input_events_path: Reserved input-event NDJSON path for future
-            bidirectional protocol integration (currently no-op).
 
     Returns:
         Configured LoopAgent instance with all tools
@@ -144,8 +141,6 @@ def create_agent(
 
     # Store profile on agent so downstream code (e.g. system prompt injection) can access it
     agent._agent_profile = profile
-    # Reserve inbound input-event channel metadata for future protocol work.
-    agent.reserved_input_events_path = input_events_path
 
     # Add tools that require agent reference
     agent.tool_executor.add_tool(MultiTaskTool(agent))
@@ -282,13 +277,6 @@ def main():
         default=None,
         help="Path to an agent profile YAML file (overrides ~/.ouro/agent.yaml and .agent-profile.yaml)",
     )
-    parser.add_argument(
-        "--input-events",
-        type=str,
-        default=None,
-        metavar="PATH",
-        help="Reserved input_event NDJSON channel path for future orchestrator integration (currently no-op)",
-    )
 
     args = parser.parse_args()
 
@@ -298,11 +286,6 @@ def main():
     # Initialize logging only in verbose mode
     if args.verbose:
         setup_logger()
-
-    if args.input_events:
-        terminal_ui.print_warning(
-            "--input-events is reserved for future input_event ingestion and is currently ignored."
-        )
 
     # Bot mode: start webhook server (before login/logout/task checks)
     if args.bot:
@@ -423,11 +406,7 @@ def main():
     # Create agent with optional model selection. If we're going into interactive mode and
     # models aren't configured yet, enter a setup session first.
     try:
-        agent = create_agent(
-            model_id=args.model,
-            profile=agent_profile,
-            input_events_path=args.input_events,
-        )
+        agent = create_agent(model_id=args.model, profile=agent_profile)
     except ProfileValidationError as e:
         terminal_ui.print_error(str(e), title="Agent Profile Error")
         return
@@ -447,11 +426,7 @@ def main():
 
         # Retry after setup.
         try:
-            agent = create_agent(
-                model_id=args.model,
-                profile=agent_profile,
-                input_events_path=args.input_events,
-            )
+            agent = create_agent(model_id=args.model, profile=agent_profile)
         except ProfileValidationError as e:
             terminal_ui.print_error(str(e), title="Agent Profile Error")
             return

@@ -18,7 +18,6 @@ EVENT_TOOL_RESULT = "tool_result"
 EVENT_ASSISTANT_MESSAGE = "assistant_message"
 EVENT_ERROR = "error"
 EVENT_RUN_END = "run_end"
-EVENT_INPUT_EVENT = "input_event"
 
 EVENT_TYPES = {
     EVENT_RUN_START,
@@ -179,27 +178,12 @@ def _validate_run_end(payload: dict[str, Any]) -> None:
         raise _err("field 'final_answer' must be string when present")
 
 
-def _validate_input_event_fields(payload: dict[str, Any]) -> None:
-    input_id = _require_type(payload, "input_id", str)
-    if not input_id:
-        raise _err("field 'input_id' must be non-empty string")
+def validate_event(payload: dict[str, Any]) -> None:
+    """Validate a single JSONL protocol event payload.
 
-    input_type = _require_type(payload, "input_type", str)
-    if not input_type:
-        raise _err("field 'input_type' must be non-empty string")
-
-    _require_type(payload, "payload", dict)
-
-    source = payload.get("source")
-    if source is not None and not isinstance(source, str):
-        raise _err("field 'source' must be string when present")
-
-    target_step = payload.get("target_step")
-    if target_step is not None and (not isinstance(target_step, int) or target_step < 1):
-        raise _err("field 'target_step' must be >= 1 int when present")
-
-
-def _validate_common_envelope(payload: dict[str, Any]) -> str:
+    Raises:
+        ProtocolValidationError: if payload violates schema.
+    """
     if not isinstance(payload, dict):
         raise _err("event must be an object")
 
@@ -210,21 +194,11 @@ def _validate_common_envelope(payload: dict[str, Any]) -> str:
     _require_type(payload, "run_id", str)
 
     event = _require_type(payload, "event", str)
+    if event not in EVENT_TYPES:
+        raise _err(f"field 'event' must be one of {sorted(EVENT_TYPES)}")
 
     ts = _require_type(payload, "ts", str)
     _require_iso8601_utc(ts)
-    return event
-
-
-def validate_event(payload: dict[str, Any]) -> None:
-    """Validate a single JSONL protocol event payload.
-
-    Raises:
-        ProtocolValidationError: if payload violates schema.
-    """
-    event = _validate_common_envelope(payload)
-    if event not in EVENT_TYPES:
-        raise _err(f"field 'event' must be one of {sorted(EVENT_TYPES)}")
 
     if event == EVENT_RUN_START:
         _validate_run_start(payload)
@@ -240,19 +214,6 @@ def validate_event(payload: dict[str, Any]) -> None:
         _validate_error(payload)
     elif event == EVENT_RUN_END:
         _validate_run_end(payload)
-
-
-def validate_input_event(payload: dict[str, Any]) -> None:
-    """Validate a reserved inbound ``input_event`` payload.
-
-    This schema is intentionally reserved for future bidirectional protocol work.
-    Current runtime behavior does not execute injected events.
-    """
-    event = _validate_common_envelope(payload)
-    if event != EVENT_INPUT_EVENT:
-        raise _err(f"field 'event' must be {EVENT_INPUT_EVENT!r}")
-
-    _validate_input_event_fields(payload)
 
 
 def validate_event_stream(events: list[dict[str, Any]]) -> None:
