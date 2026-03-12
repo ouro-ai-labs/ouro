@@ -8,12 +8,6 @@ import warnings
 from rich.console import Console
 
 from agent.agent import LoopAgent
-from agent.profile import (
-    AgentProfile,
-    ProfileValidationError,
-    filter_tools,
-    load_merged_profile,
-)
 from agent.skills import SkillsRegistry, render_skills_section
 from config import Config
 from interactive import run_interactive_mode, run_model_setup_mode
@@ -46,7 +40,6 @@ def create_agent(
     model_id: str | None = None,
     sessions_dir: str | None = None,
     memory_dir: str | None = None,
-    profile: AgentProfile | None = None,
 ):
     """Factory function to create agents with tools.
 
@@ -54,7 +47,6 @@ def create_agent(
         model_id: Optional LiteLLM model ID to use (defaults to current/default)
         sessions_dir: Optional custom sessions directory (for bot mode isolation)
         memory_dir: Optional custom long-term memory directory (for bot mode isolation)
-        profile: Optional agent profile for tool filtering and behaviour overrides
 
     Returns:
         Configured LoopAgent instance with all tools
@@ -80,27 +72,14 @@ def create_agent(
             "or edit `.ouro/models.yaml` to add at least one model and set `default`."
         )
 
-    # Resolve model: CLI flag > profile > default
-    effective_model_id = model_id
-    if effective_model_id is None and profile is not None and profile.model is not None:
-        effective_model_id = profile.model
-
     # Get the model to use
-    if effective_model_id:
-        model_profile = model_manager.get_model(effective_model_id)
-        if model_profile:
-            model_manager.switch_model(effective_model_id)
-        elif profile is not None and profile.model is not None and model_id is None:
-            # Profile-specified model must exist — fail fast to avoid silent fallback
-            available = ", ".join(model_manager.get_model_ids())
-            raise ValueError(
-                f"Agent profile specifies model '{effective_model_id}' which was not found. "
-                f"Available: {available or '(none)'}"
-            )
+    if model_id:
+        profile = model_manager.get_model(model_id)
+        if profile:
+            model_manager.switch_model(model_id)
         else:
-            # CLI --model fallback: warn and use default (existing behavior)
             available = ", ".join(model_manager.get_model_ids())
-            terminal_ui.print_error(f"Model '{effective_model_id}' not found, using default")
+            terminal_ui.print_error(f"Model '{model_id}' not found, using default")
             if available:
                 terminal_ui.console.print(f"Available: {available}")
 
@@ -121,37 +100,17 @@ def create_agent(
         timeout=current_profile.timeout,
     )
 
-    # Resolve max_iterations: profile overrides Config default
-    max_iterations = Config.MAX_ITERATIONS
-    if profile is not None and profile.limits.max_iterations is not None:
-        max_iterations = profile.limits.max_iterations
-
     agent = LoopAgent(
         llm=llm,
         tools=tools,
-        max_iterations=max_iterations,
+        max_iterations=Config.MAX_ITERATIONS,
         model_manager=model_manager,
         sessions_dir=sessions_dir,
         memory_dir=memory_dir,
     )
 
-    # Apply profile's reasoning effort (CLI flag will override later in _run)
-    if profile is not None and profile.reasoning_effort is not None:
-        agent.set_reasoning_effort(profile.reasoning_effort)
-
-    # Store profile on agent so downstream code (e.g. system prompt injection) can access it
-    agent._agent_profile = profile
-
     # Add tools that require agent reference
     agent.tool_executor.add_tool(MultiTaskTool(agent))
-
-    # Apply profile tool policy to the FINAL tool set (after all dynamic additions).
-    # BaseAgent.__init__ adds manage_todo_list, and we just added multi_task above.
-    # Both must be subject to allow/deny/readonly filtering.
-    if profile is not None:
-        final_tools = list(agent.tool_executor.tools.values())
-        filtered = filter_tools(final_tools, profile)
-        agent.tool_executor.tools = {t.name: t for t in filtered}
 
     return agent
 
@@ -271,12 +230,6 @@ def main():
         default=False,
         help="Start as a bot server, receiving messages via IM channels (Lark, Slack, etc.)",
     )
-    parser.add_argument(
-        "--agent",
-        type=str,
-        default=None,
-        help="Path to an agent profile YAML file (overrides ~/.ouro/agent.yaml and .agent-profile.yaml)",
-    )
 
     args = parser.parse_args()
 
@@ -289,11 +242,6 @@ def main():
 
     # Bot mode: start webhook server (before login/logout/task checks)
     if args.bot:
-        if args.agent:
-            terminal_ui.print_error(
-                "--agent is not yet supported in --bot mode.", title="Invalid Arguments"
-            )
-            return
         terminal_ui.console = Console(quiet=True)
         # Bot is a long-running daemon — always enable file logging.
         ensure_runtime_dirs(create_logs=True)
@@ -388,28 +336,10 @@ def main():
             terminal_ui.print_error(str(e), title="Resume Error")
             return
 
-    # Load agent profile (merges global + project + CLI tiers)
-    agent_profile = None
-    try:
-        agent_profile = load_merged_profile(cli_agent_path=args.agent)
-        if agent_profile is not None:
-            terminal_ui.print_info(
-                f"Loaded agent profile: {agent_profile.name or agent_profile._source or 'unnamed'}"
-            )
-    except ProfileValidationError as e:
-        terminal_ui.print_error(str(e), title="Agent Profile Error")
-        return
-    except FileNotFoundError as e:
-        terminal_ui.print_error(str(e), title="Agent Profile Error")
-        return
-
     # Create agent with optional model selection. If we're going into interactive mode and
     # models aren't configured yet, enter a setup session first.
     try:
-        agent = create_agent(model_id=args.model, profile=agent_profile)
-    except ProfileValidationError as e:
-        terminal_ui.print_error(str(e), title="Agent Profile Error")
-        return
+        agent = create_agent(model_id=args.model)
     except ValueError as e:
         if args.task:
             terminal_ui.print_error(str(e), title="Model Configuration Error")
@@ -425,18 +355,11 @@ def main():
             return
 
         # Retry after setup.
-        try:
-            agent = create_agent(model_id=args.model, profile=agent_profile)
-        except ProfileValidationError as e:
-            terminal_ui.print_error(str(e), title="Agent Profile Error")
-            return
+        agent = create_agent(model_id=args.model)
 
     async def _run() -> None:
         # Apply run-scoped reasoning control (affects primary task calls only).
-        # Only override if the user explicitly passed --reasoning-effort (not "default").
-        # This ensures profile-defined reasoning_effort is preserved when CLI uses default.
-        if args.reasoning_effort != "default":
-            agent.set_reasoning_effort(args.reasoning_effort)
+        agent.set_reasoning_effort(args.reasoning_effort)
 
         # Load resumed session if requested
         if resume_session_id:
