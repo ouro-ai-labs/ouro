@@ -257,6 +257,7 @@ def test_build_channels_lark():
         mock_config.LARK_APP_SECRET = "test_secret"
         mock_config.SLACK_BOT_TOKEN = ""
         mock_config.SLACK_APP_TOKEN = ""
+        mock_config.WECHAT_ENABLED = False
 
         from bot.server import _build_channels
 
@@ -271,6 +272,7 @@ def test_build_channels_empty():
         mock_config.LARK_APP_SECRET = ""
         mock_config.SLACK_BOT_TOKEN = ""
         mock_config.SLACK_APP_TOKEN = ""
+        mock_config.WECHAT_ENABLED = False
 
         from bot.server import _build_channels
 

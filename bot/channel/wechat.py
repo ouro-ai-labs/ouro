@@ -22,7 +22,6 @@ from bot.channel.base import IncomingMessage, OutgoingMessage
 if TYPE_CHECKING:
     from bot.channel.base import MessageCallback
 
-from config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -134,9 +133,7 @@ class WeChatChannel:
         logger.debug("WeChat send_file not supported via weixin-bot-sdk")
         return False
 
-    async def add_reaction(
-        self, conversation_id: str, message_id: str, emoji: str
-    ) -> str | None:
+    async def add_reaction(self, conversation_id: str, message_id: str, emoji: str) -> str | None:
         """WeChat does not support message reactions — no-op."""
         return None
 
@@ -223,10 +220,12 @@ class WeChatChannel:
         )
 
         # Bridge into the main asyncio event loop.
-        asyncio.run_coroutine_threadsafe(
-            self._callback(incoming),
-            self._main_loop,
-        )
+        coro = self._callback(incoming)
+        # MessageCallback returns Awaitable[None]; ensure we have a coroutine
+        # for run_coroutine_threadsafe.
+        if not asyncio.iscoroutine(coro):
+            return
+        asyncio.run_coroutine_threadsafe(coro, self._main_loop)
 
     def _is_duplicate(self, msg_id: str) -> bool:
         """Check and record a message ID for deduplication."""
