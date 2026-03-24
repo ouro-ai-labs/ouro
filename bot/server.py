@@ -707,6 +707,21 @@ def _build_channels() -> list[Channel]:
     else:
         logger.info("Slack channel disabled (SLACK_BOT_TOKEN / SLACK_APP_TOKEN not set)")
 
+    # WeChat channel
+    if Config.WECHAT_ENABLED:
+        try:
+            from bot.channel.wechat import WeChatChannel
+
+            channels.append(WeChatChannel())
+            logger.info("WeChat channel enabled")
+        except ImportError:
+            logger.warning(
+                "WeChat enabled but weixin-bot-sdk not installed. "
+                "Install with: pip install weixin-bot-sdk"
+            )
+    else:
+        logger.info("WeChat channel disabled (WECHAT_ENABLED not set)")
+
     return channels
 
 
@@ -745,8 +760,9 @@ async def run_bot(model_id: str | None = None) -> None:
     channels = _build_channels()
     if not channels:
         print(
-            "No IM channels configured. Add LARK_APP_ID/LARK_APP_SECRET "
-            "or SLACK_BOT_TOKEN/SLACK_APP_TOKEN to ~/.ouro/config.",
+            "No IM channels configured. Add LARK_APP_ID/LARK_APP_SECRET, "
+            "SLACK_BOT_TOKEN/SLACK_APP_TOKEN, or WECHAT_ENABLED=true "
+            "to ~/.ouro/config.",
             file=sys.stderr,
         )
         return
