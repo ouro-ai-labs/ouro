@@ -133,6 +133,9 @@ class Config:
     SLACK_BOT_TOKEN = _cfg.get("SLACK_BOT_TOKEN", "")
     SLACK_APP_TOKEN = _cfg.get("SLACK_APP_TOKEN", "")
 
+    # WeChat Channel
+    WECHAT_ENABLED = _cfg.get("WECHAT_ENABLED", "false").lower() == "true"
+
     # Proactive: Heartbeat & Active Hours
     BOT_HEARTBEAT_INTERVAL = int(
         _cfg.get("BOT_HEARTBEAT_INTERVAL", "3600")
