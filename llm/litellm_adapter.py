@@ -51,6 +51,10 @@ class LiteLLMAdapter:
             from .chatgpt_auth import configure_chatgpt_auth_env
 
             configure_chatgpt_auth_env()
+        elif self.provider == "github_copilot":
+            from .copilot_auth import configure_copilot_auth_env
+
+            configure_copilot_auth_env()
 
         logger.info(f"Initialized LiteLLM adapter for provider: {self.provider}, model: {model}")
 
@@ -100,19 +104,38 @@ class LiteLLMAdapter:
 
         await ensure_chatgpt_access_token(interactive=False)
 
+    @with_retry()
+    async def _ensure_copilot_access_token_with_retry(self) -> None:
+        from .copilot_auth import ensure_copilot_access_token
+
+        await ensure_copilot_access_token(interactive=False)
+
     async def _ensure_provider_ready(self) -> None:
-        if self.provider != "chatgpt":
+        if self.provider == "chatgpt":
+            from .chatgpt_auth import ChatGPTLoginRequiredError, configure_chatgpt_auth_env
+
+            configure_chatgpt_auth_env()
+            try:
+                await self._ensure_chatgpt_access_token_with_retry()
+            except ChatGPTLoginRequiredError as e:
+                raise RuntimeError(
+                    "ChatGPT is not logged in (or your session expired). "
+                    "Run `/login` to authenticate."
+                ) from e
             return
 
-        from .chatgpt_auth import ChatGPTLoginRequiredError, configure_chatgpt_auth_env
+        if self.provider == "github_copilot":
+            from .copilot_auth import CopilotLoginRequiredError, configure_copilot_auth_env
 
-        configure_chatgpt_auth_env()
-        try:
-            await self._ensure_chatgpt_access_token_with_retry()
-        except ChatGPTLoginRequiredError as e:
-            raise RuntimeError(
-                "ChatGPT is not logged in (or your session expired). Run `/login` to authenticate."
-            ) from e
+            configure_copilot_auth_env()
+            try:
+                await self._ensure_copilot_access_token_with_retry()
+            except CopilotLoginRequiredError as e:
+                raise RuntimeError(
+                    "GitHub Copilot is not logged in. "
+                    "Run `/login` and choose `copilot` to authenticate."
+                ) from e
+            return
 
     @with_retry()
     async def _make_api_call_async(self, **call_params):
