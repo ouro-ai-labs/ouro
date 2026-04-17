@@ -53,9 +53,7 @@ def test_configure_copilot_auth_env_uses_runtime_dir(tmp_path, monkeypatch):
     monkeypatch.delenv("GITHUB_COPILOT_TOKEN_DIR", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
     # get_runtime_dir reads HOME at call time via os.path.expanduser
-    monkeypatch.setattr(
-        "llm.copilot_auth.get_runtime_dir", lambda: str(tmp_path / ".ouro")
-    )
+    monkeypatch.setattr("llm.copilot_auth.get_runtime_dir", lambda: str(tmp_path / ".ouro"))
 
     token_dir = configure_copilot_auth_env()
 
@@ -117,9 +115,7 @@ async def test_get_status_reports_expired(tmp_path, monkeypatch):
 async def test_logout_removes_token_files(tmp_path, monkeypatch):
     auth_dir = _seed_auth_dir(monkeypatch, tmp_path)
     (auth_dir / "access-token").write_text("gh_access_xyz", encoding="utf-8")
-    (auth_dir / "api-key.json").write_text(
-        json.dumps({"token": "ck_abc"}), encoding="utf-8"
-    )
+    (auth_dir / "api-key.json").write_text(json.dumps({"token": "ck_abc"}), encoding="utf-8")
 
     removed = await logout_copilot()
 
@@ -229,7 +225,9 @@ async def test_poll_honors_slow_down_and_returns_token(tmp_path, monkeypatch):
     transport = httpx.MockTransport(handler)
 
     async def fake_async_client(*args, **kwargs):  # noqa: ARG001
-        return httpx.AsyncClient(transport=transport, **{k: v for k, v in kwargs.items() if k != "transport"})
+        return httpx.AsyncClient(
+            transport=transport, **{k: v for k, v in kwargs.items() if k != "transport"}
+        )
 
     # Patch httpx.AsyncClient constructor used inside _poll_for_github_access_token.
     original = httpx.AsyncClient
@@ -241,9 +239,7 @@ async def test_poll_honors_slow_down_and_returns_token(tmp_path, monkeypatch):
 
     monkeypatch.setattr("llm.copilot_auth.httpx.AsyncClient", _PatchedClient)
 
-    token = await _poll_for_github_access_token(
-        device_code="dev_123", interval=1, max_attempts=5
-    )
+    token = await _poll_for_github_access_token(device_code="dev_123", interval=1, max_attempts=5)
 
     assert token == "gh_polled"
     # At least one authorization_pending + one slow_down wait.

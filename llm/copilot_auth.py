@@ -263,9 +263,7 @@ async def _fetch_copilot_api_key(access_token: str) -> dict[str, Any]:
     reuse it on subsequent calls without a round-trip.
     """
     timeout = httpx.Timeout(_get_http_timeout_seconds())
-    async with httpx.AsyncClient(
-        timeout=timeout, headers=_github_headers(access_token)
-    ) as client:
+    async with httpx.AsyncClient(timeout=timeout, headers=_github_headers(access_token)) as client:
         try:
             resp = await client.get(GITHUB_COPILOT_API_KEY_URL)
             resp.raise_for_status()
