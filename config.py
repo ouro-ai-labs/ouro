@@ -136,16 +136,13 @@ class Config:
     # WeChat Channel
     WECHAT_ENABLED = _cfg.get("WECHAT_ENABLED", "false").lower() == "true"
 
-    # Proactive: Heartbeat & Active Hours
-    BOT_HEARTBEAT_INTERVAL = int(
-        _cfg.get("BOT_HEARTBEAT_INTERVAL", "3600")
-    )  # seconds; 0 = disabled
+    # Proactive: Cron & Active Hours
     BOT_ACTIVE_HOURS_START = int(_cfg.get("BOT_ACTIVE_HOURS_START", "8"))  # 24h format
     BOT_ACTIVE_HOURS_END = int(_cfg.get("BOT_ACTIVE_HOURS_END", "22"))  # 24h format
     BOT_ACTIVE_HOURS_TZ = _cfg.get("BOT_ACTIVE_HOURS_TZ", "")  # empty = local timezone
     BOT_PROACTIVE_TIMEOUT = int(
         _cfg.get("BOT_PROACTIVE_TIMEOUT", "1200")
-    )  # seconds; timeout for isolated agent runs (heartbeat/cron)
+    )  # seconds; timeout for cron agent runs
 
     @classmethod
     def get_retry_delay(cls, attempt: int) -> float:

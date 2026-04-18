@@ -1,8 +1,22 @@
-"""Proactive mechanisms: heartbeat checks and cron-scheduled tasks.
+"""Proactive mechanisms: cron-scheduled tasks.
 
-Heartbeat checks run in the most recently active session (main-session
-mode). Cron jobs run in isolated one-shot sessions and broadcast results
-to all active IM sessions.
+Cron jobs can run in three session modes:
+
+- ``main``: run inside the most recently active IM session (reuses its agent
+  + conversation history). If no session is active, the tick is skipped.
+- ``isolated``: create a throwaway one-shot agent (no conversation history;
+  tools + soul + skills + LTM only).
+- ``current``: run inside a specific session bound at job-creation time
+  (``bound_channel`` + ``bound_conversation_id``). Used when a user says
+  "schedule this for me in *this* chat".
+
+Delivery is orthogonal to execution:
+
+- ``auto`` (default): for ``main``/``current`` deliver to the session that ran;
+  for ``isolated`` broadcast to all active sessions.
+- ``broadcast``: send to every active session.
+- ``announce:<channel>:<conversation_id>``: send to one specific target.
+- ``none``: suppress delivery.
 """
 
 from __future__ import annotations
@@ -31,76 +45,19 @@ logger = logging.getLogger(__name__)
 
 # Paths under ~/.ouro/bot/
 _BOT_DIR = os.path.join(os.path.expanduser("~"), ".ouro", "bot")
-_HEARTBEAT_FILE = os.path.join(_BOT_DIR, "heartbeat.md")
 _CRON_JOBS_FILE = os.path.join(_BOT_DIR, "cron_jobs.json")
 
-# Execution timeout for isolated agent runs (seconds).
-# Configured via BOT_PROACTIVE_TIMEOUT; defaults to 1200 (20 min).
+# Execution timeout for cron agent runs (seconds).
 _ISOLATED_TIMEOUT = Config.BOT_PROACTIVE_TIMEOUT
 
-_DEFAULT_HEARTBEAT = """\
-# Heartbeat
-
-# Keep this file empty (or with only headers) to skip heartbeat API calls.
-# Add tasks below when you want the agent to check something periodically.
-"""
-
-_HEARTBEAT_PROMPT = (
-    "Read HEARTBEAT.md (~/.ouro/bot/heartbeat.md). Follow it strictly. "
-    "Do not infer or repeat old tasks from prior chats. "
-    "If nothing needs attention, reply HEARTBEAT_OK."
-)
-
 
 # ---------------------------------------------------------------------------
-# Helpers
+# ProactiveExecutor — runs prompts per session mode + handles delivery
 # ---------------------------------------------------------------------------
 
 
-def load_heartbeat() -> str:
-    """Load heartbeat.md, creating a default if it doesn't exist."""
-    if not os.path.isfile(_HEARTBEAT_FILE):
-        os.makedirs(_BOT_DIR, exist_ok=True)
-        with open(_HEARTBEAT_FILE, "w", encoding="utf-8") as f:
-            f.write(_DEFAULT_HEARTBEAT)
-        logger.info("Created default heartbeat file: %s", _HEARTBEAT_FILE)
-    try:
-        with open(_HEARTBEAT_FILE, encoding="utf-8") as f:
-            return f.read().strip()
-    except OSError:
-        logger.warning("Could not read heartbeat file: %s", _HEARTBEAT_FILE, exc_info=True)
-        return ""
-
-
-def _has_meaningful_content(text: str) -> bool:
-    """Return True if *text* has actionable content.
-
-    Skips blank lines, markdown headers (``# …``), and empty list items
-    (``- [ ]``, ``- ``).  Mirrors OpenClaw's ``isHeartbeatContentEffectivelyEmpty``.
-    """
-    import re
-
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        # Markdown ATX headers: # followed by space or EOL
-        if re.match(r"^#+(\s|$)", stripped):
-            continue
-        # Empty list items: "- [ ]", "* [ ]", "- ", "* ", etc.
-        if re.match(r"^[-*+]\s*(\[[\sXx]?\]\s*)?$", stripped):
-            continue
-        return True
-    return False
-
-
-# ---------------------------------------------------------------------------
-# IsolatedAgentRunner — isolated execution + broadcast
-# ---------------------------------------------------------------------------
-
-
-class IsolatedAgentRunner:
-    """Run prompts in one-shot agent sessions and broadcast results."""
+class ProactiveExecutor:
+    """Execute cron prompts in the requested session mode and deliver output."""
 
     def __init__(
         self,
@@ -112,29 +69,39 @@ class IsolatedAgentRunner:
         self._channels = channels
         self._router = router
 
-    async def run_isolated(self, prompt: str) -> str:
-        """Create a throwaway agent, execute *prompt*, return result.
+    # ---- Execution ---------------------------------------------------------
 
-        The agent gets tools + soul + skills + LTM but no conversation history.
-        Hard timeout: ``_ISOLATED_TIMEOUT`` seconds.
-        """
+    async def run_isolated(self, prompt: str) -> str:
+        """Create a throwaway agent, execute *prompt*, return its output."""
         result = self._agent_factory()
         if asyncio.isfuture(result) or asyncio.iscoroutine(result):
             agent: LoopAgent = await result
         else:
             agent = result  # type: ignore[assignment]
-
         try:
             return await asyncio.wait_for(agent.run(prompt), timeout=_ISOLATED_TIMEOUT)
         except asyncio.TimeoutError:
             logger.warning("Isolated agent timed out after %ds", _ISOLATED_TIMEOUT)
             return "[Proactive task timed out]"
 
-    async def broadcast(self, text: str) -> int:
-        """Push *text* to all active sessions.
+    async def run_in_session(self, channel: str, conversation_id: str, prompt: str) -> str:
+        """Run *prompt* inside the existing session's agent (reuses history)."""
+        agent = await self._router.get_or_create_agent(channel, conversation_id)
+        try:
+            return await asyncio.wait_for(agent.run(prompt), timeout=_ISOLATED_TIMEOUT)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Session agent timed out after %ds (%s:%s)",
+                _ISOLATED_TIMEOUT,
+                channel,
+                conversation_id,
+            )
+            return "[Proactive task timed out]"
 
-        Returns the number of sessions successfully reached.
-        """
+    # ---- Delivery ----------------------------------------------------------
+
+    async def broadcast(self, text: str) -> int:
+        """Push *text* to every active session. Returns count of successful sends."""
         from bot.channel.base import OutgoingMessage
 
         sessions = self._router.iter_active_sessions()
@@ -142,10 +109,8 @@ class IsolatedAgentRunner:
             logger.debug("broadcast: no active sessions")
             return 0
 
-        # Build a name→channel lookup for fast dispatch
         channel_map: dict[str, Channel] = {ch.name: ch for ch in self._channels}
         sent = 0
-
         for channel_name, conversation_id in sessions:
             ch = channel_map.get(channel_name)
             if ch is None:
@@ -162,105 +127,59 @@ class IsolatedAgentRunner:
                 )
         return sent
 
+    async def send_to(self, channel_name: str, conversation_id: str, text: str) -> bool:
+        """Send *text* to one specific channel + conversation. Returns success."""
+        from bot.channel.base import OutgoingMessage
 
-# ---------------------------------------------------------------------------
-# HeartbeatScheduler
-# ---------------------------------------------------------------------------
-
-
-class HeartbeatScheduler:
-    """Periodically trigger a heartbeat check in the most-recently-active session."""
-
-    def __init__(
-        self,
-        router: SessionRouter,
-        channels: list[Channel],
-        interval: int | None = None,
-    ) -> None:
-        self._router = router
-        self._channels = channels
-        self._interval = interval if interval is not None else Config.BOT_HEARTBEAT_INTERVAL
-        self._last_run: datetime | None = None
-        self._next_run: datetime | None = None
-        self._running = False
-
-    # Expose for /heartbeat command
-    @property
-    def interval(self) -> int:
-        return self._interval
-
-    @property
-    def last_run(self) -> datetime | None:
-        return self._last_run
-
-    @property
-    def next_run(self) -> datetime | None:
-        return self._next_run
-
-    @property
-    def enabled(self) -> bool:
-        return self._interval > 0
-
-    async def loop(self) -> None:
-        """Main heartbeat loop — runs until cancelled."""
-        if not self.enabled:
-            logger.info("Heartbeat disabled (interval=0)")
-            return
-        self._running = True
-        logger.info("Heartbeat started (interval=%ds)", self._interval)
+        channel_map: dict[str, Channel] = {ch.name: ch for ch in self._channels}
+        ch = channel_map.get(channel_name)
+        if ch is None:
+            logger.warning("send_to: unknown channel %s", channel_name)
+            return False
         try:
-            while True:
-                self._next_run = datetime.now(tz=timezone.utc) + _td(self._interval)
-                await asyncio.sleep(self._interval)
-                await self._tick()
-        except asyncio.CancelledError:
-            logger.info("Heartbeat loop cancelled")
-        finally:
-            self._running = False
-
-    async def _tick(self) -> None:
-        """Single heartbeat tick — run prompt in the last active session."""
-        try:
-            self._last_run = datetime.now(tz=timezone.utc)
-            content = load_heartbeat()
-
-            if not _has_meaningful_content(content):
-                logger.debug("Heartbeat skipped: no meaningful content")
-                return
-
-            target = self._router.get_last_active_session()
-            if target is None:
-                logger.debug("Heartbeat skipped: no active session")
-                return
-
-            channel_name, conversation_id = target
-            agent = await self._router.get_or_create_agent(channel_name, conversation_id)
-
-            result = await asyncio.wait_for(agent.run(_HEARTBEAT_PROMPT), timeout=_ISOLATED_TIMEOUT)
-
-            if "HEARTBEAT_OK" in result:
-                logger.info("Heartbeat: OK (nothing to report)")
-                return
-
-            # Send response to the last-active channel
-            channel_map = {ch.name: ch for ch in self._channels}
-            ch = channel_map.get(channel_name)
-            if ch:
-                from bot.channel.base import OutgoingMessage
-
-                await ch.send_message(
-                    OutgoingMessage(conversation_id=conversation_id, text=f"[Heartbeat] {result}")
-                )
-                logger.info("Heartbeat: sent to %s:%s", channel_name, conversation_id)
-        except asyncio.TimeoutError:
-            logger.warning("Heartbeat agent timed out after %ds", _ISOLATED_TIMEOUT)
+            await ch.send_message(OutgoingMessage(conversation_id=conversation_id, text=text))
+            return True
         except Exception:
-            logger.exception("Heartbeat tick failed")
+            logger.warning(
+                "send_to: failed to send to %s:%s", channel_name, conversation_id, exc_info=True
+            )
+            return False
+
+
+# Backwards-compatible alias (kept while external callers / tests still import
+# the old name).
+IsolatedAgentRunner = ProactiveExecutor
 
 
 # ---------------------------------------------------------------------------
 # CronScheduler
 # ---------------------------------------------------------------------------
+
+
+_SESSION_MODES = {"main", "isolated", "current"}
+_DELIVERY_LITERALS = {"auto", "broadcast", "none"}
+
+
+def _validate_session_mode(mode: str) -> str:
+    if mode not in _SESSION_MODES:
+        raise ValueError(f"Invalid session_mode {mode!r}; must be one of {sorted(_SESSION_MODES)}")
+    return mode
+
+
+def _validate_delivery(delivery: str) -> str:
+    if delivery in _DELIVERY_LITERALS:
+        return delivery
+    if delivery.startswith("announce:"):
+        parts = delivery.split(":", 2)
+        if len(parts) != 3 or not parts[1] or not parts[2]:
+            raise ValueError(
+                f"Invalid delivery {delivery!r}; expected announce:<channel>:<conversation_id>"
+            )
+        return delivery
+    raise ValueError(
+        f"Invalid delivery {delivery!r}; expected one of "
+        f"{sorted(_DELIVERY_LITERALS)} or announce:<channel>:<conversation_id>"
+    )
 
 
 @dataclass
@@ -276,17 +195,25 @@ class CronJob:
     last_run_at: str | None = None
     next_run_at: str | None = None
 
+    # Default is "isolated" so pre-refactor persisted jobs (missing this field)
+    # keep their old behavior. New jobs should pass session_mode explicitly via
+    # add_job(); its default is "main".
+    session_mode: str = "isolated"
+    bound_channel: str | None = None
+    bound_conversation_id: str | None = None
+    delivery: str = "auto"
+
 
 class CronScheduler:
-    """Run cron-scheduled prompts via IsolatedAgentRunner."""
+    """Run cron-scheduled prompts via ProactiveExecutor."""
 
-    def __init__(self, executor: IsolatedAgentRunner) -> None:
+    def __init__(self, executor: ProactiveExecutor) -> None:
         self._executor = executor
         self._jobs: list[CronJob] = []
         self._running = False
         self._load_jobs()
 
-    # ---- Public API for slash commands -------------------------------------
+    # ---- Public API --------------------------------------------------------
 
     @property
     def jobs(self) -> list[CronJob]:
@@ -297,12 +224,24 @@ class CronScheduler:
         schedule_expr: str,
         prompt: str,
         name: str = "",
+        *,
+        session_mode: str = "main",
+        bound_channel: str | None = None,
+        bound_conversation_id: str | None = None,
+        delivery: str = "auto",
     ) -> CronJob:
         """Add a new job.
 
-        *schedule_expr* is an integer (seconds), an ISO datetime (once), or
-        a cron expression.
+        Defaults to ``session_mode="main"`` (run in the most recently active IM
+        session) with ``delivery="auto"`` (reply goes back to that session).
         """
+        session_mode = _validate_session_mode(session_mode)
+        delivery = _validate_delivery(delivery)
+        if session_mode == "current" and (not bound_channel or not bound_conversation_id):
+            raise ValueError(
+                "session_mode='current' requires bound_channel and bound_conversation_id"
+            )
+
         try:
             seconds = int(schedule_expr)
             stype, sval = "every", str(seconds)
@@ -313,7 +252,6 @@ class CronScheduler:
                     dt = dt.replace(tzinfo=timezone.utc)
                 stype, sval = "once", dt.isoformat()
             except ValueError:
-                # Validate cron expression
                 croniter(schedule_expr)  # raises ValueError on bad expr
                 stype, sval = "cron", schedule_expr
 
@@ -322,6 +260,10 @@ class CronScheduler:
             schedule_type=stype,
             schedule_value=sval,
             prompt=prompt,
+            session_mode=session_mode,
+            bound_channel=bound_channel,
+            bound_conversation_id=bound_conversation_id,
+            delivery=delivery,
         )
         self._compute_next_run(job)
         self._jobs.append(job)
@@ -329,7 +271,6 @@ class CronScheduler:
         return job
 
     def remove_job(self, job_id: str) -> bool:
-        """Remove a job by ID. Returns True if found."""
         before = len(self._jobs)
         self._jobs = [j for j in self._jobs if j.id != job_id]
         removed = len(self._jobs) < before
@@ -340,7 +281,6 @@ class CronScheduler:
     # ---- Loop --------------------------------------------------------------
 
     async def loop(self) -> None:
-        """Main scheduler loop — checks every 60s."""
         self._running = True
         logger.info("Cron scheduler started (%d jobs loaded)", len(self._jobs))
         try:
@@ -353,7 +293,6 @@ class CronScheduler:
             self._running = False
 
     async def _tick(self) -> None:
-        """Check all jobs, execute those that are due."""
         now = datetime.now(tz=timezone.utc)
         for job in self._jobs:
             if not job.enabled or not job.next_run_at:
@@ -364,16 +303,23 @@ class CronScheduler:
                 continue
             if now < next_dt:
                 continue
-
             await self._execute_job(job)
 
     async def _execute_job(self, job: CronJob) -> None:
-        """Execute a single job and broadcast the result."""
+        """Run a job and deliver its output per session_mode + delivery."""
         try:
-            logger.info("Cron executing job %s (%s)", job.id, job.name)
-            result = await self._executor.run_isolated(job.prompt)
-            label = job.name or job.id
-            await self._executor.broadcast(f"[Cron: {label}] {result}")
+            logger.info("Cron executing job %s (%s, mode=%s)", job.id, job.name, job.session_mode)
+            outcome = await self._run_for_mode(job)
+            if outcome is None:
+                logger.info(
+                    "Cron job %s (%s): skipped (no target session for mode=%s)",
+                    job.id,
+                    job.name,
+                    job.session_mode,
+                )
+                return
+            result, ran_in = outcome
+            await self._deliver(job, result, ran_in)
         except Exception:
             logger.exception("Cron job %s failed", job.id)
         finally:
@@ -384,14 +330,69 @@ class CronScheduler:
                 self._compute_next_run(job)
             self._save_jobs()
 
+    async def _run_for_mode(self, job: CronJob) -> tuple[str, tuple[str, str] | None] | None:
+        """Execute the job per its session_mode.
+
+        Returns ``(result, ran_in)`` where ``ran_in`` is ``(channel, conv)``
+        if the job ran inside an IM session, or ``None`` for isolated runs.
+        Returns ``None`` outright if no target is available and the tick must
+        be skipped.
+        """
+        if job.session_mode == "isolated":
+            result = await self._executor.run_isolated(job.prompt)
+            return (result, None)
+
+        if job.session_mode == "main":
+            target = self._executor._router.get_last_active_session()
+            if target is None:
+                return None
+            channel_name, conv = target
+            result = await self._executor.run_in_session(channel_name, conv, job.prompt)
+            return (result, (channel_name, conv))
+
+        if job.session_mode == "current":
+            if not job.bound_channel or not job.bound_conversation_id:
+                logger.warning("Cron job %s mode=current missing bound session; skipping", job.id)
+                return None
+            result = await self._executor.run_in_session(
+                job.bound_channel, job.bound_conversation_id, job.prompt
+            )
+            return (result, (job.bound_channel, job.bound_conversation_id))
+
+        logger.warning("Cron job %s has unknown session_mode %r", job.id, job.session_mode)
+        return None
+
+    async def _deliver(self, job: CronJob, result: str, ran_in: tuple[str, str] | None) -> None:
+        label = job.name or job.id
+        text = f"[Cron: {label}] {result}"
+        delivery = job.delivery or "auto"
+
+        if delivery == "none":
+            return
+
+        if delivery == "broadcast":
+            await self._executor.broadcast(text)
+            return
+
+        if delivery.startswith("announce:"):
+            _, ch_name, conv = delivery.split(":", 2)
+            await self._executor.send_to(ch_name, conv, text)
+            return
+
+        # "auto": follow the session mode
+        if ran_in is None:
+            await self._executor.broadcast(text)
+            return
+        ch_name, conv = ran_in
+        await self._executor.send_to(ch_name, conv, text)
+
     # ---- Persistence -------------------------------------------------------
 
     def _compute_next_run(self, job: CronJob) -> None:
-        """Set job.next_run_at based on schedule type."""
         now = datetime.now(tz=timezone.utc)
         try:
             if job.schedule_type == "once":
-                job.next_run_at = job.schedule_value  # already ISO
+                job.next_run_at = job.schedule_value
                 return
             if job.schedule_type == "every":
                 seconds = int(job.schedule_value)
@@ -405,7 +406,6 @@ class CronScheduler:
             job.next_run_at = None
 
     def _save_jobs(self) -> None:
-        """Persist jobs to ~/.ouro/bot/cron_jobs.json."""
         os.makedirs(_BOT_DIR, exist_ok=True)
         data = [asdict(j) for j in self._jobs]
         try:
@@ -415,7 +415,6 @@ class CronScheduler:
             logger.warning("Failed to save cron jobs", exc_info=True)
 
     def _load_jobs(self) -> None:
-        """Load jobs from disk."""
         if not os.path.isfile(_CRON_JOBS_FILE):
             return
         try:
@@ -437,7 +436,6 @@ class CronScheduler:
 
 
 def _td(seconds: int):
-    """Shorthand for timedelta."""
     from datetime import timedelta
 
     return timedelta(seconds=seconds)

@@ -68,20 +68,26 @@ Send these as a message to the bot:
 | `/sessions resume <id>` | Switch to a previous session |
 | `/compact` | Compress conversation memory to save tokens |
 | `/status` | Show session statistics (age, messages, tokens, compressions) |
-| `/heartbeat` | Show heartbeat status (interval, last run, next run) |
 | `/cron list` | List all scheduled cron jobs |
-| `/cron add <schedule> <prompt>` | Create a new cron job |
+| `/cron add [--session main\|isolated\|current] [--deliver auto\|broadcast\|none\|announce:<ch>:<conv>] <schedule> <prompt>` | Create a new cron job |
 | `/cron remove <id>` | Delete a cron job |
 | `/help` | List all available commands |
 
 ## Proactive Mechanisms
 
-The bot can act on its own between conversations:
+The bot can act on its own between conversations via scheduled cron jobs.
 
-- **Heartbeat**: Periodic self-checks — the agent runs through a checklist and broadcasts results to active IM sessions when action is needed.
-- **Cron**: Schedule recurring or one-time tasks via cron expressions, second intervals, or one-time ISO timestamps.
+Each job picks a **session mode** (where the prompt runs) and a **delivery** target (where the reply goes):
 
-See [Configuration](configuration.md) for `BOT_HEARTBEAT_INTERVAL`, `BOT_ACTIVE_HOURS_*`, and other settings.
+| Session mode | Runs in | Default use |
+|---|---|---|
+| `main` (default) | The most recently active IM session's agent (reuses history) | Personal reminders, periodic checks |
+| `isolated` | A throwaway one-shot agent (no conversation history) | Fresh reports, broadcast pings |
+| `current` | A specific session bound at creation time (via `/cron add --session current`) | "Remind me in *this* chat every morning" |
+
+Delivery defaults to `auto` (reply goes to the session the job ran in, or broadcasts for `isolated`). Override with `--deliver broadcast`, `--deliver none`, or `--deliver announce:<channel>:<conversation_id>`.
+
+See [Configuration](configuration.md) for `BOT_PROACTIVE_TIMEOUT`, `BOT_ACTIVE_HOURS_*`, and other settings.
 
 ## Personality
 

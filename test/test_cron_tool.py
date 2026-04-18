@@ -40,8 +40,41 @@ class TestCronToolAdd:
         assert "Created cron job" in result
         assert "greeting" in result
         assert "every=300" in result
+        assert "session=main" in result
         assert "next_run=" in result
         assert len(sched.jobs) == 1
+        # Default session_mode for the tool is "main".
+        assert sched.jobs[0].session_mode == "main"
+
+    async def test_add_isolated_mode(self, tmp_path, monkeypatch):
+        sched = _make_scheduler(tmp_path, monkeypatch)
+        tool = CronTool(sched)
+
+        result = await tool.execute(
+            operation="add",
+            schedule="300",
+            prompt="Broadcast",
+            session_mode="isolated",
+        )
+
+        assert "session=isolated" in result
+        assert sched.jobs[0].session_mode == "isolated"
+
+    async def test_add_rejects_current_mode(self, tmp_path, monkeypatch):
+        """The tool does not expose 'current' — only /cron add supports it."""
+        sched = _make_scheduler(tmp_path, monkeypatch)
+        tool = CronTool(sched)
+
+        result = await tool.execute(
+            operation="add",
+            schedule="300",
+            prompt="x",
+            session_mode="current",
+        )
+
+        assert "Error" in result
+        assert "not supported" in result
+        assert len(sched.jobs) == 0
 
     async def test_add_cron_expression(self, tmp_path, monkeypatch):
         sched = _make_scheduler(tmp_path, monkeypatch)
@@ -207,3 +240,5 @@ class TestCronToolEdgeCases:
         # Optional params should NOT be in required
         assert "schedule" not in schema["input_schema"]["required"]
         assert "job_id" not in schema["input_schema"]["required"]
+        assert "session_mode" not in schema["input_schema"]["required"]
+        assert "session_mode" in schema["input_schema"]["properties"]
