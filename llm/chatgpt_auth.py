@@ -20,7 +20,7 @@ import webbrowser
 from contextlib import suppress
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import aiofiles
 import aiofiles.os
@@ -28,10 +28,17 @@ import httpx
 
 from utils.runtime import get_runtime_dir
 
+if TYPE_CHECKING:
+    from .copilot_auth import CopilotAuthStatus
+
 _AUTH_PROVIDER_ALIASES = {
     "chatgpt": "chatgpt",
     "codex": "chatgpt",
     "openai-codex": "chatgpt",
+    "copilot": "copilot",
+    "github": "copilot",
+    "github-copilot": "copilot",
+    "github_copilot": "copilot",
 }
 
 CHATGPT_OAUTH_AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize"
@@ -74,10 +81,10 @@ def normalize_auth_provider(provider: str | None) -> str | None:
 
 
 def get_supported_auth_providers() -> tuple[str, ...]:
-    return ("chatgpt",)
+    return ("chatgpt", "copilot")
 
 
-def is_auth_status_logged_in(status: ChatGPTAuthStatus) -> bool:
+def is_auth_status_logged_in(status: ChatGPTAuthStatus | CopilotAuthStatus) -> bool:
     """Whether local auth state looks usable for requests."""
     return status.exists and status.has_access_token
 
@@ -794,7 +801,7 @@ async def get_chatgpt_auth_status() -> ChatGPTAuthStatus:
     )
 
 
-async def get_auth_provider_status(provider: str) -> ChatGPTAuthStatus:
+async def get_auth_provider_status(provider: str) -> ChatGPTAuthStatus | CopilotAuthStatus:
     """Get auth status for a supported provider."""
     normalized = normalize_auth_provider(provider)
     if not normalized:
@@ -802,19 +809,23 @@ async def get_auth_provider_status(provider: str) -> ChatGPTAuthStatus:
 
     if normalized == "chatgpt":
         return await get_chatgpt_auth_status()
+    if normalized == "copilot":
+        from .copilot_auth import get_copilot_auth_status
+
+        return await get_copilot_auth_status()
 
     raise ValueError(f"Unsupported provider: {provider}")
 
 
-async def get_all_auth_provider_statuses() -> dict[str, ChatGPTAuthStatus]:
+async def get_all_auth_provider_statuses() -> dict[str, ChatGPTAuthStatus | CopilotAuthStatus]:
     """Get auth statuses for all supported providers."""
-    statuses: dict[str, ChatGPTAuthStatus] = {}
+    statuses: dict[str, ChatGPTAuthStatus | CopilotAuthStatus] = {}
     for provider in get_supported_auth_providers():
         statuses[provider] = await get_auth_provider_status(provider)
     return statuses
 
 
-async def login_auth_provider(provider: str) -> ChatGPTAuthStatus:
+async def login_auth_provider(provider: str) -> ChatGPTAuthStatus | CopilotAuthStatus:
     """Login to a supported provider."""
     normalized = normalize_auth_provider(provider)
     if not normalized:
@@ -822,6 +833,10 @@ async def login_auth_provider(provider: str) -> ChatGPTAuthStatus:
 
     if normalized == "chatgpt":
         return await login_chatgpt()
+    if normalized == "copilot":
+        from .copilot_auth import login_copilot
+
+        return await login_copilot()
 
     raise ValueError(f"Unsupported provider: {provider}")
 
@@ -834,5 +849,9 @@ async def logout_auth_provider(provider: str) -> bool:
 
     if normalized == "chatgpt":
         return await logout_chatgpt()
+    if normalized == "copilot":
+        from .copilot_auth import logout_copilot
+
+        return await logout_copilot()
 
     raise ValueError(f"Unsupported provider: {provider}")

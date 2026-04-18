@@ -25,6 +25,30 @@ def test_validate_chatgpt_model_without_api_key(tmp_path):
     assert error_message == ""
 
 
+def test_validate_copilot_model_without_api_key(tmp_path):
+    config_path = tmp_path / "models.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "models:",
+                "  github_copilot/claude-sonnet-4.5:",
+                "    timeout: 600",
+                "default: github_copilot/claude-sonnet-4.5",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    manager = ModelManager(config_path=str(config_path))
+    profile = manager.get_current_model()
+
+    assert profile is not None
+    is_valid, error_message = manager.validate_model(profile)
+    assert is_valid is True
+    assert error_message == ""
+
+
 def test_switch_model_persists_current_across_restart(tmp_path):
     config_path = tmp_path / "models.yaml"
     config_path.write_text(
