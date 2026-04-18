@@ -197,6 +197,12 @@ class SlackChannel:
         except Exception:
             logger.warning("Error removing Slack reaction", exc_info=True)
 
+    async def send_typing(self, conversation_id: str) -> None:
+        """Slack has no typing indicator via Socket Mode — no-op."""
+
+    async def stop_typing(self, conversation_id: str) -> None:
+        """Slack has no typing indicator via Socket Mode — no-op."""
+
     async def send_file(
         self,
         conversation_id: str,

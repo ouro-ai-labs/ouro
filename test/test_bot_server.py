@@ -32,6 +32,8 @@ class FakeChannel:
         self.sent_files: list[dict] = []
         self.reactions_added: list[tuple[str, str, str]] = []  # (conv_id, msg_id, emoji)
         self.reactions_removed: list[tuple[str, str, str, str | None]] = []
+        self.typing_starts: list[str] = []
+        self.typing_stops: list[str] = []
         self._callback = None
         self._started = False
         self._stopped = False
@@ -78,6 +80,12 @@ class FakeChannel:
         reaction_id: str | None = None,
     ) -> None:
         self.reactions_removed.append((conversation_id, message_id, emoji, reaction_id))
+
+    async def send_typing(self, conversation_id: str) -> None:
+        self.typing_starts.append(conversation_id)
+
+    async def stop_typing(self, conversation_id: str) -> None:
+        self.typing_stops.append(conversation_id)
 
     async def inject_message(self, msg: IncomingMessage) -> None:
         """Simulate an incoming message from the IM platform."""
@@ -188,6 +196,56 @@ async def test_process_message_error_sends_error_message(bot_server, fake_channe
 
     # Processing reaction should have been cleaned up
     assert any(r[:3] == ("conv_err", "ts_err", "eyes") for r in fake_channel.reactions_removed)
+
+
+async def test_process_message_shows_typing_indicator(bot_server, fake_channel, mock_router):
+    """While the agent is running, the channel should receive typing hints."""
+    # Force agent.run to take a bit so the typing loop ticks at least once.
+    bot_server._TYPING_REFRESH_SECONDS = 0.01
+    agent = await mock_router.get_or_create_agent("test", "conv_typing")
+
+    async def slow_run(*_args, **_kwargs):
+        await asyncio.sleep(0.05)
+        return "done"
+
+    agent.run = AsyncMock(side_effect=slow_run)
+
+    msg = IncomingMessage(
+        channel="test",
+        conversation_id="conv_typing",
+        user_id="user_1",
+        text="Do something slow",
+        message_id="msg_typing",
+        platform_message_id="ts_typing",
+    )
+
+    await bot_server._process_message(fake_channel, msg)
+    await asyncio.sleep(_TEST_DEBOUNCE + 0.2)
+
+    assert fake_channel.typing_starts, "send_typing should have been called at least once"
+    assert all(c == "conv_typing" for c in fake_channel.typing_starts)
+    assert fake_channel.typing_stops == ["conv_typing"]
+
+
+async def test_process_message_stops_typing_on_error(bot_server, fake_channel, mock_router):
+    """stop_typing must still run if the agent raises."""
+    bot_server._TYPING_REFRESH_SECONDS = 0.01
+    agent = await mock_router.get_or_create_agent("test", "conv_fail")
+    agent.run = AsyncMock(side_effect=RuntimeError("boom"))
+
+    msg = IncomingMessage(
+        channel="test",
+        conversation_id="conv_fail",
+        user_id="user_1",
+        text="Do something",
+        message_id="msg_fail",
+        platform_message_id="ts_fail",
+    )
+
+    await bot_server._process_message(fake_channel, msg)
+    await asyncio.sleep(_TEST_DEBOUNCE + 0.1)
+
+    assert fake_channel.typing_stops == ["conv_fail"]
 
 
 # ---------------------------------------------------------------------------

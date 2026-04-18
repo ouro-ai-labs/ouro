@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import sys
 from typing import TYPE_CHECKING
@@ -450,6 +451,12 @@ class BotServer:
     _PROCESSING_EMOJI = "eyes"
     _DONE_EMOJI = "white_check_mark"
 
+    # How often to re-send a typing indicator while the agent is working.
+    # Channels like WeChat expire the hint after a few seconds, so we refresh
+    # periodically. Low enough to avoid visible gaps, high enough to keep the
+    # extra API traffic modest.
+    _TYPING_REFRESH_SECONDS = 4.0
+
     async def _process_message(self, channel: Channel, msg: IncomingMessage) -> None:
         """Command check -> 👀 reaction -> enqueue for debounced batch processing."""
         try:
@@ -551,9 +558,15 @@ class BotServer:
                 first.conversation_id,
                 task_text[:80],
             )
+            typing_task = asyncio.create_task(self._typing_loop(channel, first.conversation_id))
             try:
                 result = await agent.run(task_text, images=all_images or None)
             finally:
+                typing_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await typing_task
+                with contextlib.suppress(Exception):
+                    await channel.stop_typing(first.conversation_id)
                 if send_file_ctx is not None:
                     send_file_ctx.clear()
                 if tmp_dir is not None:
@@ -611,6 +624,22 @@ class BotServer:
             await coro
         except Exception:
             logger.debug("Reaction operation failed", exc_info=True)
+
+    async def _typing_loop(self, channel: Channel, conversation_id: str) -> None:
+        """Keep the 'typing…' indicator visible until cancelled.
+
+        Channels that don't support typing (Lark, Slack) see this as a stream
+        of no-ops, so it's safe to run unconditionally.
+        """
+        try:
+            while True:
+                try:
+                    await channel.send_typing(conversation_id)
+                except Exception:
+                    logger.debug("send_typing failed", exc_info=True)
+                await asyncio.sleep(self._TYPING_REFRESH_SECONDS)
+        except asyncio.CancelledError:
+            raise
 
     async def _periodic_cleanup(self) -> None:
         """Periodically delete stale sessions from disk."""

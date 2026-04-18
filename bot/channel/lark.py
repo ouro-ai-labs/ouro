@@ -116,6 +116,12 @@ class LarkChannel:
         if reaction_id:
             await asyncio.to_thread(self._delete_reaction_sync, message_id, reaction_id)
 
+    async def send_typing(self, conversation_id: str) -> None:
+        """Lark provides 👀 reactions as the processing indicator — no-op."""
+
+    async def stop_typing(self, conversation_id: str) -> None:
+        """Lark provides 👀 reactions as the processing indicator — no-op."""
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------

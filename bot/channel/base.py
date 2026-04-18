@@ -106,3 +106,15 @@ class Channel(Protocol):
     ) -> None:
         """Remove an emoji reaction from a message."""
         ...
+
+    async def send_typing(self, conversation_id: str) -> None:
+        """Show the 'typing…' indicator in a conversation. No-op where unsupported.
+
+        Implementations may need to be called repeatedly to keep the indicator
+        visible; ``BotServer`` refreshes periodically while the agent is busy.
+        """
+        ...
+
+    async def stop_typing(self, conversation_id: str) -> None:
+        """Clear the 'typing…' indicator. No-op where unsupported."""
+        ...
