@@ -146,6 +146,37 @@ class WeChatChannel:
     ) -> None:
         """WeChat does not support message reactions — no-op."""
 
+    async def send_typing(self, conversation_id: str) -> None:
+        """Show 'typing…' to the WeChat user via the bot SDK.
+
+        The SDK caches a ``context_token`` per user when a message is received,
+        so this is only meaningful after at least one incoming message from the
+        target user. Errors are swallowed — typing is a UX hint, not
+        load-bearing.
+        """
+        await self._run_on_bot_loop("send_typing", conversation_id)
+
+    async def stop_typing(self, conversation_id: str) -> None:
+        """Clear the 'typing…' indicator for the WeChat user."""
+        await self._run_on_bot_loop("stop_typing", conversation_id)
+
+    async def _run_on_bot_loop(self, method: str, user_id: str) -> None:
+        """Invoke ``bot.<method>(user_id)`` on the SDK's own event loop."""
+        bot = self._bot
+        if bot is None:
+            return
+        fn = getattr(bot, method, None)
+        if fn is None:
+            return
+        try:
+            if self._bot_loop is not None and self._bot_loop.is_running():
+                future = asyncio.run_coroutine_threadsafe(fn(user_id), self._bot_loop)
+                await asyncio.to_thread(future.result, 15)
+            else:
+                await fn(user_id)
+        except Exception:
+            logger.debug("WeChat %s failed for %s", method, user_id, exc_info=True)
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------

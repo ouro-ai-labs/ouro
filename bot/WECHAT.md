@@ -37,7 +37,7 @@ Once authenticated, anyone who sends a message to the bot's WeChat account will 
 ## Limitations
 
 - **Text only**: Currently only text messages are processed. Images, voice, video, and file attachments are ignored.
-- **No reactions**: WeChat does not support emoji reactions on messages, so the 👀/✅ processing indicators are not shown.
+- **No reactions**: WeChat does not support emoji reactions on messages, so the 👀/✅ processing indicators are not shown. Instead, the bot shows a native "typing…" hint in the conversation while ouro is working on a reply.
 - **No file sending**: The SDK does not support sending files/images back to users.
 - **Session expiry**: If the session expires (error code `-14`), the bot will need to re-authenticate. Restart the bot to trigger a new QR code.
 
