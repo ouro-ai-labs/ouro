@@ -481,10 +481,24 @@ class BotServer:
     _TYPING_REFRESH_SECONDS = 4.0
 
     async def _process_message(self, channel: Channel, msg: IncomingMessage) -> None:
-        """Command check -> 👀 reaction -> enqueue for debounced batch processing."""
+        """Command check -> 👀 reaction -> route to steering OR enqueue for batch."""
         try:
             if await self._handle_command(channel, msg):
                 return
+
+            # If an agent is already running for this conversation, route the
+            # incoming message as steering (default) or follow-up (``/followup
+            # ``/``+ `` prefix) to the live run instead of enqueueing a new
+            # batch. See rfc/016-agent-steering.md.
+            existing = self._router.get_existing_agent(channel.name, msg.conversation_id)
+            if existing is not None and existing.steering.is_running():
+                text = (msg.text or "").strip()
+                if text:
+                    self._route_steering_message(existing, text)
+                    # Ack receipt; ✅ swap for mid-run messages isn't tracked
+                    # in the batch, so 👀 will remain until next regular batch.
+                    await self._try_add_processing_reaction(channel, msg)
+                    return
 
             # Instant feedback: add 👀 so the user knows we received it
             await self._try_add_processing_reaction(channel, msg)
@@ -503,6 +517,29 @@ class BotServer:
             logger.exception(
                 "Error enqueueing %s from %s:%s", msg.message_id, msg.channel, msg.conversation_id
             )
+
+    def _route_steering_message(self, agent: LoopAgent, text: str) -> None:
+        """Route a mid-run message to the agent's steering or follow-up queue.
+
+        - ``/followup <msg>`` or ``+ <msg>``: queue as follow-up (runs after
+          current task completes).
+        - anything else: queue as steering (delivered at next checkpoint,
+          skipping remaining tools in the current batch).
+        """
+        if text.startswith("/followup"):
+            body = text[len("/followup") :].lstrip()
+            if body:
+                agent.steering.follow_up(body)
+                logger.info("Queued follow-up: %s", body[:80])
+            return
+        if text.startswith("+ "):
+            body = text[2:].strip()
+            if body:
+                agent.steering.follow_up(body)
+                logger.info("Queued follow-up: %s", body[:80])
+            return
+        agent.steering.steer(text)
+        logger.info("Queued steer: %s", text[:80])
 
     async def _try_add_processing_reaction(self, channel: Channel, msg: IncomingMessage) -> None:
         """Add 👀 reaction and track the reaction ID for later cleanup."""
@@ -607,6 +644,37 @@ class BotServer:
 
             # Swap reactions on ALL source messages: 👀 → ✅
             await self._finalize_reactions(channel, messages, done=True)
+
+            # Drain follow-up queue and fire additional runs. Each follow-up
+            # turn gets its own typing indicator + send_message; follow-ups
+            # queued *during* a follow-up run also get drained by the loop.
+            while True:
+                follow_ups = agent.steering.drain_follow_up()
+                if not follow_ups:
+                    break
+                combined = "\n\n".join(follow_ups)
+                logger.info(
+                    "Running %d queued follow-up(s) for %s:%s",
+                    len(follow_ups),
+                    first.channel,
+                    first.conversation_id,
+                )
+                typing_task_fu = asyncio.create_task(
+                    self._typing_loop(channel, first.conversation_id)
+                )
+                try:
+                    fu_result = await agent.run(combined)
+                finally:
+                    typing_task_fu.cancel()
+                    with contextlib.suppress(asyncio.CancelledError, Exception):
+                        await typing_task_fu
+                    with contextlib.suppress(Exception):
+                        await channel.stop_typing(first.conversation_id)
+
+                await self._router.update_session_mapping(first.channel, first.conversation_id)
+                await channel.send_message(
+                    OutgoingMessage(conversation_id=first.conversation_id, text=fu_result)
+                )
 
         except Exception:
             logger.exception(

@@ -95,6 +95,17 @@ class SessionRouter:
 
     # ---- Session lifecycle ---------------------------------------------------
 
+    def get_existing_agent(self, channel: str, conversation_id: str) -> LoopAgent | None:
+        """Return the live agent for this conversation, or ``None`` if none exists.
+
+        Unlike :meth:`get_or_create_agent`, this does not create a new agent.
+        Used by the message router to decide whether an incoming message
+        should be routed as steering (agent is running) or start a new
+        conversation.
+        """
+        key = self._session_key(channel, conversation_id)
+        return self._sessions.get(key)
+
     async def get_or_create_agent(self, channel: str, conversation_id: str) -> LoopAgent:
         """Get an existing agent or create a new one for the conversation.
 

@@ -12,6 +12,7 @@ from tools.todo import TodoTool
 from utils import get_logger, terminal_ui
 from utils.tui.progress import AsyncSpinner
 
+from .steering import SteeringQueues
 from .todo import TodoList
 from .tool_executor import ToolExecutor
 from .verification import LLMVerifier, VerificationResult, Verifier
@@ -67,6 +68,10 @@ class BaseAgent(ABC):
 
         # Run-scoped reasoning control. None means "omit reasoning_effort" (provider defaults).
         self._reasoning_effort: Optional[str] = None
+
+        # Steering queues for mid-task user-message injection. See
+        # rfc/016-agent-steering.md. Always present; no-op if unused.
+        self.steering = SteeringQueues()
 
     def set_reasoning_effort(self, value: Optional[str]) -> None:
         """Set run-scoped reasoning effort for primary task calls.
@@ -147,6 +152,32 @@ class BaseAgent(ABC):
         """
         return self.llm.extract_text(response)
 
+    async def _drain_steering_into_memory(
+        self,
+        messages: List[LLMMessage],
+        use_memory: bool,
+        save_to_memory: bool,
+    ) -> int:
+        """Drain the steering queue and append each message as a user turn.
+
+        Returns the number of messages injected. Only runs when the current
+        loop is backed by self.memory — mini-loops (use_memory=False) don't
+        accept user steering.
+        """
+        if not use_memory:
+            return 0
+        drained = self.steering.drain_steering()
+        if not drained:
+            return 0
+        for text in drained:
+            msg = LLMMessage(role="user", content=text)
+            if save_to_memory:
+                await self.memory.add_message(msg)
+            else:
+                messages.append(msg)
+            logger.debug("Injected steering message: %r", text[:80])
+        return len(drained)
+
     def _get_todo_context(self) -> Optional[str]:
         """Get current todo list state for memory compression.
 
@@ -208,6 +239,10 @@ class BaseAgent(ABC):
                     f"saved {self.memory.last_compression_savings} tokens"
                 )
                 continue  # re-enter loop with compressed context
+
+            # Steering checkpoint #1: drain queued user messages before the
+            # next LLM turn so the model sees them on this iteration.
+            await self._drain_steering_into_memory(messages, use_memory, save_to_memory)
 
             # Get context (either from memory or local messages)
             context = self.memory.get_context_for_llm() if use_memory else messages
@@ -289,9 +324,37 @@ class BaseAgent(ABC):
                         messages.append(result_messages)
 
     async def _execute_tools_sequential(self, tool_calls: List[ToolCall]) -> List[ToolResult]:
-        """Execute tool calls one at a time (default path)."""
+        """Execute tool calls one at a time (default path).
+
+        Between tools, check the steering queue. If a user steering message is
+        pending, stop executing and emit a synthetic ``[Skipped due to user
+        steering]`` result for every remaining call. This preserves the
+        invariant that each ``tool_calls`` entry in the assistant message has
+        a matching ``tool`` result (required by OpenAI/Anthropic APIs).
+        """
         tool_results: List[ToolResult] = []
+        steered = False
         for tc in tool_calls:
+            if not steered and self.steering.pending_steering() > 0:
+                # Steering arrived (either during the LLM response or between
+                # tools); skip all remaining calls in this batch.
+                steered = True
+
+            if steered:
+                logger.debug(
+                    "Skipping tool %s (id=%s) due to pending user steering",
+                    tc.name,
+                    tc.id,
+                )
+                tool_results.append(
+                    ToolResult(
+                        tool_call_id=tc.id,
+                        content="[Skipped due to user steering]",
+                        name=tc.name,
+                    )
+                )
+                continue
+
             terminal_ui.print_tool_call(tc.name, tc.arguments)
 
             async with AsyncSpinner(

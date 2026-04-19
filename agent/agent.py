@@ -162,25 +162,32 @@ AGENTS.md is optional. If not found, proceed normally.
         tools = self.tool_executor.get_tool_schemas()
         self.memory.set_tool_schemas(tools)
 
-        if verify:
-            # Use ralph loop (outer verification wrapping the inner ReAct loop)
-            result = await self._ralph_loop(
-                messages=[],  # Not used when use_memory=True
-                tools=tools,
-                use_memory=True,
-                save_to_memory=True,
-                task=task,
-                max_iterations=Config.RALPH_LOOP_MAX_ITERATIONS,
-            )
-        else:
-            # Plain react loop without verification
-            result = await self._react_loop(
-                messages=[],
-                tools=tools,
-                use_memory=True,
-                save_to_memory=True,
-                task=task,
-            )
+        # Mark running so callers (TUI/bot) route incoming messages as
+        # steering/follow-up rather than starting a new prompt. Spans the
+        # whole task including ralph verification.
+        self.steering._mark_running()
+        try:
+            if verify:
+                # Use ralph loop (outer verification wrapping the inner ReAct loop)
+                result = await self._ralph_loop(
+                    messages=[],  # Not used when use_memory=True
+                    tools=tools,
+                    use_memory=True,
+                    save_to_memory=True,
+                    task=task,
+                    max_iterations=Config.RALPH_LOOP_MAX_ITERATIONS,
+                )
+            else:
+                # Plain react loop without verification
+                result = await self._react_loop(
+                    messages=[],
+                    tools=tools,
+                    use_memory=True,
+                    save_to_memory=True,
+                    task=task,
+                )
+        finally:
+            self.steering._mark_idle()
 
         # Replace image content blocks with text placeholders to prevent
         # session/memory bloat (base64 images can be 1-10MB each).

@@ -97,6 +97,12 @@ class InteractiveSession:
                 ),
                 CommandSpec("login", "Login to OAuth provider"),
                 CommandSpec("logout", "Logout from OAuth provider"),
+                CommandSpec(
+                    "followup",
+                    "Queue a message to run after the current task completes",
+                    args_hint="<message>",
+                ),
+                CommandSpec("steering", "Show steering/follow-up queue status"),
                 CommandSpec("exit", "Exit interactive mode"),
             ]
         )
@@ -194,6 +200,89 @@ class InteractiveSession:
         stats = self.agent.memory.get_stats()
         terminal_ui.print_memory_stats(stats)
         terminal_ui.console.print()
+
+    def _show_steering_status(self) -> None:
+        """Display steering/follow-up queue contents and running state."""
+        colors = Theme.get_colors()
+        snap = self.agent.steering.snapshot()
+
+        state = (
+            f"[{colors.warning}]running[/{colors.warning}]"
+            if snap["is_running"]
+            else f"[{colors.text_muted}]idle[/{colors.text_muted}]"
+        )
+        terminal_ui.console.print(
+            f"\n[bold {colors.primary}]Steering status:[/bold {colors.primary}] " f"{state}"
+        )
+
+        steering = snap["steering"]
+        if steering:
+            terminal_ui.console.print(
+                f"\n[{colors.secondary}]Pending steering ({len(steering)}):"
+                f"[/{colors.secondary}]"
+            )
+            for i, msg in enumerate(steering, 1):
+                terminal_ui.console.print(f"  {i}. {msg}")
+        else:
+            terminal_ui.console.print(
+                f"\n[{colors.text_muted}]No pending steering messages.[/{colors.text_muted}]"
+            )
+
+        follow_up = snap["follow_up"]
+        if follow_up:
+            terminal_ui.console.print(
+                f"\n[{colors.secondary}]Pending follow-up ({len(follow_up)}):"
+                f"[/{colors.secondary}]"
+            )
+            for i, msg in enumerate(follow_up, 1):
+                terminal_ui.console.print(f"  {i}. {msg}")
+        else:
+            terminal_ui.console.print(
+                f"[{colors.text_muted}]No pending follow-up messages.[/{colors.text_muted}]"
+            )
+        terminal_ui.console.print()
+
+    def _route_steering_input(self, line: str) -> None:
+        """Route a line typed while the agent is running to steer/follow-up.
+
+        - ``/followup <msg>``: queue as follow-up (runs after current task).
+        - ``/steering``: show status inline (does not queue anything).
+        - ``/<other>``: reject — slash commands are not available mid-run.
+        - anything else: queue as steering (default, lands on next checkpoint).
+        """
+        line = line.strip()
+        if not line:
+            return
+
+        colors = Theme.get_colors()
+
+        if line.startswith("/followup"):
+            msg = line[len("/followup") :].strip()
+            if not msg:
+                terminal_ui.print_error("Usage: /followup <message>")
+                return
+            self.agent.steering.follow_up(msg)
+            terminal_ui.console.print(
+                f"[{colors.text_muted}]↗ Queued as follow-up: {msg}[/{colors.text_muted}]"
+            )
+            return
+
+        if line == "/steering" or line.startswith("/steering "):
+            self._show_steering_status()
+            return
+
+        if line.startswith("/"):
+            terminal_ui.console.print(
+                f"[{colors.warning}]Slash commands are disabled while the agent is "
+                f"running. Press Ctrl+C to cancel, or type a message to steer."
+                f"[/{colors.warning}]"
+            )
+            return
+
+        self.agent.steering.steer(line)
+        terminal_ui.console.print(
+            f"[{colors.text_muted}]⚡ Queued steer: {line}[/{colors.text_muted}]"
+        )
 
     async def _resume_session(self, session_id: str | None = None) -> None:
         """Resume a previous session.
@@ -475,6 +564,25 @@ class InteractiveSession:
 
         elif command == "/skills":
             await self._handle_skills_command(command_parts)
+
+        elif command == "/followup":
+            # /followup <msg> — queue a message to run after current task ends.
+            msg = user_input[len("/followup") :].strip()
+            if not msg:
+                terminal_ui.print_error("Usage: /followup <message>")
+                return True
+            self.agent.steering.follow_up(msg)
+            if self.agent.steering.is_running():
+                terminal_ui.print_info(
+                    f"↗ Queued as follow-up (will run after current task): {msg}"
+                )
+            else:
+                terminal_ui.print_info(
+                    f"↗ Queued as follow-up (no task running; will fire on next run): {msg}"
+                )
+
+        elif command == "/steering":
+            self._show_steering_status()
 
         else:
             colors = Theme.get_colors()
@@ -829,6 +937,60 @@ class InteractiveSession:
             self.agent.switch_model(current_after.model_id)
             self._update_status_bar()
 
+    async def _run_agent_with_steering(self, task_text: str) -> str:
+        """Run ``agent.run`` while accepting mid-task steering input.
+
+        While the agent is executing, the prompt stays live (``⚡> ``). Each
+        typed line is routed via :meth:`_route_steering_input`:
+
+        - default → ``agent.steering.steer()`` (delivered at next checkpoint,
+          skipping any remaining tools in the current batch)
+        - ``/followup <msg>`` → ``agent.steering.follow_up()``
+        - ``/steering`` → show status inline (no queuing)
+
+        Returns the agent's final answer, or raises the original exception
+        (``CancelledError``, etc.) so callers can handle cancellation.
+        """
+        from contextlib import suppress
+
+        agent_task = asyncio.create_task(self.agent.run(task_text, verify=False))
+        self.current_task = agent_task
+        try:
+            while not agent_task.done():
+                steering_task = asyncio.create_task(self.input_handler.prompt_async("⚡> "))
+                done, _pending = await asyncio.wait(
+                    [agent_task, steering_task],
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+
+                if steering_task in done:
+                    # Consume the typed line; cancel nothing yet, loop back and
+                    # start a fresh prompt if the agent is still running.
+                    exc = steering_task.exception()
+                    if exc is None:
+                        self._route_steering_input(steering_task.result())
+                    elif isinstance(exc, (EOFError, KeyboardInterrupt)):
+                        # User hit Ctrl+C/Ctrl+D at the steering prompt:
+                        # treat as "cancel the running task", same as today's
+                        # Ctrl+C behavior during a blocking prompt.
+                        agent_task.cancel()
+                        with suppress(asyncio.CancelledError):
+                            await agent_task
+                        raise exc
+                    else:
+                        # Unexpected prompt error: surface it and stop reading.
+                        raise exc
+
+                if agent_task in done and not steering_task.done():
+                    steering_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await steering_task
+
+            # agent_task is done; re-raise any exception (incl. CancelledError).
+            return agent_task.result()
+        finally:
+            self.current_task = None
+
     async def run(self) -> None:
         """Run the interactive session loop."""
         # Print header
@@ -904,27 +1066,37 @@ class InteractiveSession:
                 if Config.TUI_STATUS_BAR:
                     self.status_bar.update(is_processing=True)
 
+                # Run the task; drain any follow-up queue after it completes
+                # and fire them as additional runs before returning to the
+                # top-level prompt.
+                next_prompt: str | None = user_input
                 try:
-                    # Create a task for the agent run so it can be cancelled
-                    self.current_task = asyncio.create_task(
-                        self.agent.run(user_input, verify=False)
-                    )
-                    try:
-                        result = await self.current_task
-                    finally:
-                        self.current_task = None
+                    while next_prompt is not None:
+                        result = await self._run_agent_with_steering(next_prompt)
 
-                    # Display agent response
-                    terminal_ui.console.print(
-                        f"[bold {colors.secondary}]Assistant:[/bold {colors.secondary}]"
-                    )
-                    terminal_ui.print_assistant_message(result)
+                        # Display agent response
+                        terminal_ui.console.print(
+                            f"[bold {colors.secondary}]Assistant:[/bold {colors.secondary}]"
+                        )
+                        terminal_ui.print_assistant_message(result)
 
-                    # Update status bar
-                    self._update_status_bar()
-                    if Config.TUI_STATUS_BAR:
-                        self.status_bar.update(is_processing=False)
-                        self.status_bar.show()
+                        # Update status bar
+                        self._update_status_bar()
+                        if Config.TUI_STATUS_BAR:
+                            self.status_bar.update(is_processing=False)
+                            self.status_bar.show()
+
+                        # Drain follow-up queue; if any, combine and run again.
+                        follow_ups = self.agent.steering.drain_follow_up()
+                        if follow_ups:
+                            next_prompt = "\n\n".join(follow_ups)
+                            terminal_ui.print_info(
+                                f"↗ Running {len(follow_ups)} queued follow-up " f"message(s)..."
+                            )
+                            if Config.TUI_STATUS_BAR:
+                                self.status_bar.update(is_processing=True)
+                        else:
+                            next_prompt = None
 
                 except asyncio.CancelledError:
                     terminal_ui.console.print(
@@ -932,7 +1104,6 @@ class InteractiveSession:
                     )
                     if Config.TUI_STATUS_BAR:
                         self.status_bar.update(is_processing=False)
-                    self.current_task = None
 
                     # Rollback incomplete exchange to prevent API errors on next turn
                     self.agent.memory.rollback_incomplete_exchange()
@@ -944,7 +1115,6 @@ class InteractiveSession:
                     )
                     if Config.TUI_STATUS_BAR:
                         self.status_bar.update(is_processing=False)
-                    self.current_task = None
                     continue
                 except Exception as e:
                     terminal_ui.print_error(str(e))

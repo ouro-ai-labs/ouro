@@ -100,6 +100,7 @@ def _make_tool_call(name: str, call_id: str = "") -> ToolCall:
 def _make_mock_agent(tools):
     """Create a minimal BaseAgent with the given tools for testing."""
     from agent.base import BaseAgent
+    from agent.steering import SteeringQueues
 
     class _ConcreteAgent(BaseAgent):
         async def run(self, task: str) -> str:
@@ -107,6 +108,7 @@ def _make_mock_agent(tools):
 
     agent = object.__new__(_ConcreteAgent)
     agent.tool_executor = ToolExecutor(tools)
+    agent.steering = SteeringQueues()
     return agent
 
 

@@ -105,8 +105,13 @@ def fake_channel():
 
 @pytest.fixture
 def mock_router():
+    from agent.steering import SteeringQueues
+
     mock_agent = MagicMock()
     mock_agent.run = AsyncMock(return_value="Agent response")
+    # Real SteeringQueues so BotServer's mid-run routing branch can
+    # truthfully report is_running=False between test calls.
+    mock_agent.steering = SteeringQueues()
     router = SessionRouter(agent_factory=lambda: mock_agent)
     return router
 
@@ -251,6 +256,99 @@ async def test_process_message_stops_typing_on_error(bot_server, fake_channel, m
 # ---------------------------------------------------------------------------
 # Channel lifecycle (start / stop wiring)
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Mid-run steering / follow-up routing (RFC 016)
+# ---------------------------------------------------------------------------
+
+
+async def test_mid_run_message_routes_to_steer_not_batch(bot_server, fake_channel, mock_router):
+    """Messages arriving while agent is running go to steering, not a new batch."""
+    # Simulate an already-created agent whose steering queue reports is_running=True.
+    agent = mock_router._agent_factory()
+    mock_router._sessions["test:conv_1"] = agent
+    agent.steering._mark_running()
+
+    msg = IncomingMessage(
+        channel="test",
+        conversation_id="conv_1",
+        user_id="user_1",
+        text="wait, do X instead",
+        message_id="msg_steer",
+        platform_message_id="ts_steer",
+    )
+    await bot_server._process_message(fake_channel, msg)
+
+    # Should be queued as steering, not enqueued into a batch queue.
+    assert agent.steering.pending_steering() == 1
+    assert agent.steering.drain_steering() == ["wait, do X instead"]
+    assert agent.steering.pending_follow_up() == 0
+    # 👀 reaction added (ack), but no agent.run triggered.
+    assert ("conv_1", "ts_steer", "eyes") in fake_channel.reactions_added
+    assert "test:conv_1" not in bot_server._queues
+
+
+async def test_mid_run_followup_prefix_routes_to_follow_up(bot_server, fake_channel, mock_router):
+    """A '+ ' prefix on a mid-run message queues it as follow-up, not steering."""
+    agent = mock_router._agent_factory()
+    mock_router._sessions["test:conv_1"] = agent
+    agent.steering._mark_running()
+
+    msg = IncomingMessage(
+        channel="test",
+        conversation_id="conv_1",
+        user_id="user_1",
+        text="+ commit when done",
+        message_id="msg_fu",
+        platform_message_id="ts_fu",
+    )
+    await bot_server._process_message(fake_channel, msg)
+
+    assert agent.steering.pending_steering() == 0
+    assert agent.steering.drain_follow_up() == ["commit when done"]
+
+
+async def test_mid_run_explicit_followup_command(bot_server, fake_channel, mock_router):
+    """'/followup <msg>' also queues as follow-up."""
+    agent = mock_router._agent_factory()
+    mock_router._sessions["test:conv_1"] = agent
+    agent.steering._mark_running()
+
+    msg = IncomingMessage(
+        channel="test",
+        conversation_id="conv_1",
+        user_id="user_1",
+        text="/followup push branch",
+        message_id="msg_fu2",
+        platform_message_id="ts_fu2",
+    )
+    await bot_server._process_message(fake_channel, msg)
+
+    assert agent.steering.drain_follow_up() == ["push branch"]
+
+
+async def test_idle_message_takes_batch_path_not_steer(bot_server, fake_channel, mock_router):
+    """When no agent is running, incoming messages still go through the batch queue."""
+    agent = mock_router._agent_factory()
+    mock_router._sessions["test:conv_1"] = agent
+    # Explicitly NOT running.
+    assert agent.steering.is_running() is False
+
+    msg = IncomingMessage(
+        channel="test",
+        conversation_id="conv_1",
+        user_id="user_1",
+        text="hello",
+        message_id="msg_hi",
+        platform_message_id="ts_hi",
+    )
+    await bot_server._process_message(fake_channel, msg)
+    await asyncio.sleep(_TEST_DEBOUNCE + 0.15)
+
+    # Batch path: steering queues stay empty, agent.run is invoked, reply is sent.
+    assert agent.steering.pending_counts() == (0, 0)
+    assert any(m.conversation_id == "conv_1" for m in fake_channel.sent_messages)
 
 
 async def test_channel_start_called_with_callback(fake_channel, mock_router):

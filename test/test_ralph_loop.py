@@ -216,6 +216,7 @@ async def test_ralph_loop_injects_feedback_into_messages(mock_agent):
 def _make_loop_agent():
     """Create a minimal LoopAgent with mocked dependencies."""
     from agent.agent import LoopAgent
+    from agent.steering import SteeringQueues
 
     agent = object.__new__(LoopAgent)
     agent.llm = MagicMock()
@@ -226,6 +227,7 @@ def _make_loop_agent():
     agent.memory.get_stats = MagicMock(return_value={})
     agent.tool_executor = MagicMock()
     agent.tool_executor.get_tool_schemas = MagicMock(return_value=[])
+    agent.steering = SteeringQueues()
     agent._ralph_loop = AsyncMock(return_value="ralph result")
     agent._react_loop = AsyncMock(return_value="react result")
     agent._print_memory_stats = MagicMock()
