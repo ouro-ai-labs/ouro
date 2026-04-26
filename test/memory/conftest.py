@@ -2,8 +2,8 @@
 
 import pytest
 
-from config import Config
-from llm.message_types import LLMMessage, LLMResponse, StopReason
+from ouro.config import Config
+from ouro.core.llm.message_types import LLMMessage, LLMResponse, StopReason
 
 
 @pytest.fixture

@@ -1,6 +1,6 @@
 import pytest
 
-from llm.oauth_model_catalog import get_oauth_provider_model_ids
+from ouro.core.llm.oauth_model_catalog import get_oauth_provider_model_ids
 
 
 def test_chatgpt_catalog_includes_gpt52():

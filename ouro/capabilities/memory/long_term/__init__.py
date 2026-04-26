@@ -15,13 +15,13 @@ import logging
 from datetime import date
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
-from config import Config
+from ouro.config import Config
 
 from .consolidator import LongTermMemoryConsolidator
 from .store import MemoryStore
 
 if TYPE_CHECKING:
-    from llm import LiteLLMAdapter
+    from ouro.core.llm import LiteLLMAdapter
 
 logger = logging.getLogger(__name__)
 

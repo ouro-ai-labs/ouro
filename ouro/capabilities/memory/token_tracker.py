@@ -7,8 +7,8 @@ from typing import Dict
 
 import litellm
 
-from llm.message_types import LLMMessage
-from utils.model_pricing import MODEL_PRICING
+from ouro.core.llm.message_types import LLMMessage
+from ouro.core.model_pricing import MODEL_PRICING
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +70,7 @@ class TokenTracker:
     @staticmethod
     def _extract_content_text(message: LLMMessage) -> str:
         """Fallback: extract plain text from a message for rough estimation."""
-        from llm.content_utils import extract_text
+        from ouro.core.llm.content_utils import extract_text
 
         text = extract_text(message.content)
         if hasattr(message, "tool_calls") and message.tool_calls:

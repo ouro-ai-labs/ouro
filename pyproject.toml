@@ -73,17 +73,37 @@ Repository = "https://github.com/ouro-ai-labs/ouro"
 Issues = "https://github.com/ouro-ai-labs/ouro/issues"
 
 [project.scripts]
-ouro = "cli:main"
+ouro = "ouro.interfaces.cli.entry:main"
 
 [tool.setuptools]
-# Use current flat structure
-packages = ["agent", "agent.prompts", "agent.skills", "bot", "bot.channel", "llm", "memory", "memory.long_term", "memory.store", "ouro_harbor", "tools", "utils", "utils.tui"]
-py-modules = ["main", "interactive", "config", "cli"]
+packages = [
+    "ouro",
+    "ouro.core",
+    "ouro.core.llm",
+    "ouro.core.loop",
+    "ouro.capabilities",
+    "ouro.capabilities.context",
+    "ouro.capabilities.memory",
+    "ouro.capabilities.memory.long_term",
+    "ouro.capabilities.memory.store",
+    "ouro.capabilities.prompts",
+    "ouro.capabilities.skills",
+    "ouro.capabilities.todo",
+    "ouro.capabilities.tools",
+    "ouro.capabilities.tools.builtins",
+    "ouro.capabilities.verification",
+    "ouro.interfaces",
+    "ouro.interfaces.bot",
+    "ouro.interfaces.bot.channel",
+    "ouro.interfaces.cli",
+    "ouro.interfaces.tui",
+    "ouro_harbor",
+]
 
 [tool.setuptools.package-data]
 "*" = ["py.typed"]
 "ouro_harbor" = ["*.j2"]
-"agent.skills" = ["system/**"]
+"ouro.capabilities.skills" = ["system/**"]
 
 [tool.black]
 line-length = 100

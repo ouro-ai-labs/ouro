@@ -39,7 +39,7 @@ def setup_logger(
     # Get log level from Config if not provided
     if log_level is None:
         try:
-            from config import Config
+            from ouro.config import Config
 
             log_level = Config.LOG_LEVEL
         except ImportError:

@@ -11,7 +11,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 
-from bot.channel.base import IncomingMessage
+from ouro.interfaces.bot.channel.base import IncomingMessage
 
 logger = logging.getLogger(__name__)
 

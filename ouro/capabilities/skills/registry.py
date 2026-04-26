@@ -6,7 +6,7 @@ from pathlib import Path
 
 import aiofiles.os
 
-from utils import terminal_ui
+from ouro.interfaces.tui import terminal_ui
 
 from .installer import copy_tree
 from .parser import (

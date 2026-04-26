@@ -4,12 +4,12 @@ import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Set
 
-from llm import LLMMessage
+from ouro.core.llm import LLMMessage
 
-from .base import BaseTool
+from ..base import BaseTool
 
 if TYPE_CHECKING:
-    from agent.base import BaseAgent
+    from ouro.capabilities._legacy_base import BaseAgent
 
 
 @dataclass

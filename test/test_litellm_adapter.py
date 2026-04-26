@@ -8,11 +8,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from config import Config
-from llm.chatgpt_auth import ChatGPTLoginRequiredError
-from llm.content_utils import extract_text
-from llm.litellm_adapter import LiteLLMAdapter
-from llm.message_types import LLMMessage
+from ouro.config import Config
+from ouro.core.llm.chatgpt_auth import ChatGPTLoginRequiredError
+from ouro.core.llm.content_utils import extract_text
+from ouro.core.llm.litellm_adapter import LiteLLMAdapter
+from ouro.core.llm.message_types import LLMMessage
 
 
 class TestMessageConversion:

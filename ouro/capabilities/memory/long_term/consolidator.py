@@ -11,11 +11,11 @@ import logging
 from datetime import date
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
-from config import Config
-from llm.message_types import LLMMessage
+from ouro.config import Config
+from ouro.core.llm.message_types import LLMMessage
 
 if TYPE_CHECKING:
-    from llm import LiteLLMAdapter
+    from ouro.core.llm import LiteLLMAdapter
 
 logger = logging.getLogger(__name__)
 

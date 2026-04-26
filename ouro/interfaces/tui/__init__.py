@@ -8,16 +8,16 @@ This package provides a modern, professional terminal UI with:
 - Enhanced input handling with auto-completion
 """
 
-from utils.tui.components import (
+from ouro.interfaces.tui.components import (
     Divider,
     MessageDisplay,
     ThinkingDisplay,
     ToolCallDisplay,
 )
-from utils.tui.input_handler import InputHandler
-from utils.tui.progress import ProgressContext, Spinner
-from utils.tui.status_bar import StatusBar
-from utils.tui.theme import Theme, get_theme, set_theme
+from ouro.interfaces.tui.input_handler import InputHandler
+from ouro.interfaces.tui.progress import ProgressContext, Spinner
+from ouro.interfaces.tui.status_bar import StatusBar
+from ouro.interfaces.tui.theme import Theme, get_theme, set_theme
 
 __all__ = [
     # Theme

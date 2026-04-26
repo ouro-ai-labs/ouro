@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from bot.soul import _DEFAULT_SOUL, ensure_soul_file, load_soul
+from ouro.interfaces.bot.soul import _DEFAULT_SOUL, ensure_soul_file, load_soul
 
 
 def test_ensure_soul_file_creates_default(tmp_path, monkeypatch):

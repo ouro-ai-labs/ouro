@@ -13,7 +13,7 @@ from typing import Any
 import aiofiles
 import yaml
 
-from agent.agent import LoopAgent
+from ouro.capabilities._legacy_agent import LoopAgent
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +159,7 @@ class SessionRouter:
         if not self._sessions_dir:
             return 0
 
-        from memory.store import YamlFileMemoryStore
+        from ouro.capabilities.memory.store import YamlFileMemoryStore
 
         store = YamlFileMemoryStore(sessions_dir=self._sessions_dir)
         sessions = await store.list_sessions(limit=1000)
@@ -242,7 +242,7 @@ class SessionRouter:
         Returns:
             List of session summaries from the store.
         """
-        from memory.manager import MemoryManager
+        from ouro.capabilities.memory.manager import MemoryManager
 
         return await MemoryManager.list_sessions(limit=limit, sessions_dir=self._sessions_dir)
 
@@ -255,7 +255,7 @@ class SessionRouter:
         Returns:
             Full session ID, or None if not found.
         """
-        from memory.manager import MemoryManager
+        from ouro.capabilities.memory.manager import MemoryManager
 
         return await MemoryManager.find_session_by_prefix(prefix, sessions_dir=self._sessions_dir)
 

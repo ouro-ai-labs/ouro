@@ -6,8 +6,8 @@ from typing import Callable, TypeVar
 from tenacity import retry, retry_if_exception, stop_after_attempt
 from tenacity.wait import wait_base
 
-from config import Config
-from utils import get_logger
+from ouro.config import Config
+from ouro.core.log import get_logger
 
 logger = get_logger(__name__)
 T = TypeVar("T")

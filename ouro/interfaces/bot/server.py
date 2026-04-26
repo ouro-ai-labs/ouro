@@ -10,14 +10,14 @@ from typing import TYPE_CHECKING
 
 from aiohttp import web
 
-from bot.channel.base import Channel, IncomingMessage, OutgoingMessage
-from bot.message_queue import ConversationQueue, coalesce_messages
-from bot.proactive import CronScheduler, ProactiveExecutor
-from bot.session_router import SessionRouter
-from config import Config
+from ouro.interfaces.bot.channel.base import Channel, IncomingMessage, OutgoingMessage
+from ouro.interfaces.bot.message_queue import ConversationQueue, coalesce_messages
+from ouro.interfaces.bot.proactive import CronScheduler, ProactiveExecutor
+from ouro.interfaces.bot.session_router import SessionRouter
+from ouro.config import Config
 
 if TYPE_CHECKING:
-    from agent.agent import LoopAgent
+    from ouro.capabilities._legacy_agent import LoopAgent
 
 logger = logging.getLogger(__name__)
 
@@ -728,7 +728,7 @@ def _build_channels() -> list[Channel]:
     # Lark channel
     if Config.LARK_APP_ID and Config.LARK_APP_SECRET:
         try:
-            from bot.channel.lark import LarkChannel
+            from ouro.interfaces.bot.channel.lark import LarkChannel
 
             channels.append(LarkChannel())
             logger.info("Lark channel enabled")
@@ -743,7 +743,7 @@ def _build_channels() -> list[Channel]:
     # Slack channel
     if Config.SLACK_BOT_TOKEN and Config.SLACK_APP_TOKEN:
         try:
-            from bot.channel.slack import SlackChannel
+            from ouro.interfaces.bot.channel.slack import SlackChannel
 
             channels.append(SlackChannel())
             logger.info("Slack channel enabled")
@@ -758,7 +758,7 @@ def _build_channels() -> list[Channel]:
     # WeChat channel
     if Config.WECHAT_ENABLED:
         try:
-            from bot.channel.wechat import WeChatChannel
+            from ouro.interfaces.bot.channel.wechat import WeChatChannel
 
             channels.append(WeChatChannel())
             logger.info("WeChat channel enabled")
@@ -781,10 +781,10 @@ async def run_bot(model_id: str | None = None) -> None:
     """
     from pathlib import Path
 
-    from agent.skills import SkillsRegistry, render_skills_section
-    from bot.soul import load_soul
-    from main import create_agent
-    from utils.runtime import (
+    from ouro.capabilities.skills import SkillsRegistry, render_skills_section
+    from ouro.interfaces.bot.soul import load_soul
+    from ouro.interfaces.cli.main import create_agent
+    from ouro.core.runtime import (
         ensure_bot_dirs,
         get_bot_memory_dir,
         get_bot_sessions_dir,
@@ -848,12 +848,12 @@ async def run_bot(model_id: str | None = None) -> None:
             logger.warning("Failed to load skills for new session: %s", e)
         # Give the agent a manage_cron tool so it can schedule tasks on behalf of the user
         if "cron" in _shared:
-            from tools.cron_tool import CronTool
+            from ouro.capabilities.tools.builtins.cron_tool import CronTool
 
             agent.tool_executor.add_tool(CronTool(_shared["cron"]))
 
         # Give the agent a send_file tool (context is set per-batch in _process_batch)
-        from tools.send_file_tool import SendFileContext, SendFileTool
+        from ouro.capabilities.tools.builtins.send_file_tool import SendFileContext, SendFileTool
 
         ctx = SendFileContext()
         agent.tool_executor.add_tool(SendFileTool(ctx))

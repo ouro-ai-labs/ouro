@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 def main():
     """Main CLI entry point."""
-    from main import main as run_main
+    from ouro.interfaces.cli.main import main as run_main
 
     run_main()
 

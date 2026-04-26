@@ -10,13 +10,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from llm import LLMMessage
-from utils import get_logger
-from utils.tui.progress import AsyncSpinner
+from ouro.core.llm import LLMMessage
+from ouro.core.log import get_logger
+from ouro.interfaces.tui.progress import AsyncSpinner
 
 if TYPE_CHECKING:
-    from llm import LiteLLMAdapter
-    from utils.tui.terminal_ui import TerminalUI
+    from ouro.core.llm import LiteLLMAdapter
+    from ouro.interfaces.tui.terminal_ui import TerminalUI
 
 logger = get_logger(__name__)
 

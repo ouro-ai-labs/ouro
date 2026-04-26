@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from agent.tool_executor import ToolExecutor
-from llm import ToolCall, ToolResult
-from tools.base import BaseTool
+from ouro.capabilities.tools.executor import ToolExecutor
+from ouro.core.llm import ToolCall, ToolResult
+from ouro.capabilities.tools.base import BaseTool
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -99,7 +99,7 @@ def _make_tool_call(name: str, call_id: str = "") -> ToolCall:
 
 def _make_mock_agent(tools):
     """Create a minimal BaseAgent with the given tools for testing."""
-    from agent.base import BaseAgent
+    from ouro.capabilities._legacy_base import BaseAgent
 
     class _ConcreteAgent(BaseAgent):
         async def run(self, task: str) -> str:
@@ -299,9 +299,9 @@ async def test_sequential_execution_works(mock_tui):
 
 def test_real_tools_readonly_flags():
     """Verify readonly flags on actual tool classes."""
-    from tools.advanced_file_ops import GlobTool, GrepTool
-    from tools.file_ops import FileReadTool, FileWriteTool
-    from tools.web_search import WebSearchTool
+    from ouro.capabilities.tools.builtins.advanced_file_ops import GlobTool, GrepTool
+    from ouro.capabilities.tools.builtins.file_ops import FileReadTool, FileWriteTool
+    from ouro.capabilities.tools.builtins.web_search import WebSearchTool
 
     assert FileReadTool.readonly is True
     assert GlobTool.readonly is True

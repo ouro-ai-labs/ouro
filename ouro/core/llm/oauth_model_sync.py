@@ -6,8 +6,8 @@ flows to expose provider models in `/model`.
 
 from __future__ import annotations
 
-from llm.model_manager import ModelManager, ModelProfile
-from llm.oauth_model_catalog import get_oauth_provider_model_ids
+from ouro.core.llm.model_manager import ModelManager, ModelProfile
+from ouro.core.llm.oauth_model_catalog import get_oauth_provider_model_ids
 
 
 def _get_provider_model_ids(provider: str) -> tuple[str, ...]:

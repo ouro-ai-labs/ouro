@@ -2,8 +2,8 @@
 
 from typing import Any, Dict
 
-from agent.todo import TodoList
-from tools.base import BaseTool
+from ouro.capabilities.todo.state import TodoList
+from ouro.capabilities.tools.base import BaseTool
 
 
 class TodoTool(BaseTool):

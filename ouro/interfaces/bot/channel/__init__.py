@@ -1,6 +1,6 @@
 """IM channel implementations for bot mode."""
 
-from bot.channel.base import (
+from ouro.interfaces.bot.channel.base import (
     Channel,
     FileAttachment,
     IncomingMessage,

@@ -7,31 +7,32 @@ import warnings
 
 from rich.console import Console
 
-from agent.agent import LoopAgent
-from agent.skills import SkillsRegistry, render_skills_section
-from config import Config
-from interactive import run_interactive_mode, run_model_setup_mode
-from llm import LiteLLMAdapter, ModelManager
-from llm.chatgpt_auth import (
+from ouro.capabilities._legacy_agent import LoopAgent
+from ouro.capabilities.skills import SkillsRegistry, render_skills_section
+from ouro.config import Config
+from ouro.interfaces.tui.interactive import run_interactive_mode, run_model_setup_mode
+from ouro.core.llm import LiteLLMAdapter, ModelManager
+from ouro.core.llm.chatgpt_auth import (
     get_all_auth_provider_statuses,
     get_supported_auth_providers,
     is_auth_status_logged_in,
     login_auth_provider,
     logout_auth_provider,
 )
-from llm.oauth_model_sync import remove_oauth_models, sync_oauth_models
-from llm.reasoning import REASONING_EFFORT_CHOICES
-from memory import MemoryManager
-from tools.advanced_file_ops import GlobTool, GrepTool
-from tools.file_ops import FileReadTool, FileWriteTool
-from tools.multi_task import MultiTaskTool
-from tools.shell import ShellTool
-from tools.smart_edit import SmartEditTool
-from tools.web_fetch import WebFetchTool
-from tools.web_search import WebSearchTool
-from utils import setup_logger, terminal_ui
-from utils.runtime import ensure_runtime_dirs
-from utils.tui.oauth_ui import pick_oauth_provider
+from ouro.core.llm.oauth_model_sync import remove_oauth_models, sync_oauth_models
+from ouro.core.llm.reasoning import REASONING_EFFORT_CHOICES
+from ouro.capabilities.memory import MemoryManager
+from ouro.capabilities.tools.builtins.advanced_file_ops import GlobTool, GrepTool
+from ouro.capabilities.tools.builtins.file_ops import FileReadTool, FileWriteTool
+from ouro.capabilities.tools.builtins.multi_task import MultiTaskTool
+from ouro.capabilities.tools.builtins.shell import ShellTool
+from ouro.capabilities.tools.builtins.smart_edit import SmartEditTool
+from ouro.capabilities.tools.builtins.web_fetch import WebFetchTool
+from ouro.capabilities.tools.builtins.web_search import WebSearchTool
+from ouro.core.log import setup_logger
+from ouro.interfaces.tui import terminal_ui
+from ouro.core.runtime import ensure_runtime_dirs
+from ouro.interfaces.tui.oauth_ui import pick_oauth_provider
 
 warnings.filterwarnings("ignore", message="Pydantic serializer warnings.*", category=UserWarning)
 
@@ -253,7 +254,7 @@ def main():
             terminal_ui.print_error(str(e), title="Configuration Error")
             return
 
-        from bot.server import run_bot
+        from ouro.interfaces.bot.server import run_bot
 
         asyncio.run(run_bot(model_id=args.model))
         return

@@ -1,8 +1,8 @@
 """Unit tests for MemoryManager."""
 
-from llm.base import LLMMessage
-from memory import MemoryManager
-from memory.types import CompressionStrategy
+from ouro.core.llm.base import LLMMessage
+from ouro.capabilities.memory import MemoryManager
+from ouro.capabilities.memory.types import CompressionStrategy
 
 
 class TestMemoryManagerBasics:

@@ -7,11 +7,11 @@ import sys
 # Add parent directory to path to import modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agent.agent import LoopAgent
-from llm import LiteLLMAdapter, ModelManager
-from tools.file_ops import FileReadTool, FileWriteTool
-from tools.shell import ShellTool
-from tools.web_search import WebSearchTool
+from ouro.capabilities._legacy_agent import LoopAgent
+from ouro.core.llm import LiteLLMAdapter, ModelManager
+from ouro.capabilities.tools.builtins.file_ops import FileReadTool, FileWriteTool
+from ouro.capabilities.tools.builtins.shell import ShellTool
+from ouro.capabilities.tools.builtins.web_search import WebSearchTool
 
 
 async def main():

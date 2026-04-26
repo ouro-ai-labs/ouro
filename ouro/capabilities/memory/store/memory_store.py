@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
-from llm.message_types import LLMMessage
+from ouro.core.llm.message_types import LLMMessage
 
 
 class MemoryStore(ABC):

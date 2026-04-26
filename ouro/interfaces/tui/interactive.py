@@ -7,33 +7,34 @@ import signal
 from rich.markdown import Markdown
 from rich.table import Table
 
-from agent.skills import SkillsRegistry, render_skills_section
-from config import Config
-from llm import ModelManager
-from llm.chatgpt_auth import (
+from ouro.capabilities.skills import SkillsRegistry, render_skills_section
+from ouro.config import Config
+from ouro.core.llm import ModelManager
+from ouro.core.llm.chatgpt_auth import (
     get_all_auth_provider_statuses,
     get_supported_auth_providers,
     is_auth_status_logged_in,
     login_auth_provider,
     logout_auth_provider,
 )
-from llm.oauth_model_sync import remove_oauth_models, sync_oauth_models
-from memory import MemoryManager
-from utils import get_log_file_path, terminal_ui
-from utils.runtime import get_history_file
-from utils.tui.command_registry import CommandRegistry, CommandSpec
-from utils.tui.input_handler import InputHandler
-from utils.tui.model_ui import (
+from ouro.core.llm.oauth_model_sync import remove_oauth_models, sync_oauth_models
+from ouro.capabilities.memory import MemoryManager
+from ouro.core.log import get_log_file_path
+from ouro.interfaces.tui import terminal_ui
+from ouro.core.runtime import get_history_file
+from ouro.interfaces.tui.command_registry import CommandRegistry, CommandSpec
+from ouro.interfaces.tui.input_handler import InputHandler
+from ouro.interfaces.tui.model_ui import (
     mask_secret,
     open_config_and_wait_for_save,
     parse_kv_args,
     pick_model_id,
 )
-from utils.tui.oauth_ui import pick_oauth_provider
-from utils.tui.reasoning_ui import pick_reasoning_effort
-from utils.tui.skills_ui import SkillsAction, pick_skills_action
-from utils.tui.status_bar import StatusBar
-from utils.tui.theme import Theme, set_theme
+from ouro.interfaces.tui.oauth_ui import pick_oauth_provider
+from ouro.interfaces.tui.reasoning_ui import pick_reasoning_effort
+from ouro.interfaces.tui.skills_ui import SkillsAction, pick_skills_action
+from ouro.interfaces.tui.status_bar import StatusBar
+from ouro.interfaces.tui.theme import Theme, set_theme
 
 
 class InteractiveSession:

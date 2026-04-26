@@ -7,7 +7,7 @@ used by all persistence backends.
 import json
 from typing import Any, Dict
 
-from llm.message_types import LLMMessage
+from ouro.core.llm.message_types import LLMMessage
 
 
 def serialize_content(content: Any) -> Any:

@@ -8,8 +8,8 @@ from prompt_toolkit.layout import HSplit, Layout, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.styles import Style
 
-from llm.reasoning import REASONING_EFFORT_CHOICES
-from utils.tui.theme import Theme
+from ouro.core.llm.reasoning import REASONING_EFFORT_CHOICES
+from ouro.interfaces.tui.theme import Theme
 
 _DESC: dict[str, str] = {
     "off": "No reasoning",

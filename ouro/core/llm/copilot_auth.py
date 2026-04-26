@@ -26,7 +26,7 @@ import aiofiles
 import aiofiles.os
 import httpx
 
-from utils.runtime import get_runtime_dir
+from ouro.core.runtime import get_runtime_dir
 
 GITHUB_CLIENT_ID = "Iv1.b507a08c87ecfe98"
 GITHUB_DEVICE_CODE_URL = "https://github.com/login/device/code"

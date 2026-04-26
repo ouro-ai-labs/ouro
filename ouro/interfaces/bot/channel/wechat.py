@@ -17,10 +17,10 @@ import threading
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Any
 
-from bot.channel.base import IncomingMessage, OutgoingMessage
+from ouro.interfaces.bot.channel.base import IncomingMessage, OutgoingMessage
 
 if TYPE_CHECKING:
-    from bot.channel.base import MessageCallback
+    from ouro.interfaces.bot.channel.base import MessageCallback
 
 
 logger = logging.getLogger(__name__)

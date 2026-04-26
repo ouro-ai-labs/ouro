@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 from ddgs import DDGS
 from ddgs.http_client import HttpClient
 
-from .base import BaseTool
+from ..base import BaseTool
 
 # Fix ddgs/primp compatibility: ddgs ships impersonate profiles that primp 1.0
 # no longer recognises.  Passing an unknown value triggers a Rust-side fallback

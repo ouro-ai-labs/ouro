@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from agent.agent import LoopAgent
-from llm import LiteLLMAdapter, ModelManager
-from tools.file_ops import FileReadTool, FileWriteTool
-from tools.smart_edit import SmartEditTool
+from ouro.capabilities._legacy_agent import LoopAgent
+from ouro.core.llm import LiteLLMAdapter, ModelManager
+from ouro.capabilities.tools.builtins.file_ops import FileReadTool, FileWriteTool
+from ouro.capabilities.tools.builtins.smart_edit import SmartEditTool
 
 
 @pytest.mark.integration

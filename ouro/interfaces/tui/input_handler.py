@@ -12,9 +12,9 @@ from prompt_toolkit.key_binding.key_processor import KeyPressEvent
 from prompt_toolkit.keys import Keys
 from prompt_toolkit.styles import Style
 
-from utils.tui.command_registry import CommandRegistry
-from utils.tui.slash_autocomplete import SlashAutocompleteEngine, SlashSuggestion
-from utils.tui.theme import Theme
+from ouro.interfaces.tui.command_registry import CommandRegistry
+from ouro.interfaces.tui.slash_autocomplete import SlashAutocompleteEngine, SlashSuggestion
+from ouro.interfaces.tui.theme import Theme
 
 
 def _relative_luminance(color: str) -> float | None:

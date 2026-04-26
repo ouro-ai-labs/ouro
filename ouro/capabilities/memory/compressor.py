@@ -5,16 +5,16 @@ from typing import TYPE_CHECKING, List, Optional, Tuple
 
 import litellm
 
-from config import Config
-from llm.content_utils import extract_text
-from llm.message_types import LLMMessage
+from ouro.config import Config
+from ouro.core.llm.content_utils import extract_text
+from ouro.core.llm.message_types import LLMMessage
 
 from .types import CompressedMemory, CompressionStrategy
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from llm import LiteLLMAdapter
+    from ouro.core.llm import LiteLLMAdapter
 
 
 class WorkingMemoryCompressor:

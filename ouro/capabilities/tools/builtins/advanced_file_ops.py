@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 import aiofiles
 import aiofiles.os
 
-from tools.base import BaseTool
+from ouro.capabilities.tools.base import BaseTool
 
 
 class GlobTool(BaseTool):

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List
 
-from llm.base import LLMMessage
+from ouro.core.llm.base import LLMMessage
 
 
 @dataclass

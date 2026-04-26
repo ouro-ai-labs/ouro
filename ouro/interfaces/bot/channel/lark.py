@@ -22,12 +22,12 @@ from lark_oapi.api.im.v1 import (
     P2ImMessageReceiveV1,
 )
 
-from bot.channel.base import FileAttachment, ImageData, IncomingMessage, OutgoingMessage
+from ouro.interfaces.bot.channel.base import FileAttachment, ImageData, IncomingMessage, OutgoingMessage
 
 if TYPE_CHECKING:
-    from bot.channel.base import MessageCallback
+    from ouro.interfaces.bot.channel.base import MessageCallback
 
-from config import Config
+from ouro.config import Config
 
 logger = logging.getLogger(__name__)
 

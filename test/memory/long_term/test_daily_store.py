@@ -5,7 +5,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from memory.long_term.store import MemoryStore
+from ouro.capabilities.memory.long_term.store import MemoryStore
 
 
 @pytest.mark.asyncio

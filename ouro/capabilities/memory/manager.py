@@ -6,11 +6,11 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 import litellm
 
-from config import Config
-from llm.content_utils import content_has_tool_calls
-from llm.message_types import LLMMessage
-from utils import terminal_ui
-from utils.tui.progress import AsyncSpinner
+from ouro.config import Config
+from ouro.core.llm.content_utils import content_has_tool_calls
+from ouro.core.llm.message_types import LLMMessage
+from ouro.interfaces.tui import terminal_ui
+from ouro.interfaces.tui.progress import AsyncSpinner
 
 from .compressor import WorkingMemoryCompressor
 from .short_term import ShortTermMemory
@@ -37,7 +37,7 @@ def _extract_ltm_block(text: str) -> str:
 
 
 if TYPE_CHECKING:
-    from llm import LiteLLMAdapter
+    from ouro.core.llm import LiteLLMAdapter
 
     from .long_term import LongTermMemoryManager
 

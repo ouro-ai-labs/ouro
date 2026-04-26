@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 
-from memory.long_term import LongTermMemoryManager
+from ouro.capabilities.memory.long_term import LongTermMemoryManager
 
 
 @pytest.mark.asyncio
@@ -32,7 +32,7 @@ class TestLongTermMemoryManager:
     async def test_load_and_format_triggers_consolidation(
         self, tmp_path, mock_ltm_llm, monkeypatch
     ):
-        from config import Config
+        from ouro.config import Config
 
         monkeypatch.setattr(Config, "LONG_TERM_MEMORY_CONSOLIDATION_THRESHOLD", 1)
 
@@ -51,7 +51,7 @@ class TestLongTermMemoryManager:
     async def test_load_and_format_no_consolidation_below_threshold(
         self, tmp_path, mock_ltm_llm, monkeypatch
     ):
-        from config import Config
+        from ouro.config import Config
 
         monkeypatch.setattr(Config, "LONG_TERM_MEMORY_CONSOLIDATION_THRESHOLD", 99999)
 
@@ -78,7 +78,7 @@ class TestLongTermMemoryManager:
 
     async def test_load_and_format_includes_dailies(self, tmp_path, mock_ltm_llm, monkeypatch):
         """Daily files should appear in the formatted output."""
-        from config import Config
+        from ouro.config import Config
 
         monkeypatch.setattr(Config, "LONG_TERM_MEMORY_DAILY_WINDOW", 2)
         monkeypatch.setattr(Config, "LONG_TERM_MEMORY_CONSOLIDATION_THRESHOLD", 99999)
@@ -110,7 +110,7 @@ class TestLongTermMemoryManager:
 
     async def test_load_and_format_includes_today_file(self, tmp_path, mock_ltm_llm, monkeypatch):
         """Template should reference today's daily file name."""
-        from config import Config
+        from ouro.config import Config
 
         monkeypatch.setattr(Config, "LONG_TERM_MEMORY_CONSOLIDATION_THRESHOLD", 99999)
 
@@ -123,7 +123,7 @@ class TestLongTermMemoryManager:
         self, tmp_path, mock_ltm_llm, monkeypatch
     ):
         """No LLM calls (promote/consolidate) when combined size is below threshold."""
-        from config import Config
+        from ouro.config import Config
 
         monkeypatch.setattr(Config, "LONG_TERM_MEMORY_CONSOLIDATION_THRESHOLD", 99999)
 
@@ -138,7 +138,7 @@ class TestLongTermMemoryManager:
         self, tmp_path, mock_ltm_llm, monkeypatch
     ):
         """Both promote and consolidate fire when permanent + dailies exceed threshold."""
-        from config import Config
+        from ouro.config import Config
 
         monkeypatch.setattr(Config, "LONG_TERM_MEMORY_CONSOLIDATION_THRESHOLD", 1)
 

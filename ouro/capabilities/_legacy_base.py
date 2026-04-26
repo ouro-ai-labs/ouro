@@ -4,20 +4,21 @@ import asyncio
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, List, Optional
 
-from llm import LLMMessage, LLMResponse, StopReason, ToolCall, ToolResult
-from llm.reasoning import display_reasoning_effort, normalize_reasoning_effort
-from memory import MemoryManager
-from tools.base import BaseTool
-from tools.todo import TodoTool
-from utils import get_logger, terminal_ui
-from utils.tui.progress import AsyncSpinner
+from ouro.core.llm import LLMMessage, LLMResponse, StopReason, ToolCall, ToolResult
+from ouro.core.llm.reasoning import display_reasoning_effort, normalize_reasoning_effort
+from ouro.capabilities.memory import MemoryManager
+from ouro.capabilities.tools.base import BaseTool
+from ouro.capabilities.tools.builtins.todo_tool import TodoTool
+from ouro.core.log import get_logger
+from ouro.interfaces.tui import terminal_ui
+from ouro.interfaces.tui.progress import AsyncSpinner
 
-from .todo import TodoList
-from .tool_executor import ToolExecutor
-from .verification import LLMVerifier, VerificationResult, Verifier
+from .todo.state import TodoList
+from .tools.executor import ToolExecutor
+from .verification.verifier import LLMVerifier, VerificationResult, Verifier
 
 if TYPE_CHECKING:
-    from llm import LiteLLMAdapter, ModelManager
+    from ouro.core.llm import LiteLLMAdapter, ModelManager
 
 logger = get_logger(__name__)
 
@@ -367,7 +368,7 @@ class BaseAgent(ABC):
             return False
 
         # Reinitialize LLM adapter with new model
-        from llm import LiteLLMAdapter
+        from ouro.core.llm import LiteLLMAdapter
 
         new_llm = LiteLLMAdapter(
             model=new_profile.model_id,

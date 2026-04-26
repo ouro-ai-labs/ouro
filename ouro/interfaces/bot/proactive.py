@@ -32,14 +32,14 @@ from typing import TYPE_CHECKING, Any
 
 from croniter import croniter
 
-from config import Config
+from ouro.config import Config
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-    from agent.agent import LoopAgent
-    from bot.channel.base import Channel
-    from bot.session_router import SessionRouter
+    from ouro.capabilities._legacy_agent import LoopAgent
+    from ouro.interfaces.bot.channel.base import Channel
+    from ouro.interfaces.bot.session_router import SessionRouter
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +102,7 @@ class ProactiveExecutor:
 
     async def broadcast(self, text: str) -> int:
         """Push *text* to every active session. Returns count of successful sends."""
-        from bot.channel.base import OutgoingMessage
+        from ouro.interfaces.bot.channel.base import OutgoingMessage
 
         sessions = self._router.iter_active_sessions()
         if not sessions:
@@ -129,7 +129,7 @@ class ProactiveExecutor:
 
     async def send_to(self, channel_name: str, conversation_id: str, text: str) -> bool:
         """Send *text* to one specific channel + conversation. Returns success."""
-        from bot.channel.base import OutgoingMessage
+        from ouro.interfaces.bot.channel.base import OutgoingMessage
 
         channel_map: dict[str, Channel] = {ch.name: ch for ch in self._channels}
         ch = channel_map.get(channel_name)

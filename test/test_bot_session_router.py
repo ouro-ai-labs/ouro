@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock
 
-from bot.session_router import SessionRouter
+from ouro.interfaces.bot.session_router import SessionRouter
 
 
 def _mock_agent_factory():

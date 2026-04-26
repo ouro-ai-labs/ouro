@@ -3,7 +3,7 @@
 import asyncio
 from typing import Any, Dict
 
-from .base import BaseTool
+from ..base import BaseTool
 
 
 class ShellTool(BaseTool):

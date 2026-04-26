@@ -2,7 +2,7 @@
 
 import pytest
 
-from tools.shell import ShellTool
+from ouro.capabilities.tools.builtins.shell import ShellTool
 
 
 class TestShellTool:

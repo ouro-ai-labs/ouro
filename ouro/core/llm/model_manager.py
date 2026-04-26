@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlparse
 
-from utils import get_logger
+from ouro.core.log import get_logger
 
 logger = get_logger(__name__)
 

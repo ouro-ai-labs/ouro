@@ -15,8 +15,8 @@ from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 
-from config import Config
-from utils.tui.theme import Theme, set_theme
+from ouro.config import Config
+from ouro.interfaces.tui.theme import Theme, set_theme
 
 # Initialize theme from config
 set_theme(Config.TUI_THEME)

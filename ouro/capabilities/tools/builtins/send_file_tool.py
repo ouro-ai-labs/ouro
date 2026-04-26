@@ -8,7 +8,7 @@ import os
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from tools.base import BaseTool
+from ouro.capabilities.tools.base import BaseTool
 
 logger = logging.getLogger(__name__)
 

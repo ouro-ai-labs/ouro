@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from bot.proactive import CronScheduler
-from tools.cron_tool import CronTool
+from ouro.interfaces.bot.proactive import CronScheduler
+from ouro.capabilities.tools.builtins.cron_tool import CronTool
 
 # ---------------------------------------------------------------------------
 # Helpers

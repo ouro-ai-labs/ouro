@@ -5,7 +5,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from llm.chatgpt_auth import (
+from ouro.core.llm.chatgpt_auth import (
     get_all_auth_provider_statuses,
     get_auth_provider_status,
     get_supported_auth_providers,
@@ -14,7 +14,7 @@ from llm.chatgpt_auth import (
     logout_auth_provider,
     normalize_auth_provider,
 )
-from llm.copilot_auth import (
+from ouro.core.llm.copilot_auth import (
     CopilotAuthStatus,
     CopilotLoginRequiredError,
     _fetch_copilot_api_key,

@@ -3,7 +3,7 @@
 from collections import deque
 from typing import List
 
-from llm.base import LLMMessage
+from ouro.core.llm.base import LLMMessage
 
 
 class ShortTermMemory:

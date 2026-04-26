@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from bot.channel.base import IncomingMessage, OutgoingMessage
+from ouro.interfaces.bot.channel.base import IncomingMessage, OutgoingMessage
 
 # ---------------------------------------------------------------------------
 # Helpers — build SDK-style event objects without importing lark_oapi

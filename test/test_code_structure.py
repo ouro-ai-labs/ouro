@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from tools.code_structure import (
+from ouro.capabilities.tools.builtins.code_structure import (
     EXTENSION_TO_LANGUAGE,
     LANGUAGE_MODULES,
     detect_language,

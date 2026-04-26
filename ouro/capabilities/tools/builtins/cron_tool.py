@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from tools.base import BaseTool
+from ouro.capabilities.tools.base import BaseTool
 
 if TYPE_CHECKING:
-    from bot.proactive import CronScheduler
+    from ouro.interfaces.bot.proactive import CronScheduler
 
 
 class CronTool(BaseTool):

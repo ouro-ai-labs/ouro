@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from bot.channel.base import IncomingMessage, OutgoingMessage
+from ouro.interfaces.bot.channel.base import IncomingMessage, OutgoingMessage
 
 # ---------------------------------------------------------------------------
 # Helpers

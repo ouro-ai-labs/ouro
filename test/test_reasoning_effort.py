@@ -4,9 +4,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from agent.base import BaseAgent
-from llm import LLMMessage, LLMResponse, StopReason
-from llm.reasoning import REASONING_EFFORT_CHOICES, normalize_reasoning_effort
+from ouro.capabilities._legacy_base import BaseAgent
+from ouro.core.llm import LLMMessage, LLMResponse, StopReason
+from ouro.core.llm.reasoning import REASONING_EFFORT_CHOICES, normalize_reasoning_effort
 
 
 def test_normalize_reasoning_effort_basics():
@@ -27,7 +27,7 @@ def test_normalize_reasoning_effort_basics():
 
 def test_reasoning_menu_levels_stay_in_sync():
     # The menu should expose the same user-facing options we document.
-    from utils.tui import reasoning_ui
+    from ouro.interfaces.tui import reasoning_ui
 
     menu_values = [v for v, _ in reasoning_ui._LEVELS]  # noqa: SLF001
     assert "none" not in menu_values
@@ -92,7 +92,7 @@ async def test_agent_call_llm_injects_reasoning_effort(monkeypatch):
 async def test_interactive_reasoning_command_sets_agent(monkeypatch):
     interactive = pytest.importorskip("interactive")
     InteractiveSession = interactive.InteractiveSession
-    from llm.reasoning import display_reasoning_effort, normalize_reasoning_effort
+    from ouro.core.llm.reasoning import display_reasoning_effort, normalize_reasoning_effort
 
     class _FakeAgent:
         def __init__(self):

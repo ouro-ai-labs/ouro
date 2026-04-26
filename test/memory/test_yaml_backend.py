@@ -5,8 +5,8 @@ import tempfile
 
 import pytest
 
-from llm.message_types import LLMMessage
-from memory.store import YamlFileMemoryStore
+from ouro.core.llm.message_types import LLMMessage
+from ouro.capabilities.memory.store import YamlFileMemoryStore
 
 
 @pytest.fixture

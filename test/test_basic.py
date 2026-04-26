@@ -7,13 +7,13 @@ import os
 
 
 async def test_imports():
-    from agent.agent import LoopAgent  # noqa: F401
-    from config import Config  # noqa: F401
-    from tools.file_ops import FileReadTool, FileWriteTool  # noqa: F401
+    from ouro.capabilities._legacy_agent import LoopAgent  # noqa: F401
+    from ouro.config import Config  # noqa: F401
+    from ouro.capabilities.tools.builtins.file_ops import FileReadTool, FileWriteTool  # noqa: F401
 
 
 async def test_tools_execute_and_cleanup(tmp_path):
-    from tools.file_ops import FileReadTool, FileWriteTool
+    from ouro.capabilities.tools.builtins.file_ops import FileReadTool, FileWriteTool
 
     file_read = FileReadTool()
     file_write = FileWriteTool()

@@ -26,7 +26,7 @@ import aiofiles
 import aiofiles.os
 import httpx
 
-from utils.runtime import get_runtime_dir
+from ouro.core.runtime import get_runtime_dir
 
 if TYPE_CHECKING:
     from .copilot_auth import CopilotAuthStatus

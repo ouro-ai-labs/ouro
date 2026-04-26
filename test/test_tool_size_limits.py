@@ -7,9 +7,9 @@ error messages when output exceeds the maximum allowed tokens.
 import shlex
 import sys
 
-from tools.advanced_file_ops import GrepTool
-from tools.file_ops import FileReadTool
-from tools.shell import ShellTool
+from ouro.capabilities.tools.builtins.advanced_file_ops import GrepTool
+from ouro.capabilities.tools.builtins.file_ops import FileReadTool
+from ouro.capabilities.tools.builtins.shell import ShellTool
 
 
 class TestFileReadToolSizeLimits:
@@ -189,7 +189,7 @@ class TestToolConstants:
 
     async def test_base_tool_constants(self):
         """BaseTool should define size limit constants."""
-        from tools.base import BaseTool
+        from ouro.capabilities.tools.base import BaseTool
 
         assert hasattr(BaseTool, "MAX_TOKENS")
         assert hasattr(BaseTool, "CHARS_PER_TOKEN")
@@ -198,7 +198,7 @@ class TestToolConstants:
 
     async def test_tools_inherit_constants(self):
         """All tools should inherit size limit constants from BaseTool."""
-        from tools.base import BaseTool
+        from ouro.capabilities.tools.base import BaseTool
 
         # All tools inherit from BaseTool and should have the same constants
         assert FileReadTool.MAX_TOKENS == BaseTool.MAX_TOKENS

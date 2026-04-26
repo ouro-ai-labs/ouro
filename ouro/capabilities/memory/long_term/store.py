@@ -23,7 +23,7 @@ class MemoryStore:
 
     def __init__(self, memory_dir: Optional[str] = None):
         if memory_dir is None:
-            from utils.runtime import get_memory_dir
+            from ouro.core.runtime import get_memory_dir
 
             memory_dir = get_memory_dir()
         self.memory_dir = memory_dir

@@ -1,7 +1,7 @@
 """Unit tests for ShortTermMemory."""
 
-from llm.base import LLMMessage
-from memory.short_term import ShortTermMemory
+from ouro.core.llm.base import LLMMessage
+from ouro.capabilities.memory.short_term import ShortTermMemory
 
 
 class TestShortTermMemoryBasics:

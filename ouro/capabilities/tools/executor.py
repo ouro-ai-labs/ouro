@@ -3,8 +3,8 @@
 import asyncio
 from typing import Any, Dict, List
 
-from config import Config
-from tools.base import BaseTool
+from ouro.config import Config
+from ouro.capabilities.tools.base import BaseTool
 
 
 class ToolExecutor:

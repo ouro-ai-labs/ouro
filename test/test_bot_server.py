@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from bot.channel.base import IncomingMessage, OutgoingMessage
-from bot.server import BotServer
-from bot.session_router import SessionRouter
+from ouro.interfaces.bot.channel.base import IncomingMessage, OutgoingMessage
+from ouro.interfaces.bot.server import BotServer
+from ouro.interfaces.bot.session_router import SessionRouter
 
 aiohttp = pytest.importorskip("aiohttp")
 from aiohttp.test_utils import TestClient, TestServer  # noqa: E402
@@ -317,7 +317,7 @@ def test_build_channels_lark():
         mock_config.SLACK_APP_TOKEN = ""
         mock_config.WECHAT_ENABLED = False
 
-        from bot.server import _build_channels
+        from ouro.interfaces.bot.server import _build_channels
 
         channels = _build_channels()
         assert len(channels) == 1
@@ -332,7 +332,7 @@ def test_build_channels_empty():
         mock_config.SLACK_APP_TOKEN = ""
         mock_config.WECHAT_ENABLED = False
 
-        from bot.server import _build_channels
+        from ouro.interfaces.bot.server import _build_channels
 
         channels = _build_channels()
         assert len(channels) == 0
@@ -495,7 +495,7 @@ async def test_command_case_insensitive(bot_server, fake_channel, mock_router):
 
 async def test_process_message_with_file_augments_text(bot_server, fake_channel, mock_router):
     """Incoming file attachments are saved to disk and text is augmented."""
-    from bot.channel.base import FileAttachment
+    from ouro.interfaces.bot.channel.base import FileAttachment
 
     msg = IncomingMessage(
         channel="test",
@@ -529,7 +529,7 @@ async def test_process_message_with_file_augments_text(bot_server, fake_channel,
 
 async def test_send_file_context_lifecycle(bot_server, fake_channel, mock_router):
     """SendFileContext is set before agent.run() and cleared after."""
-    from tools.send_file_tool import SendFileContext
+    from ouro.capabilities.tools.builtins.send_file_tool import SendFileContext
 
     agent = await mock_router.get_or_create_agent("test", "conv_ctx")
     ctx = SendFileContext()

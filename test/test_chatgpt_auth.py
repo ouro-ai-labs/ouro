@@ -7,7 +7,7 @@ from pathlib import Path
 
 import httpx
 
-from llm.chatgpt_auth import (
+from ouro.core.llm.chatgpt_auth import (
     ChatGPTAuthStatus,
     ChatGPTLoginRequiredError,
     _prompt_for_redirect_code,

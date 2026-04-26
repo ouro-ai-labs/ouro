@@ -20,7 +20,7 @@ import httpx
 import trafilatura
 from lxml import html as lxml_html
 
-from .base import BaseTool
+from ..base import BaseTool
 
 MAX_RESPONSE_BYTES = 5 * 1024 * 1024
 DEFAULT_TIMEOUT_SECONDS = 30

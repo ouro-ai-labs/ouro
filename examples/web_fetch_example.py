@@ -6,9 +6,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agent.agent import LoopAgent
-from llm import LiteLLMAdapter, ModelManager
-from tools.web_fetch import WebFetchTool
+from ouro.capabilities._legacy_agent import LoopAgent
+from ouro.core.llm import LiteLLMAdapter, ModelManager
+from ouro.capabilities.tools.builtins.web_fetch import WebFetchTool
 
 
 async def main():

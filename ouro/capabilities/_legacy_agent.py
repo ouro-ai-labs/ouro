@@ -6,16 +6,16 @@ import base64
 import logging
 from typing import TYPE_CHECKING
 
-from config import Config
-from llm import LLMMessage
-from utils import terminal_ui
-from utils.tui.progress import AsyncSpinner
+from ouro.config import Config
+from ouro.core.llm import LLMMessage
+from ouro.interfaces.tui import terminal_ui
+from ouro.interfaces.tui.progress import AsyncSpinner
 
-from .base import BaseAgent
-from .context import format_context_prompt
+from ._legacy_base import BaseAgent
+from .context.env import format_context_prompt
 
 if TYPE_CHECKING:
-    from bot.channel.base import ImageData
+    from ouro.interfaces.bot.channel.base import ImageData
 
 logger = logging.getLogger(__name__)
 

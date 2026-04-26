@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from agent.skills import SkillInfo, render_skills_section
+from ouro.capabilities.skills import SkillInfo, render_skills_section
 
 
 def test_render_skills_section_empty() -> None:

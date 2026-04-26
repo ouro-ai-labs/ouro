@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from agent.verification import LLMVerifier, VerificationResult, Verifier
-from llm import LLMMessage, LLMResponse, StopReason
+from ouro.capabilities.verification.verifier import LLMVerifier, VerificationResult, Verifier
+from ouro.core.llm import LLMMessage, LLMResponse, StopReason
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -54,7 +54,7 @@ def mock_agent():
     We patch the heavy dependencies (LLM, memory, tools) so only the loop
     logic is exercised.
     """
-    from agent.base import BaseAgent
+    from ouro.capabilities._legacy_base import BaseAgent
 
     # Concrete subclass so we can instantiate without hitting ABC restriction
     class _ConcreteAgent(BaseAgent):
@@ -215,7 +215,7 @@ async def test_ralph_loop_injects_feedback_into_messages(mock_agent):
 
 def _make_loop_agent():
     """Create a minimal LoopAgent with mocked dependencies."""
-    from agent.agent import LoopAgent
+    from ouro.capabilities._legacy_agent import LoopAgent
 
     agent = object.__new__(LoopAgent)
     agent.llm = MagicMock()

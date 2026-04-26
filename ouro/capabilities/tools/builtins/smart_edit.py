@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional, Tuple
 import aiofiles
 import aiofiles.os
 
-from tools.base import BaseTool
+from ouro.capabilities.tools.base import BaseTool
 
 
 def _is_git_repo(path: Path) -> bool:

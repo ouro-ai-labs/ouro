@@ -9,13 +9,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from bot.channel.base import OutgoingMessage
-from bot.proactive import (
+from ouro.interfaces.bot.channel.base import OutgoingMessage
+from ouro.interfaces.bot.proactive import (
     CronJob,
     CronScheduler,
     ProactiveExecutor,
 )
-from bot.session_router import SessionRouter
+from ouro.interfaces.bot.session_router import SessionRouter
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -434,7 +434,7 @@ class TestProactiveSlashCommands:
 
     @pytest.fixture
     def setup(self):
-        from bot.server import BotServer
+        from ouro.interfaces.bot.server import BotServer
 
         mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value="ok")
@@ -448,7 +448,7 @@ class TestProactiveSlashCommands:
         return server, ch, cron
 
     def _msg(self, text: str):
-        from bot.channel.base import IncomingMessage
+        from ouro.interfaces.bot.channel.base import IncomingMessage
 
         return IncomingMessage(
             channel="test",

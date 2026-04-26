@@ -9,7 +9,7 @@ from rich.live import Live
 from rich.panel import Panel
 from rich.text import Text
 
-from utils.tui.theme import Theme
+from ouro.interfaces.tui.theme import Theme
 
 
 @dataclass

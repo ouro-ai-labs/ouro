@@ -5,7 +5,7 @@ import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from utils import get_logger
+from ouro.core.log import get_logger
 
 from .content_utils import extract_text, extract_tool_calls_from_content
 from .message_types import (

@@ -11,7 +11,7 @@ from rich.panel import Panel
 from rich.spinner import Spinner as RichSpinner
 from rich.text import Text
 
-from utils.tui.theme import Theme
+from ouro.interfaces.tui.theme import Theme
 
 if TYPE_CHECKING:
     from rich.console import ConsoleOptions, RenderResult
