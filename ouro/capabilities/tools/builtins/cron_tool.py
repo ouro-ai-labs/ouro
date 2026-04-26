@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from ouro.capabilities.tools.base import BaseTool
 
-if TYPE_CHECKING:
-    from ouro.interfaces.bot.proactive import CronScheduler
+from ._cron_proto import CronScheduler
 
 
 class CronTool(BaseTool):

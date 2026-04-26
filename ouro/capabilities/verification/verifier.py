@@ -8,15 +8,14 @@ the inner ReAct loop with corrective guidance.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Optional, Protocol, runtime_checkable
 
 from ouro.core.llm import LLMMessage
 from ouro.core.log import get_logger
-from ouro.interfaces.tui.progress import AsyncSpinner
+from ouro.core.loop.protocols import NullProgressSink, ProgressSink
 
 if TYPE_CHECKING:
     from ouro.core.llm import LiteLLMAdapter
-    from ouro.interfaces.tui.terminal_ui import TerminalUI
 
 logger = get_logger(__name__)
 
@@ -86,9 +85,9 @@ Do NOT restate the answer. Only judge it."""
 class LLMVerifier:
     """Default verifier that uses a lightweight LLM call (no tools)."""
 
-    def __init__(self, llm: LiteLLMAdapter, terminal_ui: TerminalUI | None = None):
+    def __init__(self, llm: LiteLLMAdapter, progress: Optional[ProgressSink] = None):
         self.llm = llm
-        self._tui = terminal_ui
+        self._progress: ProgressSink = progress or NullProgressSink()
 
     async def verify(
         self,
@@ -116,11 +115,7 @@ class LLMVerifier:
             LLMMessage(role="user", content=prompt),
         ]
 
-        console = self._tui.console if self._tui else None
-        if console:
-            async with AsyncSpinner(console, "Verifying completion...", title="Verifying"):
-                response = await self.llm.call_async(messages=messages, tools=None, max_tokens=512)
-        else:
+        async with self._progress.spinner("Verifying completion...", title="Verifying"):
             response = await self.llm.call_async(messages=messages, tools=None, max_tokens=512)
 
         text = (response.content or "").strip()

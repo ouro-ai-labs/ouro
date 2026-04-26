@@ -6,7 +6,7 @@ from pathlib import Path
 
 import aiofiles.os
 
-from ouro.interfaces.tui import terminal_ui
+from ouro.core.log import get_logger
 
 from .installer import copy_tree
 from .parser import (
@@ -15,6 +15,8 @@ from .parser import (
     split_frontmatter,
 )
 from .types import SkillInfo
+
+logger = get_logger(__name__)
 
 # Bundled skills shipped with ouro (source for seeding only)
 BUNDLED_SKILLS_DIR = Path(__file__).parent / "system"
@@ -54,7 +56,7 @@ class SkillsRegistry:
             name = str(frontmatter.get("name", "")).strip()
             description = str(frontmatter.get("description", "")).strip()
             if not name or not description:
-                terminal_ui.print_warning(f"Skipping skill without required fields: {skill_file}")
+                logger.warning(f"Skipping skill without required fields: {skill_file}")
                 continue
             results[name] = SkillInfo(
                 name=name,

@@ -9,8 +9,7 @@ import litellm
 from ouro.config import Config
 from ouro.core.llm.content_utils import content_has_tool_calls
 from ouro.core.llm.message_types import LLMMessage
-from ouro.interfaces.tui import terminal_ui
-from ouro.interfaces.tui.progress import AsyncSpinner
+from ouro.core.loop.protocols import NullProgressSink, ProgressSink
 
 from .compressor import WorkingMemoryCompressor
 from .short_term import ShortTermMemory
@@ -55,6 +54,7 @@ class MemoryManager:
         session_id: Optional[str] = None,
         sessions_dir: Optional[str] = None,
         memory_dir: Optional[str] = None,
+        progress: Optional[ProgressSink] = None,
     ):
         """Initialize memory manager.
 
@@ -63,8 +63,13 @@ class MemoryManager:
             session_id: Optional session ID (if resuming session)
             sessions_dir: Optional custom sessions directory (default: ~/.ouro/sessions/)
             memory_dir: Optional custom long-term memory directory (default: ~/.ouro/memory/)
+            progress: Optional ProgressSink for UI feedback during standalone
+                compression. Defaults to a no-op sink. The cache-safe
+                compaction path driven by the agent loop does NOT use this —
+                the loop owns its own spinner there.
         """
         self.llm = llm
+        self._progress: ProgressSink = progress or NullProgressSink()
 
         # Store is fully owned by MemoryManager
         from .store import YamlFileMemoryStore
@@ -117,6 +122,7 @@ class MemoryManager:
         llm: "LiteLLMAdapter",
         sessions_dir: Optional[str] = None,
         memory_dir: Optional[str] = None,
+        progress: Optional[ProgressSink] = None,
     ) -> "MemoryManager":
         """Load a MemoryManager from a saved session.
 
@@ -125,12 +131,17 @@ class MemoryManager:
             llm: LLM instance for compression
             sessions_dir: Optional custom sessions directory
             memory_dir: Optional custom long-term memory directory
+            progress: Optional ProgressSink (forwarded to the new MemoryManager)
 
         Returns:
             MemoryManager instance with loaded state
         """
         manager = cls(
-            llm=llm, session_id=session_id, sessions_dir=sessions_dir, memory_dir=memory_dir
+            llm=llm,
+            session_id=session_id,
+            sessions_dir=sessions_dir,
+            memory_dir=memory_dir,
+            progress=progress,
         )
 
         # Load session data
@@ -520,8 +531,8 @@ class MemoryManager:
             if self._todo_context_provider:
                 todo_context = self._todo_context_provider()
 
-            # Perform compression with TUI spinner
-            async with AsyncSpinner(terminal_ui.console, "Compressing memory...", title="Working"):
+            # Perform compression with optional progress sink (no-op by default).
+            async with self._progress.spinner("Compressing memory...", title="Working"):
                 compressed = await self.compressor.compress(
                     messages,
                     strategy=strategy,
