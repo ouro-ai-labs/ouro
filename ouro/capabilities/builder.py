@@ -15,7 +15,7 @@ from __future__ import annotations
 import base64
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Sequence
+from typing import Any, Iterable, List, Optional, Protocol, Sequence
 
 from ouro.config import Config
 from ouro.core.llm import (
@@ -42,8 +42,20 @@ from .todo.state import TodoList
 from .verification.hook import VerificationHook
 from .verification.verifier import Verifier
 
-if TYPE_CHECKING:
-    from ouro.interfaces.bot.channel.base import ImageData
+
+class ImageInput(Protocol):
+    """Capability-local Protocol for image attachments.
+
+    The bot channel layer's `ImageData` (with `data: bytes`, `mime_type: str`)
+    satisfies this structurally. Defining the Protocol here keeps the
+    capabilities → interfaces import boundary clean.
+    """
+
+    @property
+    def data(self) -> bytes: ...
+    @property
+    def mime_type(self) -> str: ...
+
 
 logger = get_logger(__name__)
 
@@ -264,6 +276,7 @@ class ComposedAgent:
         self.memory = memory
         self.skills_registry = skills_registry
         self.soul_section = soul_section
+        self._skills_section_override: Optional[str] = None
         self._system_prompt = system_prompt
         self._progress = progress
         self._sessions_dir = sessions_dir
@@ -281,7 +294,7 @@ class ComposedAgent:
         task: str,
         *,
         verify: bool = False,
-        images: "list[ImageData] | None" = None,
+        images: "list[ImageInput] | None" = None,
     ) -> str:
         if self.memory is None:
             return await self._core.run(task)
@@ -331,6 +344,18 @@ class ComposedAgent:
 
     def set_reasoning_effort(self, value: Optional[str]) -> None:
         self._core.set_reasoning_effort(value)
+
+    def set_skills_section(self, section: Optional[str]) -> None:
+        """Override the skills section rendering with a pre-rendered string.
+
+        When set, this takes precedence over `skills_registry` for system
+        prompt assembly. Pass `None` to fall back to registry-based rendering.
+        """
+        self._skills_section_override = section
+
+    def set_soul_section(self, soul_section: Optional[str]) -> None:
+        """Set the soul/personality section to append to the system prompt."""
+        self.soul_section = soul_section
 
     def get_reasoning_effort(self) -> str:
         return display_reasoning_effort(getattr(self._core, "_reasoning_effort", None))
@@ -426,10 +451,11 @@ class ComposedAgent:
                     system_content = system_content + "\n" + ltm_section
             except Exception:
                 logger.warning("Failed to load long-term memory", exc_info=True)
-        if self.skills_registry and self.skills_registry.skills:
+        skills_section = self._skills_section_override
+        if skills_section is None and self.skills_registry and self.skills_registry.skills:
             skills_section = render_skills_section(list(self.skills_registry.skills.values()))
-            if skills_section:
-                system_content = system_content + "\n\n" + skills_section
+        if skills_section:
+            system_content = system_content + "\n\n" + skills_section
         if self.soul_section:
             system_content = (
                 system_content
@@ -442,7 +468,7 @@ class ComposedAgent:
         await self.memory.add_message(LLMMessage(role="system", content=system_content))
 
     async def _build_user_message(
-        self, task: str, images: "list[ImageData] | None"
+        self, task: str, images: "list[ImageInput] | None"
     ) -> LLMMessage:
         if not images:
             return LLMMessage(role="user", content=task)

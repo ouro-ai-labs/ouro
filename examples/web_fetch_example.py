@@ -1,4 +1,4 @@
-"""Example usage of WebFetchTool with LoopAgent."""
+"""Example usage of WebFetchTool with ComposedAgent."""
 
 import asyncio
 import os
@@ -6,9 +6,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ouro.capabilities._legacy_agent import LoopAgent
-from ouro.core.llm import LiteLLMAdapter, ModelManager
+from ouro.capabilities import AgentBuilder
 from ouro.capabilities.tools.builtins.web_fetch import WebFetchTool
+from ouro.core.llm import LiteLLMAdapter, ModelManager
 
 
 async def main():
@@ -31,10 +31,13 @@ async def main():
         timeout=profile.timeout,
     )
 
-    agent = LoopAgent(
-        llm=llm,
-        tools=[WebFetchTool()],
-        max_iterations=8,
+    agent = (
+        AgentBuilder()
+        .with_llm(llm, model_manager=mm)
+        .with_max_iterations(8)
+        .without_memory()
+        .with_tool(WebFetchTool())
+        .build()
     )
 
     print("\n--- Example 1: Fetch web page (raw tool output) ---")

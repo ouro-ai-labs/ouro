@@ -37,7 +37,7 @@ from ouro.config import Config
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-    from ouro.capabilities._legacy_agent import LoopAgent
+    from ouro.capabilities import ComposedAgent
     from ouro.interfaces.bot.channel.base import Channel
     from ouro.interfaces.bot.session_router import SessionRouter
 
@@ -61,7 +61,7 @@ class ProactiveExecutor:
 
     def __init__(
         self,
-        agent_factory: Callable[[], LoopAgent] | Callable[[], Awaitable[LoopAgent]],
+        agent_factory: Callable[[], ComposedAgent] | Callable[[], Awaitable[ComposedAgent]],
         channels: list[Channel],
         router: SessionRouter,
     ) -> None:
@@ -75,7 +75,7 @@ class ProactiveExecutor:
         """Create a throwaway agent, execute *prompt*, return its output."""
         result = self._agent_factory()
         if asyncio.isfuture(result) or asyncio.iscoroutine(result):
-            agent: LoopAgent = await result
+            agent: ComposedAgent = await result
         else:
             agent = result  # type: ignore[assignment]
         try:

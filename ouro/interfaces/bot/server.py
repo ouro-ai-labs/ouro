@@ -17,7 +17,7 @@ from ouro.interfaces.bot.session_router import SessionRouter
 from ouro.config import Config
 
 if TYPE_CHECKING:
-    from ouro.capabilities._legacy_agent import LoopAgent
+    from ouro.capabilities import ComposedAgent
 
 logger = logging.getLogger(__name__)
 
@@ -783,7 +783,7 @@ async def run_bot(model_id: str | None = None) -> None:
 
     from ouro.capabilities.skills import SkillsRegistry, render_skills_section
     from ouro.interfaces.bot.soul import load_soul
-    from ouro.interfaces.cli.main import create_agent
+    from ouro.interfaces.cli.factory import create_agent
     from ouro.core.runtime import (
         ensure_bot_dirs,
         get_bot_memory_dir,
@@ -829,7 +829,7 @@ async def run_bot(model_id: str | None = None) -> None:
     # can inject CronTool into each new agent without a circular dependency.
     _shared: dict[str, CronScheduler] = {}
 
-    async def agent_factory() -> LoopAgent:
+    async def agent_factory() -> ComposedAgent:
         agent = create_agent(
             model_id=model_id,
             sessions_dir=bot_sessions_dir,

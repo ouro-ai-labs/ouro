@@ -13,7 +13,7 @@ from typing import Any
 import aiofiles
 import yaml
 
-from ouro.capabilities._legacy_agent import LoopAgent
+from ouro.capabilities import ComposedAgent
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ class SessionRouter:
     """Routes IM conversations to per-conversation agent instances.
 
     Each conversation (keyed by "{channel}:{conversation_id}") gets its own
-    LoopAgent with independent memory. Serialization is handled externally
+    ComposedAgent with independent memory. Serialization is handled externally
     by the message queue (one consumer task per conversation).
 
     When ``sessions_dir`` is provided, the router persists a conversation map
@@ -36,17 +36,17 @@ class SessionRouter:
 
     def __init__(
         self,
-        agent_factory: Callable[[], LoopAgent] | Callable[[], Awaitable[LoopAgent]],
+        agent_factory: Callable[[], ComposedAgent] | Callable[[], Awaitable[ComposedAgent]],
         sessions_dir: str | None = None,
     ) -> None:
         """
         Args:
-            agent_factory: Callable that returns a (possibly awaitable) LoopAgent.
+            agent_factory: Callable that returns a (possibly awaitable) ComposedAgent.
             sessions_dir: Optional directory for session persistence and conversation map.
         """
         self._agent_factory = agent_factory
         self._sessions_dir = sessions_dir
-        self._sessions: dict[str, LoopAgent] = {}
+        self._sessions: dict[str, ComposedAgent] = {}
         self._last_active: dict[str, float] = {}
 
         # Persistent conversation map: conv_key -> session UUID
@@ -95,7 +95,7 @@ class SessionRouter:
 
     # ---- Session lifecycle ---------------------------------------------------
 
-    async def get_or_create_agent(self, channel: str, conversation_id: str) -> LoopAgent:
+    async def get_or_create_agent(self, channel: str, conversation_id: str) -> ComposedAgent:
         """Get an existing agent or create a new one for the conversation.
 
         If a persisted session exists in the conversation map, loads it
@@ -106,7 +106,7 @@ class SessionRouter:
             conversation_id: IM conversation/chat ID.
 
         Returns:
-            The LoopAgent for this conversation.
+            The ComposedAgent for this conversation.
         """
         key = self._session_key(channel, conversation_id)
         if key not in self._sessions:
@@ -114,7 +114,7 @@ class SessionRouter:
             agent_or_coro = self._agent_factory()
             if asyncio.isfuture(agent_or_coro) or asyncio.iscoroutine(agent_or_coro):
                 agent_or_coro = await agent_or_coro
-            result: LoopAgent = agent_or_coro  # type: ignore[assignment]
+            result: ComposedAgent = agent_or_coro  # type: ignore[assignment]
 
             # Try to resume from persisted session
             saved_session_id = self._conversation_map.get(key)

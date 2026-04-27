@@ -5,11 +5,14 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Set
 
 from ouro.core.llm import LLMMessage
+from ouro.core.loop import Agent as CoreAgent
+from ouro.core.loop import NullProgressSink
 
 from ..base import BaseTool
+from ..executor import ToolExecutor
 
 if TYPE_CHECKING:
-    from ouro.capabilities._legacy_base import BaseAgent
+    from ouro.capabilities.builder import ComposedAgent
 
 
 @dataclass
@@ -36,7 +39,12 @@ class MultiTaskTool(BaseTool):
     SUMMARY_MAX_CHARS = 300
     CONTEXT_FALLBACK_CHARS = 500
 
-    def __init__(self, agent: "BaseAgent"):
+    def __init__(self, agent: "ComposedAgent"):
+        self.agent = agent
+
+    def set_parent_agent(self, agent: "ComposedAgent") -> None:
+        """Late-bind the parent ComposedAgent. Used by AgentBuilder when the
+        tool was constructed without an agent reference."""
         self.agent = agent
 
     @property
@@ -182,6 +190,19 @@ Input parameters:
             if (t.get("name") or t.get("function", {}).get("name")) != self.name
         ]
 
+    def _build_subtask_registry(self) -> ToolExecutor:
+        """Construct a fresh ToolExecutor with the parent's tools minus multi_task.
+
+        The sub-agent must not recurse back into multi_task; filtering both the
+        schemas (sent to the LLM) and the executable registry guarantees that.
+        """
+        sub_tools = [
+            tool
+            for name, tool in self.agent.tool_executor.tools.items()
+            if name != self.name
+        ]
+        return ToolExecutor(sub_tools)
+
     def _resolve_parallel_limit(self, max_parallel: int | None) -> int | None:
         if max_parallel is None:
             return self.MAX_PARALLEL
@@ -325,13 +346,19 @@ Task #{idx}: {task_desc}
 
 Execute the task now:"""
 
-        messages = [LLMMessage(role="user", content=prompt)]
-
-        return await self.agent._react_loop(
-            messages=messages,
-            tools=tools,
-            use_memory=False,
-            save_to_memory=False,
+        # Run the sub-task in a fresh memoryless core.Agent so it cannot
+        # touch the parent's memory or persistence. The parent's tool set
+        # (minus multi_task itself) is reused via a freshly-built registry.
+        sub_registry = self._build_subtask_registry()
+        sub_agent = CoreAgent(
+            llm=self.agent.llm,
+            tools=sub_registry,
+            hooks=(),  # no memory, no verification — pure ReAct
+            progress=NullProgressSink(),  # sub-task UI is silent by design
+        )
+        return await sub_agent.run(
+            task=task_desc,
+            initial_messages=[LLMMessage(role="user", content=prompt)],
         )
 
     def _build_success_result(self, output: str) -> TaskExecutionResult:

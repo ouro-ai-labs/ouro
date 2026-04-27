@@ -7,11 +7,10 @@ import warnings
 
 from rich.console import Console
 
-from ouro.capabilities._legacy_agent import LoopAgent
+from ouro.capabilities.memory import MemoryManager
 from ouro.capabilities.skills import SkillsRegistry, render_skills_section
 from ouro.config import Config
-from ouro.interfaces.tui.interactive import run_interactive_mode, run_model_setup_mode
-from ouro.core.llm import LiteLLMAdapter, ModelManager
+from ouro.core.llm import ModelManager
 from ouro.core.llm.chatgpt_auth import (
     get_all_auth_provider_statuses,
     get_supported_auth_providers,
@@ -21,99 +20,14 @@ from ouro.core.llm.chatgpt_auth import (
 )
 from ouro.core.llm.oauth_model_sync import remove_oauth_models, sync_oauth_models
 from ouro.core.llm.reasoning import REASONING_EFFORT_CHOICES
-from ouro.capabilities.memory import MemoryManager
-from ouro.capabilities.tools.builtins.advanced_file_ops import GlobTool, GrepTool
-from ouro.capabilities.tools.builtins.file_ops import FileReadTool, FileWriteTool
-from ouro.capabilities.tools.builtins.multi_task import MultiTaskTool
-from ouro.capabilities.tools.builtins.shell import ShellTool
-from ouro.capabilities.tools.builtins.smart_edit import SmartEditTool
-from ouro.capabilities.tools.builtins.web_fetch import WebFetchTool
-from ouro.capabilities.tools.builtins.web_search import WebSearchTool
 from ouro.core.log import setup_logger
-from ouro.interfaces.tui import terminal_ui
 from ouro.core.runtime import ensure_runtime_dirs
+from ouro.interfaces.cli.factory import create_agent
+from ouro.interfaces.tui import terminal_ui
+from ouro.interfaces.tui.interactive import run_interactive_mode, run_model_setup_mode
 from ouro.interfaces.tui.oauth_ui import pick_oauth_provider
 
 warnings.filterwarnings("ignore", message="Pydantic serializer warnings.*", category=UserWarning)
-
-
-def create_agent(
-    model_id: str | None = None,
-    sessions_dir: str | None = None,
-    memory_dir: str | None = None,
-):
-    """Factory function to create agents with tools.
-
-    Args:
-        model_id: Optional LiteLLM model ID to use (defaults to current/default)
-        sessions_dir: Optional custom sessions directory (for bot mode isolation)
-        memory_dir: Optional custom long-term memory directory (for bot mode isolation)
-
-    Returns:
-        Configured LoopAgent instance with all tools
-    """
-    # Initialize base tools
-    tools = [
-        FileReadTool(),
-        FileWriteTool(),
-        WebSearchTool(),
-        WebFetchTool(),
-        GlobTool(),
-        GrepTool(),
-        SmartEditTool(),
-        ShellTool(),
-    ]
-
-    # Initialize model manager
-    model_manager = ModelManager()
-
-    if not model_manager.is_configured():
-        raise ValueError(
-            "No models configured. Run `ouro` without --task and use /model edit, "
-            "or edit `.ouro/models.yaml` to add at least one model and set `default`."
-        )
-
-    # Get the model to use
-    if model_id:
-        profile = model_manager.get_model(model_id)
-        if profile:
-            model_manager.switch_model(model_id)
-        else:
-            available = ", ".join(model_manager.get_model_ids())
-            terminal_ui.print_error(f"Model '{model_id}' not found, using default")
-            if available:
-                terminal_ui.console.print(f"Available: {available}")
-
-    current_profile = model_manager.get_current_model()
-    if not current_profile:
-        raise ValueError("No model available. Please check `.ouro/models.yaml`.")
-
-    is_valid, error_msg = model_manager.validate_model(current_profile)
-    if not is_valid:
-        raise ValueError(error_msg)
-
-    # Create LLM instance with the current profile
-    llm = LiteLLMAdapter(
-        model=current_profile.model_id,
-        api_key=current_profile.api_key,
-        api_base=current_profile.api_base,
-        drop_params=current_profile.drop_params,
-        timeout=current_profile.timeout,
-    )
-
-    agent = LoopAgent(
-        llm=llm,
-        tools=tools,
-        max_iterations=Config.MAX_ITERATIONS,
-        model_manager=model_manager,
-        sessions_dir=sessions_dir,
-        memory_dir=memory_dir,
-    )
-
-    # Add tools that require agent reference
-    agent.tool_executor.add_tool(MultiTaskTool(agent))
-
-    return agent
 
 
 async def _resolve_session_id(resume_arg: str) -> str:
@@ -374,19 +288,30 @@ def main():
         # Single-turn mode: execute one task and exit
         task = args.task
 
+        # Load skills and attach the registry; ComposedAgent renders the
+        # skills section into its system prompt on first run().
         skills_registry = SkillsRegistry()
         try:
             await skills_registry.load()
-            # Inject skills section into agent's system prompt
-            skills_section = render_skills_section(list(skills_registry.skills.values()))
-            agent.set_skills_section(skills_section)
+            agent.skills_registry = skills_registry
         except Exception as e:
             terminal_ui.print_warning(f"Failed to load skills registry: {e}")
 
         # Quiet mode: suppress all Rich UI output, print raw result only
         terminal_ui.console = Console(quiet=True)
 
-        # Run agent
+        # Re-enable verification if requested at runtime — the default agent
+        # is built without VerificationHook for interactive use, so for
+        # one-shot --verify we rebuild with it.
+        if args.verify:
+            from ouro.capabilities.verification.hook import VerificationHook
+            agent._core.add_hook(  # noqa: SLF001 — internal but stable
+                VerificationHook(
+                    agent.llm,
+                    max_iterations=Config.RALPH_LOOP_MAX_ITERATIONS,
+                )
+            )
+
         result = await agent.run(task, verify=args.verify)
 
         print(result)
