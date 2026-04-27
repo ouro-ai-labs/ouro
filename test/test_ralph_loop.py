@@ -1,21 +1,29 @@
-"""Tests for the Ralph Loop (outer verification loop)."""
+"""Tests for VerificationHook (Ralph-style outer-loop verification)."""
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from agent.verification import LLMVerifier, VerificationResult, Verifier
-from llm import LLMMessage, LLMResponse, StopReason
+from ouro.capabilities.verification.hook import VerificationHook
+from ouro.capabilities.verification.verifier import (
+    LLMVerifier,
+    VerificationResult,
+    Verifier,
+)
+from ouro.core.llm import LLMResponse, StopReason
+from ouro.core.loop import NullProgressSink
+from ouro.core.loop.agent import _RunContext
+from ouro.core.loop.protocols import ContinueKind
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _make_llm_response(content: str) -> LLMResponse:
-    """Create a simple LLMResponse that triggers StopReason.STOP."""
+def _make_response(content: str = "answer") -> LLMResponse:
+    """Build a STOP response carrying `content` as plain text."""
     return LLMResponse(
         content=content,
         stop_reason=StopReason.STOP,
@@ -23,8 +31,12 @@ def _make_llm_response(content: str) -> LLMResponse:
     )
 
 
+def _make_ctx(task: str = "Do something") -> _RunContext:
+    return _RunContext(task=task, progress=NullProgressSink())
+
+
 class _StubVerifier:
-    """Verifier that returns a pre-programmed sequence of results."""
+    """Verifier returning a pre-programmed sequence of results."""
 
     def __init__(self, results: list[VerificationResult]):
         self._results = list(results)
@@ -43,125 +55,85 @@ class _StubVerifier:
 
 
 # ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture()
-def mock_agent():
-    """Create a minimal BaseAgent-like object for testing _ralph_loop.
-
-    We patch the heavy dependencies (LLM, memory, tools) so only the loop
-    logic is exercised.
-    """
-    from agent.base import BaseAgent
-
-    # Concrete subclass so we can instantiate without hitting ABC restriction
-    class _ConcreteAgent(BaseAgent):
-        async def run(self, task: str) -> str:
-            raise NotImplementedError
-
-    agent = object.__new__(_ConcreteAgent)
-
-    # Minimal stubs
-    agent.llm = MagicMock()
-    agent.llm.extract_text = lambda r: r.content or ""
-
-    agent.memory = MagicMock()
-    agent.memory.add_message = AsyncMock()
-    agent.memory.get_context_for_llm = MagicMock(return_value=[])
-
-    return agent
-
-
-# ---------------------------------------------------------------------------
-# Tests
+# VerificationHook lifecycle
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_ralph_loop_passes_on_first_attempt(mock_agent):
-    """Verification passes on the first attempt — returns immediately."""
-    mock_agent._react_loop = AsyncMock(return_value="The answer is 42.")
-
+async def test_passes_on_first_attempt():
+    """When the verifier says complete on iteration 1, the hook returns STOP."""
     verifier = _StubVerifier([VerificationResult(complete=True, reason="Correct")])
+    hook = VerificationHook(MagicMock(), max_iterations=3, verifier=verifier)
 
-    result = await mock_agent._ralph_loop(
-        messages=[],
-        tools=[],
-        use_memory=False,
-        save_to_memory=False,
-        task="What is the answer?",
-        max_iterations=3,
-        verifier=verifier,
-    )
+    ctx = _make_ctx()
+    await hook.on_run_start(ctx, [])
+    decision = await hook.on_iteration_end(ctx, _make_response("42"), finished=True)
 
-    assert result == "The answer is 42."
-    assert mock_agent._react_loop.await_count == 1
+    assert decision.kind == ContinueKind.STOP
+    assert verifier._call_count == 1
 
 
 @pytest.mark.asyncio
-async def test_ralph_loop_retries_then_passes(mock_agent):
-    """Verification fails once, feedback injected, then passes on second attempt."""
-    mock_agent._react_loop = AsyncMock(
-        side_effect=["Incomplete answer", "Complete answer with details"]
-    )
-
+async def test_retries_then_passes():
+    """Incomplete first → RETRY; complete second → STOP."""
     verifier = _StubVerifier(
         [
             VerificationResult(complete=False, reason="Missing details"),
             VerificationResult(complete=True, reason="Now complete"),
         ]
     )
+    hook = VerificationHook(MagicMock(), max_iterations=3, verifier=verifier)
 
-    result = await mock_agent._ralph_loop(
-        messages=[],
-        tools=[],
-        use_memory=False,
-        save_to_memory=False,
-        task="Explain X",
-        max_iterations=3,
-        verifier=verifier,
-    )
+    ctx = _make_ctx("Explain X")
+    await hook.on_run_start(ctx, [])
 
-    assert result == "Complete answer with details"
-    assert mock_agent._react_loop.await_count == 2
+    d1 = await hook.on_iteration_end(ctx, _make_response("incomplete"), finished=True)
+    assert d1.kind == ContinueKind.RETRY
+    assert "Missing details" in d1.feedback_messages[0].content
+
+    d2 = await hook.on_iteration_end(ctx, _make_response("complete"), finished=True)
+    assert d2.kind == ContinueKind.STOP
 
 
 @pytest.mark.asyncio
-async def test_ralph_loop_max_iterations_skips_verification(mock_agent):
-    """On the last iteration, verification is skipped and the result is returned."""
-    mock_agent._react_loop = AsyncMock(side_effect=["first", "second", "third"])
-
-    # Verifier always says incomplete — but the 3rd iteration should skip it
+async def test_max_iterations_skips_verification():
+    """At max_iterations the hook stops without consulting the verifier again."""
     verifier = _StubVerifier(
         [
             VerificationResult(complete=False, reason="nope"),
             VerificationResult(complete=False, reason="still nope"),
-            # This should never be reached
-            VerificationResult(complete=False, reason="unreachable"),
         ]
     )
+    hook = VerificationHook(MagicMock(), max_iterations=3, verifier=verifier)
 
-    result = await mock_agent._ralph_loop(
-        messages=[],
-        tools=[],
-        use_memory=False,
-        save_to_memory=False,
-        task="Do something",
-        max_iterations=3,
-        verifier=verifier,
-    )
+    ctx = _make_ctx()
+    await hook.on_run_start(ctx, [])
 
-    assert result == "third"
-    assert mock_agent._react_loop.await_count == 3
-    # Only 2 verify calls (iterations 1 and 2; iteration 3 skips verification)
+    d1 = await hook.on_iteration_end(ctx, _make_response("first"), finished=True)
+    assert d1.kind == ContinueKind.RETRY
+    d2 = await hook.on_iteration_end(ctx, _make_response("second"), finished=True)
+    assert d2.kind == ContinueKind.RETRY
+
+    # Third pass: hits max_iterations, returns STOP without asking the verifier.
+    d3 = await hook.on_iteration_end(ctx, _make_response("third"), finished=True)
+    assert d3.kind == ContinueKind.STOP
     assert verifier._call_count == 2
 
 
 @pytest.mark.asyncio
-async def test_ralph_loop_custom_verifier_protocol(mock_agent):
-    """A custom verifier following the Verifier Protocol works correctly."""
+async def test_finished_false_returns_continue():
+    """While the inner loop is still running tool calls, the hook continues."""
+    hook = VerificationHook(MagicMock(), max_iterations=3, verifier=_StubVerifier([]))
+    ctx = _make_ctx()
+    await hook.on_run_start(ctx, [])
+
+    decision = await hook.on_iteration_end(ctx, _make_response(), finished=False)
+    assert decision.kind == ContinueKind.CONTINUE
+
+
+@pytest.mark.asyncio
+async def test_custom_verifier_protocol():
+    """Any object implementing the Verifier Protocol works."""
 
     class MyVerifier:
         async def verify(self, task, result, iteration, previous_results):
@@ -169,110 +141,54 @@ async def test_ralph_loop_custom_verifier_protocol(mock_agent):
 
     assert isinstance(MyVerifier(), Verifier)
 
-    mock_agent._react_loop = AsyncMock(return_value="answer")
+    hook = VerificationHook(MagicMock(), max_iterations=3, verifier=MyVerifier())
+    ctx = _make_ctx()
+    await hook.on_run_start(ctx, [])
 
-    result = await mock_agent._ralph_loop(
-        messages=[],
-        tools=[],
-        use_memory=False,
-        save_to_memory=False,
-        task="task",
-        max_iterations=3,
-        verifier=MyVerifier(),
-    )
-
-    assert result == "answer"
+    decision = await hook.on_iteration_end(ctx, _make_response("answer"), finished=True)
+    assert decision.kind == ContinueKind.STOP
 
 
 @pytest.mark.asyncio
-async def test_ralph_loop_injects_feedback_into_messages(mock_agent):
-    """When verification fails, feedback is appended as a user message."""
-    messages: list[LLMMessage] = []
-    mock_agent._react_loop = AsyncMock(side_effect=["bad", "good"])
-
+async def test_run_state_resets_between_runs():
+    """on_run_start resets per-run state so subsequent runs start fresh."""
     verifier = _StubVerifier(
         [
-            VerificationResult(complete=False, reason="Missing X"),
-            VerificationResult(complete=True, reason="OK"),
+            VerificationResult(complete=False, reason="r1"),
+            VerificationResult(complete=True, reason="r2"),
         ]
     )
+    hook = VerificationHook(MagicMock(), max_iterations=2, verifier=verifier)
 
-    await mock_agent._ralph_loop(
-        messages=messages,
-        tools=[],
-        use_memory=False,
-        save_to_memory=False,
-        task="Do Y",
-        max_iterations=3,
-        verifier=verifier,
-    )
+    # First run: iter 1 retries, iter 2 caps without consulting the verifier.
+    ctx1 = _make_ctx()
+    await hook.on_run_start(ctx1, [])
+    await hook.on_iteration_end(ctx1, _make_response(), finished=True)  # uses r1
+    cap = await hook.on_iteration_end(ctx1, _make_response(), finished=True)  # capped
+    assert cap.kind == ContinueKind.STOP
+    assert verifier._call_count == 1
+    # The hook accumulated previous_results across run 1:
+    assert len(hook._previous_results) == 1  # noqa: SLF001
 
-    # One feedback message should have been appended
-    assert len(messages) == 1
-    assert messages[0].role == "user"
-    assert "Missing X" in messages[0].content
+    # on_run_start of run 2 resets both _outer_iteration and _previous_results.
+    ctx2 = _make_ctx()
+    await hook.on_run_start(ctx2, [])
+    assert hook._outer_iteration == 0  # noqa: SLF001
+    assert hook._previous_results == []  # noqa: SLF001
 
-
-def _make_loop_agent():
-    """Create a minimal LoopAgent with mocked dependencies."""
-    from agent.agent import LoopAgent
-
-    agent = object.__new__(LoopAgent)
-    agent.llm = MagicMock()
-    agent.memory = MagicMock()
-    agent.memory.system_messages = ["sys"]
-    agent.memory.add_message = AsyncMock()
-    agent.memory.save_memory = AsyncMock()
-    agent.memory.get_stats = MagicMock(return_value={})
-    agent.tool_executor = MagicMock()
-    agent.tool_executor.get_tool_schemas = MagicMock(return_value=[])
-    agent._ralph_loop = AsyncMock(return_value="ralph result")
-    agent._react_loop = AsyncMock(return_value="react result")
-    agent._print_memory_stats = MagicMock()
-    return agent
+    # Run 2 iter 1: not capped, consults the verifier (now r2 — complete).
+    decision = await hook.on_iteration_end(ctx2, _make_response(), finished=True)
+    assert decision.kind == ContinueKind.STOP
+    assert verifier._call_count == 2
 
 
-@pytest.mark.asyncio
-async def test_run_defaults_to_react_loop():
-    """LoopAgent.run() defaults to _react_loop (verify=False)."""
-    agent = _make_loop_agent()
-
-    result = await agent.run("test task")
-
-    assert result == "react result"
-    agent._react_loop.assert_awaited_once()
-    agent._ralph_loop.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_run_with_verify_dispatches_to_ralph_loop():
-    """LoopAgent.run(verify=True) uses _ralph_loop."""
-    agent = _make_loop_agent()
-
-    with patch("agent.agent.Config") as mock_config:
-        mock_config.RALPH_LOOP_MAX_ITERATIONS = 3
-        result = await agent.run("test task", verify=True)
-
-    assert result == "ralph result"
-    agent._ralph_loop.assert_awaited_once()
-    agent._react_loop.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_run_with_verify_false_dispatches_to_react_loop():
-    """LoopAgent.run(verify=False) uses _react_loop."""
-    agent = _make_loop_agent()
-
-    result = await agent.run("test task", verify=False)
-
-    assert result == "react result"
-    agent._react_loop.assert_awaited_once()
-    agent._ralph_loop.assert_not_awaited()
+# ---------------------------------------------------------------------------
+# LLMVerifier parsing
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_llm_verifier_complete():
-    """LLMVerifier parses a COMPLETE response correctly."""
     mock_llm = MagicMock()
     mock_llm.call_async = AsyncMock(
         return_value=LLMResponse(
@@ -295,7 +211,6 @@ async def test_llm_verifier_complete():
 
 @pytest.mark.asyncio
 async def test_llm_verifier_incomplete():
-    """LLMVerifier parses an INCOMPLETE response correctly."""
     mock_llm = MagicMock()
     mock_llm.call_async = AsyncMock(
         return_value=LLMResponse(

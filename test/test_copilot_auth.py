@@ -5,7 +5,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from llm.chatgpt_auth import (
+from ouro.core.llm.chatgpt_auth import (
     get_all_auth_provider_statuses,
     get_auth_provider_status,
     get_supported_auth_providers,
@@ -14,7 +14,7 @@ from llm.chatgpt_auth import (
     logout_auth_provider,
     normalize_auth_provider,
 )
-from llm.copilot_auth import (
+from ouro.core.llm.copilot_auth import (
     CopilotAuthStatus,
     CopilotLoginRequiredError,
     _fetch_copilot_api_key,
@@ -53,7 +53,9 @@ def test_configure_copilot_auth_env_uses_runtime_dir(tmp_path, monkeypatch):
     monkeypatch.delenv("GITHUB_COPILOT_TOKEN_DIR", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
     # get_runtime_dir reads HOME at call time via os.path.expanduser
-    monkeypatch.setattr("llm.copilot_auth.get_runtime_dir", lambda: str(tmp_path / ".ouro"))
+    monkeypatch.setattr(
+        "ouro.core.llm.copilot_auth.get_runtime_dir", lambda: str(tmp_path / ".ouro")
+    )
 
     token_dir = configure_copilot_auth_env()
 
@@ -137,7 +139,7 @@ async def test_ensure_access_token_reuses_existing_file(tmp_path, monkeypatch):
         called["login"] += 1
         return "should-not-run"
 
-    monkeypatch.setattr("llm.copilot_auth._run_device_code_login", fake_login)
+    monkeypatch.setattr("ouro.core.llm.copilot_auth._run_device_code_login", fake_login)
 
     token = await ensure_copilot_access_token(interactive=False)
 
@@ -161,7 +163,7 @@ async def test_login_runs_device_code_flow_and_persists_token(tmp_path, monkeypa
         (auth_dir / "access-token").write_text("gh_access_new", encoding="utf-8")
         return "gh_access_new"
 
-    monkeypatch.setattr("llm.copilot_auth._run_device_code_login", fake_login)
+    monkeypatch.setattr("ouro.core.llm.copilot_auth._run_device_code_login", fake_login)
 
     status = await login_copilot()
 
@@ -180,7 +182,7 @@ async def test_provider_dispatch_routes_copilot(tmp_path, monkeypatch):
         auth_file.write_text("gh_dispatch_token", encoding="utf-8")
         return "gh_dispatch_token"
 
-    monkeypatch.setattr("llm.copilot_auth._run_device_code_login", fake_login)
+    monkeypatch.setattr("ouro.core.llm.copilot_auth._run_device_code_login", fake_login)
 
     status = await login_auth_provider("copilot")
     assert isinstance(status, CopilotAuthStatus)
@@ -211,7 +213,7 @@ async def test_poll_honors_slow_down_and_returns_token(tmp_path, monkeypatch):
     async def fake_sleep(delay):
         sleeps.append(delay)
 
-    monkeypatch.setattr("llm.copilot_auth.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("ouro.core.llm.copilot_auth.asyncio.sleep", fake_sleep)
 
     responses = [
         httpx.Response(200, json={"error": "authorization_pending"}),
@@ -237,7 +239,7 @@ async def test_poll_honors_slow_down_and_returns_token(tmp_path, monkeypatch):
             kwargs["transport"] = transport
             super().__init__(*args, **kwargs)
 
-    monkeypatch.setattr("llm.copilot_auth.httpx.AsyncClient", _PatchedClient)
+    monkeypatch.setattr("ouro.core.llm.copilot_auth.httpx.AsyncClient", _PatchedClient)
 
     token = await _poll_for_github_access_token(device_code="dev_123", interval=1, max_attempts=5)
 
@@ -267,7 +269,7 @@ async def test_fetch_copilot_api_key_writes_record(tmp_path, monkeypatch):
             kwargs["transport"] = transport
             super().__init__(*args, **kwargs)
 
-    monkeypatch.setattr("llm.copilot_auth.httpx.AsyncClient", _PatchedClient)
+    monkeypatch.setattr("ouro.core.llm.copilot_auth.httpx.AsyncClient", _PatchedClient)
 
     record = await _fetch_copilot_api_key("gh_access")
 

@@ -1,15 +1,16 @@
-"""Tests for parallel readonly tool execution."""
+"""Tests for parallel readonly tool execution in core.loop.Agent."""
 
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from agent.tool_executor import ToolExecutor
-from llm import ToolCall, ToolResult
-from tools.base import BaseTool
+from ouro.capabilities.tools.base import BaseTool
+from ouro.capabilities.tools.executor import ToolExecutor
+from ouro.core.llm import ToolCall
+from ouro.core.loop import Agent, NullProgressSink
+from ouro.core.loop.agent import _RunContext
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -97,17 +98,18 @@ def _make_tool_call(name: str, call_id: str = "") -> ToolCall:
     return ToolCall(id=call_id, name=name, arguments={})
 
 
-def _make_mock_agent(tools):
-    """Create a minimal BaseAgent with the given tools for testing."""
-    from agent.base import BaseAgent
+def _make_agent_with_tools(tools) -> Agent:
+    """Build a core.loop.Agent backed by a ToolExecutor over the given tools."""
+    return Agent(
+        llm=type("StubLLM", (), {})(),
+        tools=ToolExecutor(tools),
+        hooks=(),
+        progress=NullProgressSink(),
+    )
 
-    class _ConcreteAgent(BaseAgent):
-        async def run(self, task: str) -> str:
-            raise NotImplementedError
 
-    agent = object.__new__(_ConcreteAgent)
-    agent.tool_executor = ToolExecutor(tools)
-    return agent
+def _make_ctx() -> _RunContext:
+    return _RunContext(task="test", progress=NullProgressSink())
 
 
 # ---------------------------------------------------------------------------
@@ -116,13 +118,11 @@ def _make_mock_agent(tools):
 
 
 def test_base_tool_readonly_defaults_to_false():
-    """BaseTool.readonly should default to False."""
     tool = WritableStubTool("test")
     assert tool.readonly is False
 
 
 def test_readonly_tool_has_readonly_true():
-    """Explicitly readonly tools should have readonly=True."""
     tool = ReadonlyStubTool("test")
     assert tool.readonly is True
 
@@ -148,76 +148,47 @@ def test_is_tool_readonly_unknown_tool():
 
 
 # ---------------------------------------------------------------------------
-# Parallel vs sequential dispatch
+# Parallel vs sequential dispatch decision
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-@patch("agent.base.terminal_ui")
-async def test_all_readonly_runs_parallel(mock_tui):
-    """When all tool calls are readonly, _execute_tools_parallel is used."""
-    tools = [ReadonlyStubTool("a", result="res_a"), ReadonlyStubTool("b", result="res_b")]
-    agent = _make_mock_agent(tools)
-
-    agent._execute_tools_parallel = AsyncMock(
-        return_value=[
-            ToolResult(tool_call_id="1", content="res_a", name="a"),
-            ToolResult(tool_call_id="2", content="res_b", name="b"),
-        ]
-    )
-    agent._execute_tools_sequential = AsyncMock()
-
-    tcs = [_make_tool_call("a", "1"), _make_tool_call("b", "2")]
-
-    # Check that the decision logic picks parallel
-    all_readonly = len(tcs) > 1 and all(agent.tool_executor.is_tool_readonly(tc.name) for tc in tcs)
+def test_dispatch_picks_parallel_when_all_readonly_and_multi():
+    executor = ToolExecutor([ReadonlyStubTool("a"), ReadonlyStubTool("b")])
+    tcs = [_make_tool_call("a"), _make_tool_call("b")]
+    all_readonly = len(tcs) > 1 and all(executor.is_tool_readonly(tc.name) for tc in tcs)
     assert all_readonly is True
 
 
-@pytest.mark.asyncio
-@patch("agent.base.terminal_ui")
-async def test_mixed_tools_runs_sequential(mock_tui):
-    """When any tool call is writable, sequential execution is used."""
-    tools = [ReadonlyStubTool("a"), WritableStubTool("b")]
-    agent = _make_mock_agent(tools)
-
+def test_dispatch_picks_sequential_when_mixed():
+    executor = ToolExecutor([ReadonlyStubTool("a"), WritableStubTool("b")])
     tcs = [_make_tool_call("a"), _make_tool_call("b")]
-
-    all_readonly = len(tcs) > 1 and all(agent.tool_executor.is_tool_readonly(tc.name) for tc in tcs)
+    all_readonly = len(tcs) > 1 and all(executor.is_tool_readonly(tc.name) for tc in tcs)
     assert all_readonly is False
 
 
-@pytest.mark.asyncio
-@patch("agent.base.terminal_ui")
-async def test_single_tool_runs_sequential(mock_tui):
-    """A single tool call should always use sequential (no parallel overhead)."""
-    tools = [ReadonlyStubTool("a")]
-    agent = _make_mock_agent(tools)
-
+def test_dispatch_picks_sequential_for_single_tool():
+    executor = ToolExecutor([ReadonlyStubTool("a")])
     tcs = [_make_tool_call("a")]
-
-    all_readonly = len(tcs) > 1 and all(agent.tool_executor.is_tool_readonly(tc.name) for tc in tcs)
+    all_readonly = len(tcs) > 1 and all(executor.is_tool_readonly(tc.name) for tc in tcs)
     assert all_readonly is False
 
 
 # ---------------------------------------------------------------------------
-# _execute_tools_parallel: correctness and ordering
+# _exec_parallel: correctness, ordering, parallelism
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-@patch("agent.base.terminal_ui")
-async def test_parallel_execution_returns_correct_order(mock_tui):
+async def test_parallel_execution_returns_correct_order():
     """Results should be in the same order as tool_calls, not completion order."""
-    # Tool "slow" takes longer but appears first
-    tools = [
-        ReadonlyStubTool("slow", result="slow_result", delay=0.05),
-        ReadonlyStubTool("fast", result="fast_result", delay=0.01),
-    ]
-    agent = _make_mock_agent(tools)
-
+    agent = _make_agent_with_tools(
+        [
+            ReadonlyStubTool("slow", result="slow_result", delay=0.05),
+            ReadonlyStubTool("fast", result="fast_result", delay=0.01),
+        ]
+    )
     tcs = [_make_tool_call("slow", "call_1"), _make_tool_call("fast", "call_2")]
-    results = await agent._execute_tools_parallel(tcs)
+    results = await agent._exec_parallel(_make_ctx(), tcs)
 
     assert len(results) == 2
     assert results[0].content == "slow_result"
@@ -227,20 +198,20 @@ async def test_parallel_execution_returns_correct_order(mock_tui):
 
 
 @pytest.mark.asyncio
-@patch("agent.base.terminal_ui")
-async def test_parallel_execution_faster_than_sequential(mock_tui):
+async def test_parallel_execution_faster_than_sequential():
     """Parallel execution should be faster than sequential for independent tools."""
     delay = 0.05
-    tools = [
-        ReadonlyStubTool("a", result="a", delay=delay),
-        ReadonlyStubTool("b", result="b", delay=delay),
-        ReadonlyStubTool("c", result="c", delay=delay),
-    ]
-    agent = _make_mock_agent(tools)
+    agent = _make_agent_with_tools(
+        [
+            ReadonlyStubTool("a", result="a", delay=delay),
+            ReadonlyStubTool("b", result="b", delay=delay),
+            ReadonlyStubTool("c", result="c", delay=delay),
+        ]
+    )
     tcs = [_make_tool_call("a", "1"), _make_tool_call("b", "2"), _make_tool_call("c", "3")]
 
     start = asyncio.get_event_loop().time()
-    await agent._execute_tools_parallel(tcs)
+    await agent._exec_parallel(_make_ctx(), tcs)
     elapsed = asyncio.get_event_loop().time() - start
 
     # Sequential would take ~0.15s; parallel should be ~0.05s
@@ -248,44 +219,32 @@ async def test_parallel_execution_faster_than_sequential(mock_tui):
 
 
 # ---------------------------------------------------------------------------
-# _execute_tools_parallel: error handling
+# _exec_parallel: error handling
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-@patch("agent.base.terminal_ui")
-async def test_parallel_one_tool_fails(mock_tui):
-    """If one tool fails in parallel, TaskGroup propagates the error.
-
-    ToolExecutor.execute_tool_call catches exceptions and returns error strings,
-    so in practice failures are returned as error messages, not raised.
-    """
-    tools = [ReadonlyStubTool("good", result="ok"), FailingStubTool("bad")]
-    agent = _make_mock_agent(tools)
-
+async def test_parallel_one_tool_fails():
+    """ToolExecutor catches exceptions and returns error strings."""
+    agent = _make_agent_with_tools([ReadonlyStubTool("good", result="ok"), FailingStubTool("bad")])
     tcs = [_make_tool_call("good", "1"), _make_tool_call("bad", "2")]
 
-    # ToolExecutor wraps exceptions into error strings, so this should succeed
-    results = await agent._execute_tools_parallel(tcs)
+    results = await agent._exec_parallel(_make_ctx(), tcs)
     assert len(results) == 2
     assert results[0].content == "ok"
-    assert "Error" in results[1].content
+    assert "Error" in results[1].content or "tool failed" in results[1].content
 
 
 # ---------------------------------------------------------------------------
-# _execute_tools_sequential: basic check
+# _exec_sequential: basic check
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-@patch("agent.base.terminal_ui")
-async def test_sequential_execution_works(mock_tui):
-    """Basic sequential execution test."""
-    tools = [WritableStubTool("write", result="written")]
-    agent = _make_mock_agent(tools)
-
+async def test_sequential_execution_works():
+    agent = _make_agent_with_tools([WritableStubTool("write", result="written")])
     tcs = [_make_tool_call("write", "call_1")]
-    results = await agent._execute_tools_sequential(tcs)
+    results = await agent._exec_sequential(_make_ctx(), tcs)
 
     assert len(results) == 1
     assert results[0].content == "written"
@@ -299,9 +258,9 @@ async def test_sequential_execution_works(mock_tui):
 
 def test_real_tools_readonly_flags():
     """Verify readonly flags on actual tool classes."""
-    from tools.advanced_file_ops import GlobTool, GrepTool
-    from tools.file_ops import FileReadTool, FileWriteTool
-    from tools.web_search import WebSearchTool
+    from ouro.capabilities.tools.builtins.advanced_file_ops import GlobTool, GrepTool
+    from ouro.capabilities.tools.builtins.file_ops import FileReadTool, FileWriteTool
+    from ouro.capabilities.tools.builtins.web_search import WebSearchTool
 
     assert FileReadTool.readonly is True
     assert GlobTool.readonly is True

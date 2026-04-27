@@ -15,8 +15,9 @@ Commands:
   lint           Check formatting/lint (black/isort/ruff)
   precommit      Run pre-commit on all files
   invariants     Check repo invariants (RFC numbering, symlink rules)
+  importlint     Enforce three-layer import boundaries (interfaces → capabilities → core)
   typecheck      Run mypy (best-effort; set TYPECHECK_STRICT=1 to fail)
-  check          Run precommit + typecheck + tests
+  check          Run precommit + importlint + typecheck + tests
   build          Build dist/ artifacts
   publish        Publish dist/ via twine
 
@@ -86,14 +87,18 @@ case "$cmd" in
     source ./scripts/_env.sh
     "$PYTHON" ./scripts/check_repo_invariants.py
     ;;
+  importlint)
+    source ./scripts/_env.sh
+    # import-linter ships a `lint-imports` console script.
+    "$(dirname "$PYTHON")/lint-imports"
+    ;;
   typecheck)
     STRICT="${TYPECHECK_STRICT:-0}"
 
     source ./scripts/_env.sh
 
     set +e
-    "$PYTHON" -m mypy \
-      agent llm memory tools utils main.py config.py
+    "$PYTHON" -m mypy ouro
     status=$?
     set -e
 
@@ -106,6 +111,7 @@ case "$cmd" in
   check)
     ./scripts/dev.sh invariants
     ./scripts/dev.sh precommit
+    ./scripts/dev.sh importlint
     TYPECHECK_STRICT=1 ./scripts/dev.sh typecheck
     # Run only tracked tests by default to avoid accidental untracked scratch files.
     # If you add new tests, `git add` them before running check.

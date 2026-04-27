@@ -1,7 +1,7 @@
 import sys
 from types import SimpleNamespace
 
-import main as ouro_main
+import ouro.interfaces.cli.main as ouro_main
 
 
 class _DummyConsole:

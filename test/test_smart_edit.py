@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from tools.smart_edit import SmartEditTool
+from ouro.capabilities.tools.builtins.smart_edit import SmartEditTool
 
 
 @pytest.fixture

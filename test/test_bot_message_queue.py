@@ -6,8 +6,8 @@ import asyncio
 
 import pytest
 
-from bot.channel.base import IncomingMessage
-from bot.message_queue import (
+from ouro.interfaces.bot.channel.base import IncomingMessage
+from ouro.interfaces.bot.message_queue import (
     ConversationQueue,
     coalesce_messages,
 )

@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 from prompt_toolkit.document import Document
 
-from utils.tui.input_handler import CommandCompleter
-from utils.tui.slash_autocomplete import SlashAutocompleteEngine
+from ouro.interfaces.tui.input_handler import CommandCompleter
+from ouro.interfaces.tui.slash_autocomplete import SlashAutocompleteEngine
 
 
 def test_engine_returns_no_suggestions_without_slash() -> None:

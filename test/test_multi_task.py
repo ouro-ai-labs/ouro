@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from tools.multi_task import MultiTaskTool, TaskExecutionResult
+from ouro.capabilities.tools.builtins.multi_task import MultiTaskTool, TaskExecutionResult
 
 
 class TestMultiTaskTool:

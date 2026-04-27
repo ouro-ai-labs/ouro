@@ -1,9 +1,9 @@
 import asyncio
 from types import SimpleNamespace
 
-import interactive
-from interactive import InteractiveSession
-from llm.chatgpt_auth import ChatGPTAuthStatus
+import ouro.interfaces.tui.interactive as interactive
+from ouro.core.llm.chatgpt_auth import ChatGPTAuthStatus
+from ouro.interfaces.tui.interactive import InteractiveSession
 
 
 class _DummyConsole:

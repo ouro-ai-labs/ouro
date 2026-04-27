@@ -7,7 +7,7 @@ import tempfile
 
 import pytest
 
-from tools.send_file_tool import SendFileContext, SendFileTool
+from ouro.capabilities.tools.builtins.send_file_tool import SendFileContext, SendFileTool
 
 
 @pytest.fixture

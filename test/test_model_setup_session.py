@@ -26,9 +26,9 @@ async def _write_models_yaml(path, *, model_id: str = "openai/gpt-4o") -> None:
 
 
 async def test_model_setup_auto_starts_after_model_pick(tmp_path, monkeypatch):
-    import interactive
-    from interactive import ModelSetupSession
-    from llm import ModelManager
+    import ouro.interfaces.tui.interactive as interactive
+    from ouro.core.llm import ModelManager
+    from ouro.interfaces.tui.interactive import ModelSetupSession
 
     config_path = tmp_path / "models.yaml"
     await _write_models_yaml(config_path, model_id="openai/gpt-4o")
@@ -47,9 +47,9 @@ async def test_model_setup_auto_starts_after_model_pick(tmp_path, monkeypatch):
 
 
 async def test_model_setup_does_not_treat_normal_text_as_model_id(tmp_path, monkeypatch):
-    import interactive
-    from interactive import ModelSetupSession
-    from llm import ModelManager
+    import ouro.interfaces.tui.interactive as interactive
+    from ouro.core.llm import ModelManager
+    from ouro.interfaces.tui.interactive import ModelSetupSession
 
     config_path = tmp_path / "models.yaml"
     await _write_models_yaml(config_path, model_id="anthropic/kimi-k2-5-latest")

@@ -1,5 +1,5 @@
-from llm.model_manager import ModelManager
-from llm.oauth_model_sync import remove_oauth_models, sync_oauth_models
+from ouro.core.llm.model_manager import ModelManager
+from ouro.core.llm.oauth_model_sync import remove_oauth_models, sync_oauth_models
 
 
 def _write_models_yaml(path, content: str) -> None:

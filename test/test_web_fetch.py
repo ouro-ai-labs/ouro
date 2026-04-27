@@ -7,7 +7,11 @@ import types
 import httpx
 import pytest
 
-from tools.web_fetch import MAX_RESPONSE_BYTES, WebFetchError, WebFetchTool
+from ouro.capabilities.tools.builtins.web_fetch import (
+    MAX_RESPONSE_BYTES,
+    WebFetchError,
+    WebFetchTool,
+)
 
 
 class FakeResponse:

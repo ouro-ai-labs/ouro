@@ -1,4 +1,4 @@
-"""Example usage of LoopAgent."""
+"""Example usage of ComposedAgent via AgentBuilder."""
 
 import asyncio
 import os
@@ -7,17 +7,17 @@ import sys
 # Add parent directory to path to import modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agent.agent import LoopAgent
-from llm import LiteLLMAdapter, ModelManager
-from tools.file_ops import FileReadTool, FileWriteTool
-from tools.shell import ShellTool
-from tools.web_search import WebSearchTool
+from ouro.capabilities import AgentBuilder
+from ouro.capabilities.tools.builtins.file_ops import FileReadTool, FileWriteTool
+from ouro.capabilities.tools.builtins.shell import ShellTool
+from ouro.capabilities.tools.builtins.web_search import WebSearchTool
+from ouro.core.llm import LiteLLMAdapter, ModelManager
 
 
 async def main():
-    """Run LoopAgent example."""
+    """Run ComposedAgent example."""
     print("=" * 60)
-    print("LoopAgent Example")
+    print("ComposedAgent Example")
     print("=" * 60)
 
     mm = ModelManager()
@@ -34,16 +34,21 @@ async def main():
         timeout=profile.timeout,
     )
 
-    # Initialize agent with tools
-    agent = LoopAgent(
-        llm=llm,
-        tools=[
-            FileReadTool(),
-            FileWriteTool(),
-            ShellTool(),
-            WebSearchTool(),
-        ],
-        max_iterations=10,
+    # Build a memoryless agent for the example.
+    agent = (
+        AgentBuilder()
+        .with_llm(llm, model_manager=mm)
+        .with_max_iterations(10)
+        .without_memory()
+        .with_tools(
+            [
+                FileReadTool(),
+                FileWriteTool(),
+                ShellTool(),
+                WebSearchTool(),
+            ]
+        )
+        .build()
     )
 
     # Example 1: Simple calculation using shell

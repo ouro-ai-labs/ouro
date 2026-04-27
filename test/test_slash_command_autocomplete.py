@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 from prompt_toolkit.document import Document
 
-from utils.tui.input_handler import CommandCompleter, InputHandler, _best_contrast_text
+from ouro.interfaces.tui.input_handler import CommandCompleter, InputHandler, _best_contrast_text
 
 
 def _meta_text(completion) -> str:

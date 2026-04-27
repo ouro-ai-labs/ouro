@@ -5,6 +5,64 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-04-27
+
+### Changed
+
+- **Three-layer architecture**: code reorganized under a new `ouro/`
+  namespace with strict import boundaries enforced by `import-linter`:
+  `ouro.interfaces` → `ouro.capabilities` → `ouro.core`. Reverse
+  imports are forbidden.
+- **Hooks-based agent loop**: `ouro.core.loop.Agent` is a class-based
+  ReAct loop that takes optional `Hook` objects. Memory, compaction,
+  and Ralph-style verification are now implemented as hooks
+  (`MemoryHook`, `VerificationHook`) rather than baked into the loop.
+- **Canonical assembly via `AgentBuilder`**: build a `ComposedAgent`
+  with `AgentBuilder().with_llm(...).with_tools(...).with_memory(...)
+  .with_skills(...).with_verification(...).build()`.
+- **`ProgressSink` Protocol**: capabilities no longer import
+  `terminal_ui` or `AsyncSpinner` directly. UI feedback flows through
+  an injected sink; the TUI ships `TuiProgressSink`, headless mode
+  uses `NullProgressSink`.
+- **MultiTaskTool sub-loop**: now spins up a fresh memoryless
+  `core.loop.Agent` for each sub-task (uses the public SDK; no
+  reach into private methods).
+
+### Removed (breaking)
+
+- Top-level imports of `agent`, `llm`, `memory`, `tools`, `bot`,
+  `utils`, `config`, `main`, `interactive`, `cli` are gone. Migrate to:
+
+  | Old                              | New                                              |
+  | -------------------------------- | ------------------------------------------------ |
+  | `from agent.agent import LoopAgent`     | `from ouro.capabilities import ComposedAgent` (or `AgentBuilder`) |
+  | `from agent.tool_executor import ToolExecutor` | `from ouro.capabilities.tools import ToolExecutor` |
+  | `from llm import ...`            | `from ouro.core.llm import ...`                  |
+  | `from memory import ...`         | `from ouro.capabilities.memory import ...`       |
+  | `from tools.base import BaseTool`| `from ouro.capabilities.tools.base import BaseTool` |
+  | `from tools.<builtin> import X`  | `from ouro.capabilities.tools.builtins.<builtin> import X` |
+  | `from bot.X import Y`            | `from ouro.interfaces.bot.X import Y`            |
+  | `from utils import terminal_ui`  | `from ouro.interfaces.tui import terminal_ui`    |
+  | `from utils import get_logger`   | `from ouro.core.log import get_logger`           |
+  | `from config import Config`      | `from ouro.config import Config`                 |
+
+- The `LoopAgent` / `BaseAgent` classes are removed. Use
+  `ComposedAgent` (or the bare `core.loop.Agent` for the SDK).
+- The `_react_loop` / `_ralph_loop` private methods are gone.
+  Verification is now `VerificationHook`; the public entry point is
+  `ComposedAgent.run(task, *, verify=True)`.
+
+### Verification
+
+- `./scripts/dev.sh check` now runs `importlint` (boundary contracts)
+  in addition to precommit + typecheck + tests.
+- The `ouro` console script entry point moved from `cli:main` to
+  `ouro.interfaces.cli.entry:main`. Existing user-facing CLI flags
+  are unchanged.
+- Runtime files under `~/.ouro/{config, models.yaml, sessions/,
+  memory/, logs/, .auth/, skills/, bot/}` are unchanged. Sessions
+  written by 0.3.x can be resumed by 0.4.0.
+
 ## [0.3.1] - 2026-03-04
 
 ### Added

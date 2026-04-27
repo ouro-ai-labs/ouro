@@ -1,7 +1,7 @@
 """Unit tests for TokenTracker with litellm-based counting."""
 
-from llm.message_types import LLMMessage
-from memory.token_tracker import TokenTracker
+from ouro.capabilities.memory.token_tracker import TokenTracker
+from ouro.core.llm.message_types import LLMMessage
 
 
 class TestTokenCounterAccuracy:

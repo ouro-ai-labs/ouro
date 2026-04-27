@@ -7,8 +7,8 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from llm.message_types import LLMMessage, LLMResponse, StopReason
-from memory import MemoryManager
+from ouro.capabilities.memory import MemoryManager
+from ouro.core.llm.message_types import LLMMessage, LLMResponse, StopReason
 
 
 class MockLLM:

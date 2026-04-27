@@ -1,0 +1,28 @@
+[importlinter]
+root_packages =
+    ouro
+    ouro_harbor
+
+[importlinter:contract:layered]
+name = Ouro three-layer architecture
+type = layers
+layers =
+    ouro.interfaces
+    ouro.capabilities
+    ouro.core
+
+[importlinter:contract:no-capabilities-from-core]
+name = Core never imports capabilities
+type = forbidden
+source_modules =
+    ouro.core
+forbidden_modules =
+    ouro.capabilities
+
+[importlinter:contract:no-interfaces-from-capabilities]
+name = Capabilities never import interfaces
+type = forbidden
+source_modules =
+    ouro.capabilities
+forbidden_modules =
+    ouro.interfaces

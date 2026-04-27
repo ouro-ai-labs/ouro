@@ -3,8 +3,8 @@
 import pytest
 import pytest_asyncio
 
-from llm.message_types import LLMResponse, StopReason
-from memory.long_term.store import MemoryStore
+from ouro.capabilities.memory.long_term.store import MemoryStore
+from ouro.core.llm.message_types import LLMResponse, StopReason
 
 
 class MockLTMLLM:

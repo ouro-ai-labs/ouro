@@ -2,8 +2,8 @@
 
 import pytest
 
-from config import Config
-from llm.message_types import LLMMessage, LLMResponse, StopReason
+from ouro.config import Config
+from ouro.core.llm.message_types import LLMMessage, LLMResponse, StopReason
 
 
 @pytest.fixture
@@ -76,7 +76,8 @@ def mock_llm(tmp_path, monkeypatch):
     """
     sessions_dir = str(tmp_path / "sessions")
     monkeypatch.setattr(
-        "memory.store.yaml_file_memory_store.get_sessions_dir", lambda: sessions_dir
+        "ouro.capabilities.memory.store.yaml_file_memory_store.get_sessions_dir",
+        lambda: sessions_dir,
     )
     return MockLLM()
 

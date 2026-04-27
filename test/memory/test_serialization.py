@@ -1,11 +1,11 @@
 """Unit tests for memory serialization module."""
 
-from llm.message_types import LLMMessage
-from memory.serialization import (
+from ouro.capabilities.memory.serialization import (
     deserialize_message,
     serialize_content,
     serialize_message,
 )
+from ouro.core.llm.message_types import LLMMessage
 
 
 class TestSerializeContent:

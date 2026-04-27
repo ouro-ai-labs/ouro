@@ -4,20 +4,20 @@ from datetime import date
 
 import pytest
 
-from memory.long_term.consolidator import LongTermMemoryConsolidator
+from ouro.capabilities.memory.long_term.consolidator import LongTermMemoryConsolidator
 
 
 @pytest.mark.asyncio
 class TestConsolidator:
     async def test_should_consolidate_below_threshold(self, mock_ltm_llm, monkeypatch):
-        from config import Config
+        from ouro.config import Config
 
         monkeypatch.setattr(Config, "LONG_TERM_MEMORY_CONSOLIDATION_THRESHOLD", 5000)
         consolidator = LongTermMemoryConsolidator(mock_ltm_llm)
         assert not consolidator.should_consolidate("short")
 
     async def test_should_consolidate_above_threshold(self, mock_ltm_llm, monkeypatch):
-        from config import Config
+        from ouro.config import Config
 
         monkeypatch.setattr(Config, "LONG_TERM_MEMORY_CONSOLIDATION_THRESHOLD", 10)
         consolidator = LongTermMemoryConsolidator(mock_ltm_llm)
@@ -25,7 +25,7 @@ class TestConsolidator:
 
     async def test_should_consolidate_combined_contents(self, mock_ltm_llm, monkeypatch):
         """Combined size of multiple contents is checked against threshold."""
-        from config import Config
+        from ouro.config import Config
 
         monkeypatch.setattr(Config, "LONG_TERM_MEMORY_CONSOLIDATION_THRESHOLD", 10)
         consolidator = LongTermMemoryConsolidator(mock_ltm_llm)

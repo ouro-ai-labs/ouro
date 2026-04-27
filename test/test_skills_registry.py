@@ -2,8 +2,8 @@ import textwrap
 
 import pytest
 
-from agent.skills import SkillsRegistry
-from agent.skills.registry import BUNDLED_SKILLS_DIR
+from ouro.capabilities.skills import SkillsRegistry
+from ouro.capabilities.skills.registry import BUNDLED_SKILLS_DIR
 
 
 @pytest.mark.asyncio

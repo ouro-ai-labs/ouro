@@ -1,4 +1,4 @@
-from llm import ModelManager
+from ouro.core.llm import ModelManager
 
 
 def test_validate_chatgpt_model_without_api_key(tmp_path):
