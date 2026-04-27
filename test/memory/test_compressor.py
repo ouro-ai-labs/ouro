@@ -1,8 +1,8 @@
 """Unit tests for WorkingMemoryCompressor."""
 
-from ouro.core.llm.base import LLMMessage
 from ouro.capabilities.memory.compressor import WorkingMemoryCompressor
 from ouro.capabilities.memory.types import CompressionStrategy
+from ouro.core.llm.base import LLMMessage
 
 
 class TestCompressorBasics:

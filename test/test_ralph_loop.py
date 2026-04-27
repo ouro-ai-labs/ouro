@@ -17,7 +17,6 @@ from ouro.core.loop import NullProgressSink
 from ouro.core.loop.agent import _RunContext
 from ouro.core.loop.protocols import ContinueKind
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

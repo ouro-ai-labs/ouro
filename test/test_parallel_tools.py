@@ -8,7 +8,7 @@ import pytest
 
 from ouro.capabilities.tools.base import BaseTool
 from ouro.capabilities.tools.executor import ToolExecutor
-from ouro.core.llm import ToolCall, ToolResult
+from ouro.core.llm import ToolCall
 from ouro.core.loop import Agent, NullProgressSink
 from ouro.core.loop.agent import _RunContext
 
@@ -153,18 +153,14 @@ def test_is_tool_readonly_unknown_tool():
 
 
 def test_dispatch_picks_parallel_when_all_readonly_and_multi():
-    executor = ToolExecutor(
-        [ReadonlyStubTool("a"), ReadonlyStubTool("b")]
-    )
+    executor = ToolExecutor([ReadonlyStubTool("a"), ReadonlyStubTool("b")])
     tcs = [_make_tool_call("a"), _make_tool_call("b")]
     all_readonly = len(tcs) > 1 and all(executor.is_tool_readonly(tc.name) for tc in tcs)
     assert all_readonly is True
 
 
 def test_dispatch_picks_sequential_when_mixed():
-    executor = ToolExecutor(
-        [ReadonlyStubTool("a"), WritableStubTool("b")]
-    )
+    executor = ToolExecutor([ReadonlyStubTool("a"), WritableStubTool("b")])
     tcs = [_make_tool_call("a"), _make_tool_call("b")]
     all_readonly = len(tcs) > 1 and all(executor.is_tool_readonly(tc.name) for tc in tcs)
     assert all_readonly is False
@@ -230,9 +226,7 @@ async def test_parallel_execution_faster_than_sequential():
 @pytest.mark.asyncio
 async def test_parallel_one_tool_fails():
     """ToolExecutor catches exceptions and returns error strings."""
-    agent = _make_agent_with_tools(
-        [ReadonlyStubTool("good", result="ok"), FailingStubTool("bad")]
-    )
+    agent = _make_agent_with_tools([ReadonlyStubTool("good", result="ok"), FailingStubTool("bad")])
     tcs = [_make_tool_call("good", "1"), _make_tool_call("bad", "2")]
 
     results = await agent._exec_parallel(_make_ctx(), tcs)

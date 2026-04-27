@@ -132,7 +132,9 @@ class TestProactiveExecutor:
 class TestCronScheduler:
     @pytest.fixture(autouse=True)
     def _isolate_cron_files(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("ouro.interfaces.bot.proactive._CRON_JOBS_FILE", str(tmp_path / "cron_jobs.json"))
+        monkeypatch.setattr(
+            "ouro.interfaces.bot.proactive._CRON_JOBS_FILE", str(tmp_path / "cron_jobs.json")
+        )
         monkeypatch.setattr("ouro.interfaces.bot.proactive._BOT_DIR", str(tmp_path))
 
     def test_add_job_every_defaults_to_main(self):
@@ -266,7 +268,9 @@ class TestCronScheduler:
 class TestCronSchedulerRouting:
     @pytest.fixture(autouse=True)
     def _isolate_cron_files(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("ouro.interfaces.bot.proactive._CRON_JOBS_FILE", str(tmp_path / "cron_jobs.json"))
+        monkeypatch.setattr(
+            "ouro.interfaces.bot.proactive._CRON_JOBS_FILE", str(tmp_path / "cron_jobs.json")
+        )
         monkeypatch.setattr("ouro.interfaces.bot.proactive._BOT_DIR", str(tmp_path))
 
     def _past(self) -> str:
@@ -429,7 +433,9 @@ class TestCronSchedulerRouting:
 class TestProactiveSlashCommands:
     @pytest.fixture(autouse=True)
     def _isolate_cron_files(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("ouro.interfaces.bot.proactive._CRON_JOBS_FILE", str(tmp_path / "cron_jobs.json"))
+        monkeypatch.setattr(
+            "ouro.interfaces.bot.proactive._CRON_JOBS_FILE", str(tmp_path / "cron_jobs.json")
+        )
         monkeypatch.setattr("ouro.interfaces.bot.proactive._BOT_DIR", str(tmp_path))
 
     @pytest.fixture

@@ -95,7 +95,9 @@ async def test_login_uses_oauth_flow_by_default(tmp_path, monkeypatch):
             encoding="utf-8",
         )
 
-    monkeypatch.setattr("ouro.core.llm.chatgpt_auth._login_chatgpt_oauth_via_local_server", fake_oauth_login)
+    monkeypatch.setattr(
+        "ouro.core.llm.chatgpt_auth._login_chatgpt_oauth_via_local_server", fake_oauth_login
+    )
 
     status = await login_chatgpt()
     assert called["oauth"] == 1
@@ -122,7 +124,9 @@ async def test_login_skips_browser_open_when_refresh_token_exists(tmp_path, monk
         called["refreshed"] += 1
         return {"access_token": "at_refreshed", "refresh_token": "rt_123", "id_token": "id_123"}
 
-    monkeypatch.setattr("ouro.core.llm.chatgpt_auth._login_chatgpt_oauth_via_local_server", fake_oauth_login)
+    monkeypatch.setattr(
+        "ouro.core.llm.chatgpt_auth._login_chatgpt_oauth_via_local_server", fake_oauth_login
+    )
     monkeypatch.setattr("ouro.core.llm.chatgpt_auth._refresh_chatgpt_tokens", fake_refresh)
 
     await login_chatgpt()
@@ -149,7 +153,9 @@ async def test_login_skips_browser_open_when_access_token_is_still_valid(tmp_pat
         called["refresh"] += 1
         return {"access_token": "x", "refresh_token": "y", "id_token": "z"}
 
-    monkeypatch.setattr("ouro.core.llm.chatgpt_auth._login_chatgpt_oauth_via_local_server", fake_oauth_login)
+    monkeypatch.setattr(
+        "ouro.core.llm.chatgpt_auth._login_chatgpt_oauth_via_local_server", fake_oauth_login
+    )
     monkeypatch.setattr("ouro.core.llm.chatgpt_auth._refresh_chatgpt_tokens", fake_refresh)
 
     await login_chatgpt()
@@ -172,7 +178,9 @@ async def test_login_skips_browser_open_when_access_token_has_unknown_expiry(tmp
     async def fake_oauth_login():
         called["oauth"] += 1
 
-    monkeypatch.setattr("ouro.core.llm.chatgpt_auth._login_chatgpt_oauth_via_local_server", fake_oauth_login)
+    monkeypatch.setattr(
+        "ouro.core.llm.chatgpt_auth._login_chatgpt_oauth_via_local_server", fake_oauth_login
+    )
 
     await login_chatgpt()
 
@@ -200,7 +208,9 @@ async def test_login_opens_browser_when_access_token_is_expired_and_no_refresh(
             encoding="utf-8",
         )
 
-    monkeypatch.setattr("ouro.core.llm.chatgpt_auth._login_chatgpt_oauth_via_local_server", fake_oauth_login)
+    monkeypatch.setattr(
+        "ouro.core.llm.chatgpt_auth._login_chatgpt_oauth_via_local_server", fake_oauth_login
+    )
     await login_chatgpt()
 
     assert called["oauth"] == 1
@@ -220,7 +230,9 @@ async def test_login_opens_browser_when_token_near_expiry_and_no_refresh(tmp_pat
     async def fake_oauth_login():
         called["oauth"] += 1
 
-    monkeypatch.setattr("ouro.core.llm.chatgpt_auth._login_chatgpt_oauth_via_local_server", fake_oauth_login)
+    monkeypatch.setattr(
+        "ouro.core.llm.chatgpt_auth._login_chatgpt_oauth_via_local_server", fake_oauth_login
+    )
     await login_chatgpt()
 
     assert called["oauth"] == 1
@@ -259,7 +271,9 @@ async def test_login_prints_manual_url_when_browser_open_fails(tmp_path, monkeyp
         return {"access_token": "token-xyz", "refresh_token": "rt_123", "id_token": "id_123"}
 
     monkeypatch.setattr("ouro.core.llm.chatgpt_auth._open_url_best_effort", fake_open)
-    monkeypatch.setattr("ouro.core.llm.chatgpt_auth._exchange_chatgpt_oauth_code_for_tokens", fake_exchange)
+    monkeypatch.setattr(
+        "ouro.core.llm.chatgpt_auth._exchange_chatgpt_oauth_code_for_tokens", fake_exchange
+    )
 
     task = create_task(login_chatgpt())
     auth_url = None
@@ -367,7 +381,9 @@ async def test_login_falls_back_to_manual_paste_when_callback_bind_fails(tmp_pat
 
     monkeypatch.setattr("ouro.core.llm.chatgpt_auth._start_callback_server", fail_bind)
     monkeypatch.setattr("ouro.core.llm.chatgpt_auth._open_url_best_effort", fake_open)
-    monkeypatch.setattr("ouro.core.llm.chatgpt_auth._exchange_chatgpt_oauth_code_for_tokens", fake_exchange)
+    monkeypatch.setattr(
+        "ouro.core.llm.chatgpt_auth._exchange_chatgpt_oauth_code_for_tokens", fake_exchange
+    )
     monkeypatch.setattr("builtins.input", fake_input)
 
     status = await login_chatgpt()

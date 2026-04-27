@@ -4,9 +4,9 @@ These tests verify that different components work together correctly,
 especially focusing on edge cases and the tool_call/tool_result matching issue.
 """
 
-from ouro.core.llm.base import LLMMessage
 from ouro.capabilities.memory import MemoryManager
 from ouro.capabilities.memory.types import CompressionStrategy
+from ouro.core.llm.base import LLMMessage
 
 
 class TestToolCallResultIntegration:

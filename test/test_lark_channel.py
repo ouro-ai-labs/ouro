@@ -364,7 +364,9 @@ async def test_send_message_calls_api(channel):
     channel._send_sync = MagicMock()
 
     msg = OutgoingMessage(conversation_id="oc_1", text="hi")
-    with patch("ouro.interfaces.bot.channel.lark.asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
+    with patch(
+        "ouro.interfaces.bot.channel.lark.asyncio.to_thread", new_callable=AsyncMock
+    ) as mock_to_thread:
         await channel.send_message(msg)
         mock_to_thread.assert_called_once_with(channel._send_sync, msg)
 
@@ -482,7 +484,9 @@ async def test_send_file_image(channel):
     """send_file with image MIME delegates to _upload_and_send_image."""
     channel._upload_and_send_image = MagicMock(return_value=True)
 
-    with patch("ouro.interfaces.bot.channel.lark.asyncio.to_thread", new_callable=AsyncMock) as mock_thread:
+    with patch(
+        "ouro.interfaces.bot.channel.lark.asyncio.to_thread", new_callable=AsyncMock
+    ) as mock_thread:
         mock_thread.side_effect = lambda fn, *a, **kw: fn(*a, **kw)
 
         import tempfile
@@ -512,7 +516,9 @@ async def test_send_file_document(channel):
     """send_file with non-image MIME delegates to _upload_and_send_file."""
     channel._upload_and_send_file = MagicMock(return_value=True)
 
-    with patch("ouro.interfaces.bot.channel.lark.asyncio.to_thread", new_callable=AsyncMock) as mock_thread:
+    with patch(
+        "ouro.interfaces.bot.channel.lark.asyncio.to_thread", new_callable=AsyncMock
+    ) as mock_thread:
         mock_thread.side_effect = lambda fn, *a, **kw: fn(*a, **kw)
 
         import tempfile
@@ -549,7 +555,9 @@ async def test_add_reaction_calls_api(channel):
     mock_response.data.reaction_id = "react_123"
     channel._api_client.im.v1.message_reaction.create.return_value = mock_response
 
-    with patch("ouro.interfaces.bot.channel.lark.asyncio.to_thread", new_callable=AsyncMock) as mock_thread:
+    with patch(
+        "ouro.interfaces.bot.channel.lark.asyncio.to_thread", new_callable=AsyncMock
+    ) as mock_thread:
         mock_thread.side_effect = lambda fn, *a, **kw: fn(*a, **kw)
         result = await channel.add_reaction("oc_1", "msg_001", "eyes")
 
@@ -563,7 +571,9 @@ async def test_remove_reaction_calls_api(channel):
     mock_response.success.return_value = True
     channel._api_client.im.v1.message_reaction.delete.return_value = mock_response
 
-    with patch("ouro.interfaces.bot.channel.lark.asyncio.to_thread", new_callable=AsyncMock) as mock_thread:
+    with patch(
+        "ouro.interfaces.bot.channel.lark.asyncio.to_thread", new_callable=AsyncMock
+    ) as mock_thread:
         mock_thread.side_effect = lambda fn, *a, **kw: fn(*a, **kw)
         await channel.remove_reaction("oc_1", "msg_001", "eyes", reaction_id="react_123")
 
@@ -572,7 +582,9 @@ async def test_remove_reaction_calls_api(channel):
 
 async def test_remove_reaction_skips_without_reaction_id(channel):
     """remove_reaction with no reaction_id should be a no-op."""
-    with patch("ouro.interfaces.bot.channel.lark.asyncio.to_thread", new_callable=AsyncMock) as mock_thread:
+    with patch(
+        "ouro.interfaces.bot.channel.lark.asyncio.to_thread", new_callable=AsyncMock
+    ) as mock_thread:
         await channel.remove_reaction("oc_1", "msg_001", "eyes", reaction_id=None)
 
     mock_thread.assert_not_called()

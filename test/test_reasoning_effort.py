@@ -100,8 +100,8 @@ async def test_core_agent_injects_reasoning_effort_when_set():
 
 @pytest.mark.asyncio
 async def test_interactive_reasoning_command_sets_agent(monkeypatch):
-    from ouro.interfaces.tui import interactive
     from ouro.core.llm.reasoning import display_reasoning_effort, normalize_reasoning_effort
+    from ouro.interfaces.tui import interactive
 
     InteractiveSession = interactive.InteractiveSession
 

@@ -53,7 +53,9 @@ def test_configure_copilot_auth_env_uses_runtime_dir(tmp_path, monkeypatch):
     monkeypatch.delenv("GITHUB_COPILOT_TOKEN_DIR", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
     # get_runtime_dir reads HOME at call time via os.path.expanduser
-    monkeypatch.setattr("ouro.core.llm.copilot_auth.get_runtime_dir", lambda: str(tmp_path / ".ouro"))
+    monkeypatch.setattr(
+        "ouro.core.llm.copilot_auth.get_runtime_dir", lambda: str(tmp_path / ".ouro")
+    )
 
     token_dir = configure_copilot_auth_env()
 

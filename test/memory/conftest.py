@@ -76,7 +76,8 @@ def mock_llm(tmp_path, monkeypatch):
     """
     sessions_dir = str(tmp_path / "sessions")
     monkeypatch.setattr(
-        "ouro.capabilities.memory.store.yaml_file_memory_store.get_sessions_dir", lambda: sessions_dir
+        "ouro.capabilities.memory.store.yaml_file_memory_store.get_sessions_dir",
+        lambda: sessions_dir,
     )
     return MockLLM()
 

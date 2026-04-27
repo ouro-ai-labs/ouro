@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from ouro.interfaces.bot.proactive import CronScheduler
 from ouro.capabilities.tools.builtins.cron_tool import CronTool
+from ouro.interfaces.bot.proactive import CronScheduler
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -14,7 +14,9 @@ from ouro.capabilities.tools.builtins.cron_tool import CronTool
 
 def _make_scheduler(tmp_path, monkeypatch) -> CronScheduler:
     """Build a CronScheduler with isolated file storage."""
-    monkeypatch.setattr("ouro.interfaces.bot.proactive._CRON_JOBS_FILE", str(tmp_path / "cron_jobs.json"))
+    monkeypatch.setattr(
+        "ouro.interfaces.bot.proactive._CRON_JOBS_FILE", str(tmp_path / "cron_jobs.json")
+    )
     monkeypatch.setattr("ouro.interfaces.bot.proactive._BOT_DIR", str(tmp_path))
     executor = MagicMock()
     return CronScheduler(executor)
