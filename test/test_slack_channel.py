@@ -85,7 +85,7 @@ def _mock_slack():
 
     with (
         patch.dict("sys.modules", modules),
-        patch("config.Config") as mock_config,
+        patch("ouro.config.Config") as mock_config,
     ):
         mock_config.SLACK_BOT_TOKEN = "xoxb-test"
         mock_config.SLACK_APP_TOKEN = "xapp-test"

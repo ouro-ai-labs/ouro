@@ -308,8 +308,8 @@ def test_build_channels_lark():
     mock_lark_mod = MagicMock(LarkChannel=mock_lark_channel)
 
     with (
-        patch("bot.server.Config") as mock_config,
-        patch.dict("sys.modules", {"bot.channel.lark": mock_lark_mod}),
+        patch("ouro.interfaces.bot.server.Config") as mock_config,
+        patch.dict("sys.modules", {"ouro.interfaces.bot.channel.lark": mock_lark_mod}),
     ):
         mock_config.LARK_APP_ID = "test_id"
         mock_config.LARK_APP_SECRET = "test_secret"
@@ -325,7 +325,7 @@ def test_build_channels_lark():
 
 def test_build_channels_empty():
     """_build_channels returns empty when nothing configured."""
-    with patch("bot.server.Config") as mock_config:
+    with patch("ouro.interfaces.bot.server.Config") as mock_config:
         mock_config.LARK_APP_ID = ""
         mock_config.LARK_APP_SECRET = ""
         mock_config.SLACK_BOT_TOKEN = ""

@@ -14,8 +14,8 @@ from ouro.capabilities.tools.builtins.cron_tool import CronTool
 
 def _make_scheduler(tmp_path, monkeypatch) -> CronScheduler:
     """Build a CronScheduler with isolated file storage."""
-    monkeypatch.setattr("bot.proactive._CRON_JOBS_FILE", str(tmp_path / "cron_jobs.json"))
-    monkeypatch.setattr("bot.proactive._BOT_DIR", str(tmp_path))
+    monkeypatch.setattr("ouro.interfaces.bot.proactive._CRON_JOBS_FILE", str(tmp_path / "cron_jobs.json"))
+    monkeypatch.setattr("ouro.interfaces.bot.proactive._BOT_DIR", str(tmp_path))
     executor = MagicMock()
     return CronScheduler(executor)
 

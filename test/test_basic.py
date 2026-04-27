@@ -7,9 +7,10 @@ import os
 
 
 async def test_imports():
-    from ouro.capabilities._legacy_agent import LoopAgent  # noqa: F401
-    from ouro.config import Config  # noqa: F401
+    from ouro.capabilities import AgentBuilder, ComposedAgent  # noqa: F401
     from ouro.capabilities.tools.builtins.file_ops import FileReadTool, FileWriteTool  # noqa: F401
+    from ouro.config import Config  # noqa: F401
+    from ouro.core import Agent, Hook, ToolRegistry  # noqa: F401
 
 
 async def test_tools_execute_and_cleanup(tmp_path):

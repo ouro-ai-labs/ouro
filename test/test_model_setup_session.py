@@ -26,7 +26,7 @@ async def _write_models_yaml(path, *, model_id: str = "openai/gpt-4o") -> None:
 
 
 async def test_model_setup_auto_starts_after_model_pick(tmp_path, monkeypatch):
-    import interactive
+    import ouro.interfaces.tui.interactive as interactive
     from ouro.interfaces.tui.interactive import ModelSetupSession
     from ouro.core.llm import ModelManager
 
@@ -47,7 +47,7 @@ async def test_model_setup_auto_starts_after_model_pick(tmp_path, monkeypatch):
 
 
 async def test_model_setup_does_not_treat_normal_text_as_model_id(tmp_path, monkeypatch):
-    import interactive
+    import ouro.interfaces.tui.interactive as interactive
     from ouro.interfaces.tui.interactive import ModelSetupSession
     from ouro.core.llm import ModelManager
 

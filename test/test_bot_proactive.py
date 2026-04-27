@@ -87,7 +87,7 @@ class TestProactiveExecutor:
         mock_agent.run = slow_run
         executor = ProactiveExecutor(lambda: mock_agent, [], SessionRouter(lambda: MagicMock()))
 
-        with patch("bot.proactive._ISOLATED_TIMEOUT", 0.1):
+        with patch("ouro.interfaces.bot.proactive._ISOLATED_TIMEOUT", 0.1):
             result = await executor.run_isolated("test")
         assert "timed out" in result
 
@@ -132,8 +132,8 @@ class TestProactiveExecutor:
 class TestCronScheduler:
     @pytest.fixture(autouse=True)
     def _isolate_cron_files(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("bot.proactive._CRON_JOBS_FILE", str(tmp_path / "cron_jobs.json"))
-        monkeypatch.setattr("bot.proactive._BOT_DIR", str(tmp_path))
+        monkeypatch.setattr("ouro.interfaces.bot.proactive._CRON_JOBS_FILE", str(tmp_path / "cron_jobs.json"))
+        monkeypatch.setattr("ouro.interfaces.bot.proactive._BOT_DIR", str(tmp_path))
 
     def test_add_job_every_defaults_to_main(self):
         executor = _make_executor()
@@ -266,8 +266,8 @@ class TestCronScheduler:
 class TestCronSchedulerRouting:
     @pytest.fixture(autouse=True)
     def _isolate_cron_files(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("bot.proactive._CRON_JOBS_FILE", str(tmp_path / "cron_jobs.json"))
-        monkeypatch.setattr("bot.proactive._BOT_DIR", str(tmp_path))
+        monkeypatch.setattr("ouro.interfaces.bot.proactive._CRON_JOBS_FILE", str(tmp_path / "cron_jobs.json"))
+        monkeypatch.setattr("ouro.interfaces.bot.proactive._BOT_DIR", str(tmp_path))
 
     def _past(self) -> str:
         return datetime(2020, 1, 1, tzinfo=timezone.utc).isoformat()
@@ -429,8 +429,8 @@ class TestCronSchedulerRouting:
 class TestProactiveSlashCommands:
     @pytest.fixture(autouse=True)
     def _isolate_cron_files(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("bot.proactive._CRON_JOBS_FILE", str(tmp_path / "cron_jobs.json"))
-        monkeypatch.setattr("bot.proactive._BOT_DIR", str(tmp_path))
+        monkeypatch.setattr("ouro.interfaces.bot.proactive._CRON_JOBS_FILE", str(tmp_path / "cron_jobs.json"))
+        monkeypatch.setattr("ouro.interfaces.bot.proactive._BOT_DIR", str(tmp_path))
 
     @pytest.fixture
     def setup(self):

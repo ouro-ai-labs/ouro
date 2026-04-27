@@ -228,7 +228,7 @@ async def test_chatgpt_adapter_sets_token_dir_and_avoids_device_code(tmp_path, m
         return "at_123"
 
     monkeypatch.setattr(
-        "llm.chatgpt_auth.ensure_chatgpt_access_token", fake_ensure_chatgpt_access_token
+        "ouro.core.llm.chatgpt_auth.ensure_chatgpt_access_token", fake_ensure_chatgpt_access_token
     )
 
     adapter = LiteLLMAdapter(model="chatgpt/gpt-5.2")
@@ -272,7 +272,7 @@ async def test_chatgpt_adapter_errors_fast_when_not_logged_in(tmp_path, monkeypa
         raise ChatGPTLoginRequiredError("not logged in")
 
     monkeypatch.setattr(
-        "llm.chatgpt_auth.ensure_chatgpt_access_token", fake_ensure_chatgpt_access_token
+        "ouro.core.llm.chatgpt_auth.ensure_chatgpt_access_token", fake_ensure_chatgpt_access_token
     )
 
     adapter = LiteLLMAdapter(model="chatgpt/gpt-5.2")
@@ -291,7 +291,7 @@ async def test_chatgpt_adapter_preserves_non_login_auth_errors(tmp_path, monkeyp
         raise RuntimeError("refresh endpoint timeout")
 
     monkeypatch.setattr(
-        "llm.chatgpt_auth.ensure_chatgpt_access_token", fake_ensure_chatgpt_access_token
+        "ouro.core.llm.chatgpt_auth.ensure_chatgpt_access_token", fake_ensure_chatgpt_access_token
     )
 
     adapter = LiteLLMAdapter(model="chatgpt/gpt-5.2")
@@ -317,7 +317,7 @@ async def test_chatgpt_adapter_retries_transient_auth_refresh_errors(tmp_path, m
         return "at_123"
 
     monkeypatch.setattr(
-        "llm.chatgpt_auth.ensure_chatgpt_access_token", fake_ensure_chatgpt_access_token
+        "ouro.core.llm.chatgpt_auth.ensure_chatgpt_access_token", fake_ensure_chatgpt_access_token
     )
 
     response = MagicMock()

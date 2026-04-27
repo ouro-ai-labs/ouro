@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from ouro.capabilities._legacy_agent import LoopAgent
-from ouro.core.llm import LiteLLMAdapter, ModelManager
+from ouro.capabilities import AgentBuilder
 from ouro.capabilities.tools.builtins.file_ops import FileReadTool, FileWriteTool
 from ouro.capabilities.tools.builtins.smart_edit import SmartEditTool
+from ouro.core.llm import LiteLLMAdapter, ModelManager
 
 
 @pytest.mark.integration
@@ -53,13 +53,14 @@ def test_smart_edit_in_agent():
             timeout=profile.timeout,
         )
 
-        tools = [
-            FileReadTool(),
-            FileWriteTool(),
-            SmartEditTool(),
-        ]
-
-        agent = LoopAgent(llm=llm, tools=tools, max_iterations=5)
+        agent = (
+            AgentBuilder()
+            .with_llm(llm, model_manager=mm)
+            .with_max_iterations(5)
+            .without_memory()
+            .with_tools([FileReadTool(), FileWriteTool(), SmartEditTool()])
+            .build()
+        )
 
         # Task: use smart_edit to add a comment
         task = f"""Use the smart_edit tool to add a comment '# computed sum' after 'result = x + y' in {temp_path}.
