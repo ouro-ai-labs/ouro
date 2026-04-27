@@ -9,7 +9,7 @@ quieter variant (or none) instead.
 from __future__ import annotations
 
 from contextlib import AbstractAsyncContextManager
-from typing import Any, Dict, Optional
+from typing import Any
 
 from ouro.interfaces.tui import terminal_ui
 from ouro.interfaces.tui.progress import AsyncSpinner
@@ -28,7 +28,7 @@ class TuiProgressSink:
     def assistant_message(self, content: Any) -> None:
         terminal_ui.print_assistant_message(content)
 
-    def tool_call(self, name: str, arguments: Dict[str, Any]) -> None:
+    def tool_call(self, name: str, arguments: dict[str, Any]) -> None:
         terminal_ui.print_tool_call(name, arguments)
 
     def tool_result(self, result: str) -> None:
@@ -40,7 +40,5 @@ class TuiProgressSink:
     def unfinished_answer(self, text: str) -> None:
         terminal_ui.print_unfinished_answer(text)
 
-    def spinner(
-        self, label: str, title: Optional[str] = None
-    ) -> AbstractAsyncContextManager[Any]:
+    def spinner(self, label: str, title: str | None = None) -> AbstractAsyncContextManager[Any]:
         return AsyncSpinner(terminal_ui.console, label, title=title or "Working")

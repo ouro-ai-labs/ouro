@@ -15,11 +15,7 @@ from typing import (
     Any,
     Awaitable,
     Callable,
-    Dict,
-    List,
-    Optional,
     Protocol,
-    Sequence,
     runtime_checkable,
 )
 
@@ -40,9 +36,9 @@ class ToolRegistry(Protocol):
     coupling back into core.
     """
 
-    def get_tool_schemas(self) -> List[Dict[str, Any]]: ...
+    def get_tool_schemas(self) -> list[dict[str, Any]]: ...
     def is_tool_readonly(self, name: str) -> bool: ...
-    async def execute_tool_call(self, name: str, arguments: Dict[str, Any]) -> str: ...
+    async def execute_tool_call(self, name: str, arguments: dict[str, Any]) -> str: ...
 
 
 # ---------------------------------------------------------------------------
@@ -53,7 +49,7 @@ class ToolRegistry(Protocol):
 class _NullSpinner:
     """No-op async context manager used as the default ProgressSink spinner."""
 
-    async def __aenter__(self) -> "_NullSpinner":
+    async def __aenter__(self) -> _NullSpinner:
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
@@ -72,30 +68,39 @@ class ProgressSink(Protocol):
     def info(self, msg: str) -> None: ...
     def thinking(self, text: str) -> None: ...
     def assistant_message(self, content: Any) -> None: ...
-    def tool_call(self, name: str, arguments: Dict[str, Any]) -> None: ...
+    def tool_call(self, name: str, arguments: dict[str, Any]) -> None: ...
     def tool_result(self, result: str) -> None: ...
     def final_answer(self, text: str) -> None: ...
     def unfinished_answer(self, text: str) -> None: ...
 
-    def spinner(
-        self, label: str, title: Optional[str] = None
-    ) -> AbstractAsyncContextManager[Any]: ...
+    def spinner(self, label: str, title: str | None = None) -> AbstractAsyncContextManager[Any]: ...
 
 
 class NullProgressSink:
     """Concrete no-op ProgressSink. Use when no UI is wired up."""
 
-    def info(self, msg: str) -> None: pass
-    def thinking(self, text: str) -> None: pass
-    def assistant_message(self, content: Any) -> None: pass
-    def tool_call(self, name: str, arguments: Dict[str, Any]) -> None: pass
-    def tool_result(self, result: str) -> None: pass
-    def final_answer(self, text: str) -> None: pass
-    def unfinished_answer(self, text: str) -> None: pass
+    def info(self, msg: str) -> None:
+        pass
 
-    def spinner(
-        self, label: str, title: Optional[str] = None
-    ) -> AbstractAsyncContextManager[Any]:
+    def thinking(self, text: str) -> None:
+        pass
+
+    def assistant_message(self, content: Any) -> None:
+        pass
+
+    def tool_call(self, name: str, arguments: dict[str, Any]) -> None:
+        pass
+
+    def tool_result(self, result: str) -> None:
+        pass
+
+    def final_answer(self, text: str) -> None:
+        pass
+
+    def unfinished_answer(self, text: str) -> None:
+        pass
+
+    def spinner(self, label: str, title: str | None = None) -> AbstractAsyncContextManager[Any]:
         return _NullSpinner()
 
 
@@ -112,9 +117,9 @@ class LoopContext(Protocol):
     @property
     def iteration(self) -> int: ...
     @property
-    def usage_total(self) -> Dict[str, int]: ...
+    def usage_total(self) -> dict[str, int]: ...
     @property
-    def stop_reason_last(self) -> Optional[str]: ...
+    def stop_reason_last(self) -> str | None: ...
     @property
     def progress(self) -> ProgressSink: ...
 
@@ -133,8 +138,8 @@ class CompactionDecision:
     text and usage of the compaction call.
     """
 
-    compaction_prompt: "LLMMessage"
-    on_summary: Callable[[str, Dict[str, int]], Awaitable[None] | None]
+    compaction_prompt: LLMMessage
+    on_summary: Callable[[str, dict[str, int]], Awaitable[None] | None]
 
 
 class _ContinueKind(str, Enum):
@@ -146,18 +151,18 @@ class _ContinueKind(str, Enum):
 @dataclass(frozen=True)
 class ContinueDecision:
     kind: _ContinueKind
-    feedback_messages: tuple["LLMMessage", ...] = field(default_factory=tuple)
+    feedback_messages: tuple[LLMMessage, ...] = field(default_factory=tuple)
 
     @classmethod
-    def stop(cls) -> "ContinueDecision":
+    def stop(cls) -> ContinueDecision:
         return cls(kind=_ContinueKind.STOP)
 
     @classmethod
-    def cont(cls) -> "ContinueDecision":
+    def cont(cls) -> ContinueDecision:
         return cls(kind=_ContinueKind.CONTINUE)
 
     @classmethod
-    def retry_with_feedback(cls, *messages: "LLMMessage") -> "ContinueDecision":
+    def retry_with_feedback(cls, *messages: LLMMessage) -> ContinueDecision:
         return cls(kind=_ContinueKind.RETRY, feedback_messages=tuple(messages))
 
 
@@ -187,40 +192,36 @@ class Hook(Protocol):
     """
 
     async def on_run_start(
-        self, ctx: LoopContext, messages: List["LLMMessage"]
-    ) -> List["LLMMessage"]: ...
+        self, ctx: LoopContext, messages: list[LLMMessage]
+    ) -> list[LLMMessage]: ...
 
     async def on_run_end(self, ctx: LoopContext, final_answer: str) -> None: ...
 
     async def before_call(
         self,
         ctx: LoopContext,
-        messages: List["LLMMessage"],
-        tools: List[Dict[str, Any]],
-    ) -> List["LLMMessage"]: ...
+        messages: list[LLMMessage],
+        tools: list[dict[str, Any]],
+    ) -> list[LLMMessage]: ...
 
-    async def after_call(
-        self, ctx: LoopContext, response: "LLMResponse"
-    ) -> "LLMResponse": ...
+    async def after_call(self, ctx: LoopContext, response: LLMResponse) -> LLMResponse: ...
 
-    async def before_tool(
-        self, ctx: LoopContext, tool_call: "ToolCall"
-    ) -> "ToolCall": ...
+    async def before_tool(self, ctx: LoopContext, tool_call: ToolCall) -> ToolCall: ...
 
     async def after_tool(
         self,
         ctx: LoopContext,
-        tool_call: "ToolCall",
-        result: "ToolResult",
-    ) -> "ToolResult": ...
+        tool_call: ToolCall,
+        result: ToolResult,
+    ) -> ToolResult: ...
 
     async def on_compact_check(
-        self, ctx: LoopContext, messages: List["LLMMessage"]
-    ) -> Optional[CompactionDecision]: ...
+        self, ctx: LoopContext, messages: list[LLMMessage]
+    ) -> CompactionDecision | None: ...
 
     async def on_iteration_end(
         self,
         ctx: LoopContext,
-        response: "LLMResponse",
+        response: LLMResponse,
         finished: bool,
     ) -> ContinueDecision: ...

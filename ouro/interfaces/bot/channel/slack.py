@@ -15,7 +15,12 @@ from slack_sdk.socket_mode.request import SocketModeRequest
 from slack_sdk.socket_mode.response import SocketModeResponse
 from slack_sdk.web.async_client import AsyncWebClient
 
-from ouro.interfaces.bot.channel.base import FileAttachment, ImageData, IncomingMessage, OutgoingMessage
+from ouro.interfaces.bot.channel.base import (
+    FileAttachment,
+    ImageData,
+    IncomingMessage,
+    OutgoingMessage,
+)
 
 if TYPE_CHECKING:
     from ouro.interfaces.bot.channel.base import MessageCallback

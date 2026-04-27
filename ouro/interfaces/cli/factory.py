@@ -9,8 +9,6 @@ builtin tool set + a TUI-backed `ProgressSink`. Used by:
 
 from __future__ import annotations
 
-from typing import Optional
-
 from ouro.capabilities import AgentBuilder, ComposedAgent
 from ouro.capabilities.tools.builtins.advanced_file_ops import GlobTool, GrepTool
 from ouro.capabilities.tools.builtins.file_ops import FileReadTool, FileWriteTool
@@ -26,9 +24,9 @@ from ouro.interfaces.tui.tui_progress import TuiProgressSink
 
 
 def create_agent(
-    model_id: Optional[str] = None,
-    sessions_dir: Optional[str] = None,
-    memory_dir: Optional[str] = None,
+    model_id: str | None = None,
+    sessions_dir: str | None = None,
+    memory_dir: str | None = None,
 ) -> ComposedAgent:
     """Factory function to create a fully wired ComposedAgent.
 

@@ -8,7 +8,7 @@ the inner ReAct loop with corrective guidance.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from ouro.core.llm import LLMMessage
 from ouro.core.log import get_logger
@@ -85,7 +85,7 @@ Do NOT restate the answer. Only judge it."""
 class LLMVerifier:
     """Default verifier that uses a lightweight LLM call (no tools)."""
 
-    def __init__(self, llm: LiteLLMAdapter, progress: Optional[ProgressSink] = None):
+    def __init__(self, llm: LiteLLMAdapter, progress: ProgressSink | None = None):
         self.llm = llm
         self._progress: ProgressSink = progress or NullProgressSink()
 

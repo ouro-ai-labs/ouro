@@ -7,6 +7,7 @@ import signal
 from rich.markdown import Markdown
 from rich.table import Table
 
+from ouro.capabilities.memory import MemoryManager
 from ouro.capabilities.skills import SkillsRegistry, render_skills_section
 from ouro.config import Config
 from ouro.core.llm import ModelManager
@@ -18,10 +19,9 @@ from ouro.core.llm.chatgpt_auth import (
     logout_auth_provider,
 )
 from ouro.core.llm.oauth_model_sync import remove_oauth_models, sync_oauth_models
-from ouro.capabilities.memory import MemoryManager
 from ouro.core.log import get_log_file_path
-from ouro.interfaces.tui import terminal_ui
 from ouro.core.runtime import get_history_file
+from ouro.interfaces.tui import terminal_ui
 from ouro.interfaces.tui.command_registry import CommandRegistry, CommandSpec
 from ouro.interfaces.tui.input_handler import InputHandler
 from ouro.interfaces.tui.model_ui import (

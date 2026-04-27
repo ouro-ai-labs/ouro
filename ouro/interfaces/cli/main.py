@@ -8,7 +8,7 @@ import warnings
 from rich.console import Console
 
 from ouro.capabilities.memory import MemoryManager
-from ouro.capabilities.skills import SkillsRegistry, render_skills_section
+from ouro.capabilities.skills import SkillsRegistry
 from ouro.config import Config
 from ouro.core.llm import ModelManager
 from ouro.core.llm.chatgpt_auth import (
@@ -305,6 +305,7 @@ def main():
         # one-shot --verify we rebuild with it.
         if args.verify:
             from ouro.capabilities.verification.hook import VerificationHook
+
             agent._core.add_hook(  # noqa: SLF001 — internal but stable
                 VerificationHook(
                     agent.llm,

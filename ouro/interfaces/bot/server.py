@@ -10,11 +10,11 @@ from typing import TYPE_CHECKING
 
 from aiohttp import web
 
+from ouro.config import Config
 from ouro.interfaces.bot.channel.base import Channel, IncomingMessage, OutgoingMessage
 from ouro.interfaces.bot.message_queue import ConversationQueue, coalesce_messages
 from ouro.interfaces.bot.proactive import CronScheduler, ProactiveExecutor
 from ouro.interfaces.bot.session_router import SessionRouter
-from ouro.config import Config
 
 if TYPE_CHECKING:
     from ouro.capabilities import ComposedAgent
@@ -111,6 +111,7 @@ class BotServer:
 
         if cmd == "/compact":
             agent = await self._router.get_or_create_agent(msg.channel, msg.conversation_id)
+            assert agent.memory is not None  # bot agents always enable memory
             try:
                 result = await agent.memory.compress()
             except Exception:
@@ -140,7 +141,7 @@ class BotServer:
             # Try to get existing agent; don't create one just for /status
             key = self._router._session_key(msg.channel, msg.conversation_id)
             agent = self._router._sessions.get(key)
-            if agent is None:
+            if agent is None or agent.memory is None:
                 await channel.send_message(
                     OutgoingMessage(
                         conversation_id=msg.conversation_id,
@@ -782,14 +783,14 @@ async def run_bot(model_id: str | None = None) -> None:
     from pathlib import Path
 
     from ouro.capabilities.skills import SkillsRegistry, render_skills_section
-    from ouro.interfaces.bot.soul import load_soul
-    from ouro.interfaces.cli.factory import create_agent
     from ouro.core.runtime import (
         ensure_bot_dirs,
         get_bot_memory_dir,
         get_bot_sessions_dir,
         get_bot_skills_dir,
     )
+    from ouro.interfaces.bot.soul import load_soul
+    from ouro.interfaces.cli.factory import create_agent
 
     # Bot mode: enable long-term memory by default so conversations persist
     Config.LONG_TERM_MEMORY_ENABLED = True

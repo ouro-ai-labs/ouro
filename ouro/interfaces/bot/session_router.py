@@ -141,7 +141,9 @@ class SessionRouter:
         """
         key = self._session_key(channel, conversation_id)
         agent = self._sessions.get(key)
-        if not agent or not agent.memory.session_id:
+        # Bot agents always have memory enabled (see factory). The None check
+        # narrows for mypy and short-circuits for the unlikely standalone case.
+        if not agent or agent.memory is None or not agent.memory.session_id:
             return
         old = self._conversation_map.get(key)
         if old != agent.memory.session_id:
@@ -230,7 +232,7 @@ class SessionRouter:
         """Save the current agent's memory to disk (no-op if no session exists)."""
         key = self._session_key(channel, conversation_id)
         agent = self._sessions.get(key)
-        if agent:
+        if agent and agent.memory is not None:
             await agent.memory.save_memory()
 
     async def list_persisted_sessions(self, limit: int = 20) -> list[dict[str, Any]]:

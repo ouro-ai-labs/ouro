@@ -8,7 +8,7 @@ memory, BaseTool, verification, or terminal UI — those plug in via
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Sequence
 
 from ouro.core.llm import (
     LLMMessage,
@@ -40,11 +40,11 @@ class _RunContext:
     def __init__(self, task: str, progress: ProgressSink) -> None:
         self.task = task
         self.iteration = 0
-        self.usage_total: Dict[str, int] = {}
-        self.stop_reason_last: Optional[str] = None
+        self.usage_total: dict[str, int] = {}
+        self.stop_reason_last: str | None = None
         self.progress = progress
 
-    def add_usage(self, usage: Optional[Dict[str, int]]) -> None:
+    def add_usage(self, usage: dict[str, int] | None) -> None:
         if not usage:
             return
         for k, v in usage.items():
@@ -67,19 +67,19 @@ class Agent:
         hooks: Sequence[Hook] = (),
         max_iterations: int = 1000,
         max_tokens_per_call: int = 4096,
-        progress: Optional[ProgressSink] = None,
+        progress: ProgressSink | None = None,
     ) -> None:
         self.llm = llm
         self.tools = tools
-        self.hooks: List[Hook] = list(hooks)
+        self.hooks: list[Hook] = list(hooks)
         self.max_iterations = max_iterations
         self.max_tokens_per_call = max_tokens_per_call
         self.progress: ProgressSink = progress or NullProgressSink()
-        self._reasoning_effort: Optional[str] = None
+        self._reasoning_effort: str | None = None
 
     # ---- caller-facing knobs -------------------------------------------------
 
-    def set_reasoning_effort(self, value: Optional[str]) -> None:
+    def set_reasoning_effort(self, value: str | None) -> None:
         self._reasoning_effort = normalize_reasoning_effort(value)
 
     def add_hook(self, hook: Hook) -> None:
@@ -91,14 +91,12 @@ class Agent:
         self,
         task: str,
         *,
-        initial_messages: Optional[List[LLMMessage]] = None,
+        initial_messages: list[LLMMessage] | None = None,
     ) -> str:
         ctx = _RunContext(task=task, progress=self.progress)
-        messages: List[LLMMessage] = list(initial_messages or [])
+        messages: list[LLMMessage] = list(initial_messages or [])
 
-        messages = await self._chain_async(
-            "on_run_start", ctx, messages, default=messages
-        )
+        messages = await self._chain_async("on_run_start", ctx, messages, default=messages)
 
         tool_schemas = self.tools.get_tool_schemas()
 
@@ -106,9 +104,7 @@ class Agent:
         try:
             for ctx.iteration in range(1, self.max_iterations + 1):
                 # 1) Compaction fork (cache-safe). Hook decides; loop calls LLM.
-                decision = await self._first_non_none_async(
-                    "on_compact_check", ctx, messages
-                )
+                decision = await self._first_non_none_async("on_compact_check", ctx, messages)
                 if decision is not None:
                     await self._do_compaction(ctx, messages, tool_schemas, decision)
                     continue
@@ -120,19 +116,19 @@ class Agent:
 
                 # 3) LLM call.
                 async with self.progress.spinner(
-                    "Analyzing request..." if ctx.iteration == 1
-                    else "Processing results..."
+                    "Analyzing request..." if ctx.iteration == 1 else "Processing results..."
                 ):
                     response = await self.llm.call_async(
                         messages=outgoing,
                         tools=tool_schemas,
                         max_tokens=self.max_tokens_per_call,
-                        **({"reasoning_effort": self._reasoning_effort}
-                           if self._reasoning_effort is not None else {}),
+                        **(
+                            {"reasoning_effort": self._reasoning_effort}
+                            if self._reasoning_effort is not None
+                            else {}
+                        ),
                     )
-                response = await self._chain_async(
-                    "after_call", ctx, response, default=response
-                )
+                response = await self._chain_async("after_call", ctx, response, default=response)
                 ctx.stop_reason_last = response.stop_reason
                 ctx.add_usage(getattr(response, "usage", None))
 
@@ -182,9 +178,7 @@ class Agent:
                         messages.append(formatted)
 
             # Hit max_iterations.
-            logger.warning(
-                "Agent.run reached max_iterations=%d without STOP", self.max_iterations
-            )
+            logger.warning("Agent.run reached max_iterations=%d without STOP", self.max_iterations)
             return final_answer
         finally:
             await self._fanout_async("on_run_end", ctx, final_answer)
@@ -194,15 +188,13 @@ class Agent:
     async def _do_compaction(
         self,
         ctx: _RunContext,
-        messages: List[LLMMessage],
-        tool_schemas: List[Dict[str, Any]],
+        messages: list[LLMMessage],
+        tool_schemas: list[dict[str, Any]],
         decision: CompactionDecision,
     ) -> None:
         fork = list(messages) + [decision.compaction_prompt]
         # Run before_call so memory hooks can substitute compressed prefix etc.
-        outgoing = await self._chain_async(
-            "before_call", ctx, fork, tool_schemas, default=fork
-        )
+        outgoing = await self._chain_async("before_call", ctx, fork, tool_schemas, default=fork)
         async with self.progress.spinner("Compressing memory...", title="Working"):
             response = await self.llm.call_async(
                 messages=outgoing,
@@ -221,14 +213,12 @@ class Agent:
     async def _dispatch_tools(
         self,
         ctx: _RunContext,
-        tool_calls: List[ToolCall],
-    ) -> List[ToolResult]:
+        tool_calls: list[ToolCall],
+    ) -> list[ToolResult]:
         # Hook chain rewrites each call before execution.
-        rewritten: List[ToolCall] = []
-        for tc in tool_calls:
-            rewritten.append(
-                await self._chain_async("before_tool", ctx, tc, default=tc)
-            )
+        rewritten: list[ToolCall] = [
+            await self._chain_async("before_tool", ctx, tc, default=tc) for tc in tool_calls
+        ]
 
         all_readonly = len(rewritten) > 1 and all(
             self.tools.is_tool_readonly(tc.name) for tc in rewritten
@@ -238,14 +228,12 @@ class Agent:
         return await self._exec_sequential(ctx, rewritten)
 
     async def _exec_sequential(
-        self, ctx: _RunContext, tool_calls: List[ToolCall]
-    ) -> List[ToolResult]:
-        results: List[ToolResult] = []
+        self, ctx: _RunContext, tool_calls: list[ToolCall]
+    ) -> list[ToolResult]:
+        results: list[ToolResult] = []
         for tc in tool_calls:
             self.progress.tool_call(tc.name, tc.arguments)
-            async with self.progress.spinner(
-                f"Executing {tc.name}...", title="Working"
-            ):
+            async with self.progress.spinner(f"Executing {tc.name}...", title="Working"):
                 output = await self.tools.execute_tool_call(tc.name, tc.arguments)
             self.progress.tool_result(output)
             tr = ToolResult(tool_call_id=tc.id, content=output, name=tc.name)
@@ -254,12 +242,12 @@ class Agent:
         return results
 
     async def _exec_parallel(
-        self, ctx: _RunContext, tool_calls: List[ToolCall]
-    ) -> List[ToolResult]:
+        self, ctx: _RunContext, tool_calls: list[ToolCall]
+    ) -> list[ToolResult]:
         for tc in tool_calls:
             self.progress.tool_call(tc.name, tc.arguments)
 
-        outputs: List[Optional[str]] = [None] * len(tool_calls)
+        outputs: list[str | None] = [None] * len(tool_calls)
 
         async def _run(i: int, tc: ToolCall) -> None:
             outputs[i] = await self.tools.execute_tool_call(tc.name, tc.arguments)
@@ -268,12 +256,11 @@ class Agent:
         async with self.progress.spinner(
             f"Executing {len(tool_calls)} tools in parallel ({names})...",
             title="Working",
-        ):
-            async with asyncio.TaskGroup() as tg:
-                for i, tc in enumerate(tool_calls):
-                    tg.create_task(_run(i, tc))
+        ), asyncio.TaskGroup() as tg:
+            for i, tc in enumerate(tool_calls):
+                tg.create_task(_run(i, tc))
 
-        results: List[ToolResult] = []
+        results: list[ToolResult] = []
         for i, tc in enumerate(tool_calls):
             output = outputs[i] or ""
             self.progress.tool_result(output)
@@ -309,9 +296,7 @@ class Agent:
             return default if default is not None else value
         return out
 
-    async def _first_non_none_async(
-        self, method: str, ctx: LoopContext, *args: Any
-    ) -> Any:
+    async def _first_non_none_async(self, method: str, ctx: LoopContext, *args: Any) -> Any:
         for hook in self.hooks:
             fn = getattr(hook, method, None)
             if fn is None:
@@ -337,7 +322,7 @@ class Agent:
     ) -> ContinueDecision:
         """STOP > RETRY > CONTINUE; multiple RETRYs concatenate feedback."""
         decision = ContinueDecision.stop()  # default: terminate when finished
-        retries: List[LLMMessage] = []
+        retries: list[LLMMessage] = []
         any_called = False
         for hook in self.hooks:
             fn = getattr(hook, "on_iteration_end", None)

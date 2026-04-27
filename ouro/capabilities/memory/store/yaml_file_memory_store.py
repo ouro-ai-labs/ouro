@@ -15,12 +15,12 @@ import aiofiles
 import aiofiles.os
 import yaml
 
-from ouro.core.llm.message_types import LLMMessage
 from ouro.capabilities.memory.serialization import (
     deserialize_message,
     serialize_message,
 )
 from ouro.capabilities.memory.store.memory_store import MemoryStore
+from ouro.core.llm.message_types import LLMMessage
 from ouro.core.runtime import get_sessions_dir
 
 logger = logging.getLogger(__name__)

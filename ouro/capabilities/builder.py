@@ -13,18 +13,15 @@ existing TUI/bot consumers can keep using familiar surfaces.
 from __future__ import annotations
 
 import base64
-import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Iterable, List, Optional, Protocol, Sequence
+from typing import Any, Iterable, Protocol
 
-from ouro.config import Config
 from ouro.core.llm import (
     LiteLLMAdapter,
     LLMMessage,
     ModelManager,
-    ModelProfile,
     display_reasoning_effort,
-    normalize_reasoning_effort,
 )
 from ouro.core.log import get_logger
 from ouro.core.loop import Agent, Hook, NullProgressSink, ProgressSink
@@ -35,10 +32,10 @@ from .memory.manager import MemoryManager
 from .prompts import DEFAULT_SYSTEM_PROMPT
 from .skills.registry import SkillsRegistry
 from .skills.render import render_skills_section
+from .todo.state import TodoList
 from .tools.base import BaseTool
 from .tools.builtins.todo_tool import TodoTool
 from .tools.executor import ToolExecutor
-from .todo.state import TodoList
 from .verification.hook import VerificationHook
 from .verification.verifier import Verifier
 
@@ -73,39 +70,41 @@ class AgentBuilder:
     fully wired `ComposedAgent`.
     """
 
-    llm: Optional[LiteLLMAdapter] = None
-    model_manager: Optional[ModelManager] = None
-    tools: List[BaseTool] = field(default_factory=list)
+    llm: LiteLLMAdapter | None = None
+    model_manager: ModelManager | None = None
+    tools: list[BaseTool] = field(default_factory=list)
     max_iterations: int = 1000
-    sessions_dir: Optional[str] = None
-    memory_dir: Optional[str] = None
+    sessions_dir: str | None = None
+    memory_dir: str | None = None
     memory_enabled: bool = True
-    skills_registry: Optional[SkillsRegistry] = None
-    soul_section: Optional[str] = None
+    skills_registry: SkillsRegistry | None = None
+    soul_section: str | None = None
     system_prompt: str = DEFAULT_SYSTEM_PROMPT
-    verifier: Optional[Verifier] = None
+    verifier: Verifier | None = None
     verification_max_iterations: int = 0  # 0 disables verification
     progress: ProgressSink = field(default_factory=NullProgressSink)
-    extra_hooks: List[Hook] = field(default_factory=list)
+    extra_hooks: list[Hook] = field(default_factory=list)
 
     # ---- LLM ----------------------------------------------------------------
 
-    def with_llm(self, llm: LiteLLMAdapter, *, model_manager: Optional[ModelManager] = None) -> "AgentBuilder":
+    def with_llm(
+        self, llm: LiteLLMAdapter, *, model_manager: ModelManager | None = None
+    ) -> AgentBuilder:
         self.llm = llm
         self.model_manager = model_manager
         return self
 
-    def with_max_iterations(self, n: int) -> "AgentBuilder":
+    def with_max_iterations(self, n: int) -> AgentBuilder:
         self.max_iterations = n
         return self
 
     # ---- Tools --------------------------------------------------------------
 
-    def with_tool(self, tool: BaseTool) -> "AgentBuilder":
+    def with_tool(self, tool: BaseTool) -> AgentBuilder:
         self.tools.append(tool)
         return self
 
-    def with_tools(self, tools: Iterable[BaseTool]) -> "AgentBuilder":
+    def with_tools(self, tools: Iterable[BaseTool]) -> AgentBuilder:
         self.tools.extend(tools)
         return self
 
@@ -114,29 +113,29 @@ class AgentBuilder:
     def with_memory(
         self,
         *,
-        sessions_dir: Optional[str] = None,
-        memory_dir: Optional[str] = None,
-    ) -> "AgentBuilder":
+        sessions_dir: str | None = None,
+        memory_dir: str | None = None,
+    ) -> AgentBuilder:
         self.memory_enabled = True
         self.sessions_dir = sessions_dir
         self.memory_dir = memory_dir
         return self
 
-    def without_memory(self) -> "AgentBuilder":
+    def without_memory(self) -> AgentBuilder:
         self.memory_enabled = False
         return self
 
     # ---- Skills / soul / system prompt --------------------------------------
 
-    def with_skills(self, registry: SkillsRegistry) -> "AgentBuilder":
+    def with_skills(self, registry: SkillsRegistry) -> AgentBuilder:
         self.skills_registry = registry
         return self
 
-    def with_soul(self, soul_section: Optional[str]) -> "AgentBuilder":
+    def with_soul(self, soul_section: str | None) -> AgentBuilder:
         self.soul_section = soul_section
         return self
 
-    def with_system_prompt(self, prompt: str) -> "AgentBuilder":
+    def with_system_prompt(self, prompt: str) -> AgentBuilder:
         self.system_prompt = prompt
         return self
 
@@ -146,37 +145,41 @@ class AgentBuilder:
         self,
         *,
         max_iterations: int = 3,
-        verifier: Optional[Verifier] = None,
-    ) -> "AgentBuilder":
+        verifier: Verifier | None = None,
+    ) -> AgentBuilder:
         self.verification_max_iterations = max_iterations
         self.verifier = verifier
         return self
 
     # ---- Progress sink + extra hooks ---------------------------------------
 
-    def with_progress_sink(self, progress: ProgressSink) -> "AgentBuilder":
+    def with_progress_sink(self, progress: ProgressSink) -> AgentBuilder:
         self.progress = progress
         return self
 
-    def with_hook(self, hook: Hook) -> "AgentBuilder":
+    def with_hook(self, hook: Hook) -> AgentBuilder:
         self.extra_hooks.append(hook)
         return self
 
     # ---- Build --------------------------------------------------------------
 
-    def build(self) -> "ComposedAgent":
+    def build(self) -> ComposedAgent:
         if self.llm is None:
             raise ValueError("AgentBuilder requires .with_llm(...) before .build()")
 
         # Build the tool registry. TodoTool is auto-injected so all builds get it.
         todo_list = TodoList()
-        tools: List[BaseTool] = list(self.tools)
+        tools: list[BaseTool] = list(self.tools)
         tools.append(TodoTool(todo_list))
         tool_executor = ToolExecutor(tools)
 
         # Memory + hook (optional but typically on).
-        memory: Optional[MemoryManager] = None
-        hooks: List[Hook] = []
+        # `Hook` is a structural Protocol with method-level optionality —
+        # capability hooks (MemoryHook, VerificationHook) implement only the
+        # methods they care about, and the loop dispatches via getattr.
+        # Mypy can't see that, so we keep the runtime list as `list[Any]`.
+        memory: MemoryManager | None = None
+        hooks: list[Any] = []
         if self.memory_enabled:
             memory = MemoryManager(
                 self.llm,
@@ -226,11 +229,12 @@ class AgentBuilder:
 
 
 def _make_todo_context_provider(todo_list: TodoList):
-    def provider() -> Optional[str]:
+    def provider() -> str | None:
         items = todo_list.get_current()
         if not items:
             return None
         return todo_list.format_list()
+
     return provider
 
 
@@ -257,16 +261,16 @@ class ComposedAgent:
         *,
         core: Agent,
         llm: LiteLLMAdapter,
-        model_manager: Optional[ModelManager],
+        model_manager: ModelManager | None,
         tool_executor: ToolExecutor,
         todo_list: TodoList,
-        memory: Optional[MemoryManager],
-        skills_registry: Optional[SkillsRegistry],
-        soul_section: Optional[str],
+        memory: MemoryManager | None,
+        skills_registry: SkillsRegistry | None,
+        soul_section: str | None,
         system_prompt: str,
         progress: ProgressSink,
-        sessions_dir: Optional[str],
-        memory_dir: Optional[str],
+        sessions_dir: str | None,
+        memory_dir: str | None,
     ) -> None:
         self._core = core
         self.llm = llm
@@ -276,7 +280,7 @@ class ComposedAgent:
         self.memory = memory
         self.skills_registry = skills_registry
         self.soul_section = soul_section
-        self._skills_section_override: Optional[str] = None
+        self._skills_section_override: str | None = None
         self._system_prompt = system_prompt
         self._progress = progress
         self._sessions_dir = sessions_dir
@@ -294,7 +298,7 @@ class ComposedAgent:
         task: str,
         *,
         verify: bool = False,
-        images: "list[ImageInput] | None" = None,
+        images: Sequence[ImageInput] | None = None,
     ) -> str:
         if self.memory is None:
             return await self._core.run(task)
@@ -332,20 +336,20 @@ class ComposedAgent:
             ]
 
         # 6) Stats + flush.
+        import contextlib
+
         stats = self.memory.get_stats()
-        try:
+        with contextlib.suppress(Exception):  # pragma: no cover — UI path
             self._progress.info(_format_memory_stats_line(stats))
-        except Exception:  # pragma: no cover — UI path
-            pass
         await self.memory.save_memory()
         return result
 
     # ---- proxies ------------------------------------------------------------
 
-    def set_reasoning_effort(self, value: Optional[str]) -> None:
+    def set_reasoning_effort(self, value: str | None) -> None:
         self._core.set_reasoning_effort(value)
 
-    def set_skills_section(self, section: Optional[str]) -> None:
+    def set_skills_section(self, section: str | None) -> None:
         """Override the skills section rendering with a pre-rendered string.
 
         When set, this takes precedence over `skills_registry` for system
@@ -353,7 +357,7 @@ class ComposedAgent:
         """
         self._skills_section_override = section
 
-    def set_soul_section(self, soul_section: Optional[str]) -> None:
+    def set_soul_section(self, soul_section: str | None) -> None:
         """Set the soul/personality section to append to the system prompt."""
         self.soul_section = soul_section
 
@@ -418,7 +422,7 @@ class ComposedAgent:
         logger.info(f"Switched to model: {new_profile.model_id}")
         return True
 
-    def get_current_model_info(self) -> Optional[dict]:
+    def get_current_model_info(self) -> dict | None:
         if self.model_manager:
             profile = self.model_manager.get_current_model()
             if not profile:
@@ -468,7 +472,7 @@ class ComposedAgent:
         await self.memory.add_message(LLMMessage(role="system", content=system_content))
 
     async def _build_user_message(
-        self, task: str, images: "list[ImageInput] | None"
+        self, task: str, images: Sequence[ImageInput] | None
     ) -> LLMMessage:
         if not images:
             return LLMMessage(role="user", content=task)

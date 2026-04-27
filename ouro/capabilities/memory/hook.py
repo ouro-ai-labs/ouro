@@ -8,13 +8,12 @@ itself, then hands the summary back via `CompactionDecision.on_summary`.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ouro.core.llm import LLMMessage, LLMResponse, ToolCall, ToolResult
 from ouro.core.log import get_logger
 from ouro.core.loop.protocols import (
     CompactionDecision,
-    ContinueDecision,
     LoopContext,
 )
 
@@ -48,16 +47,14 @@ class MemoryHook:
     async def before_call(
         self,
         ctx: LoopContext,
-        messages: List[LLMMessage],
-        tools: List[Dict[str, Any]],
-    ) -> List[LLMMessage]:
+        messages: list[LLMMessage],
+        tools: list[dict[str, Any]],
+    ) -> list[LLMMessage]:
         # Tool schemas drive token accounting for compaction triggers.
         self.memory.set_tool_schemas(tools)
         return self.memory.get_context_for_llm()
 
-    async def after_call(
-        self, ctx: LoopContext, response: LLMResponse
-    ) -> LLMResponse:
+    async def after_call(self, ctx: LoopContext, response: LLMResponse) -> LLMResponse:
         usage = getattr(response, "usage", None)
         await self.memory.add_message(response.to_message(), usage=usage)
         if self.memory.was_compressed_last_iteration:
@@ -87,13 +84,13 @@ class MemoryHook:
     # ---- specialty ------------------------------------------------------
 
     async def on_compact_check(
-        self, ctx: LoopContext, messages: List[LLMMessage]
-    ) -> Optional[CompactionDecision]:
+        self, ctx: LoopContext, messages: list[LLMMessage]
+    ) -> CompactionDecision | None:
         if not self.memory.needs_compression():
             return None
         prompt = await self.memory.get_compaction_prompt()
 
-        async def _on_summary(summary: str, usage: Dict[str, int]) -> None:
+        async def _on_summary(summary: str, usage: dict[str, int]) -> None:
             self.memory.apply_compression(summary, usage=usage)
 
         return CompactionDecision(compaction_prompt=prompt, on_summary=_on_summary)

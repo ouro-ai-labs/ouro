@@ -21,6 +21,8 @@ Public SDK surface:
 - Logging: `get_logger`, `setup_logger`, `get_log_file_path`.
 """
 
+import contextlib
+
 from ouro.core.llm import (
     REASONING_EFFORT_CHOICES,
     FunctionCall,
@@ -63,14 +65,10 @@ from ouro.core.runtime import (
 # get_sessions_dir / get_memory_dir live in runtime.py with various other
 # helpers; re-export the ones the SDK calls out, fall back gracefully if a
 # helper isn't present in older runtime modules.
-try:
+with contextlib.suppress(ImportError):
     from ouro.core.runtime import get_sessions_dir
-except ImportError:
-    pass
-try:
+with contextlib.suppress(ImportError):
     from ouro.core.runtime import get_memory_dir
-except ImportError:
-    pass
 
 __all__ = [
     # Loop
@@ -111,6 +109,8 @@ __all__ = [
     # Runtime
     "get_runtime_dir",
     "ensure_runtime_dirs",
+    "get_sessions_dir",
+    "get_memory_dir",
     # Logging
     "get_logger",
     "setup_logger",

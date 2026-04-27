@@ -22,7 +22,12 @@ from lark_oapi.api.im.v1 import (
     P2ImMessageReceiveV1,
 )
 
-from ouro.interfaces.bot.channel.base import FileAttachment, ImageData, IncomingMessage, OutgoingMessage
+from ouro.interfaces.bot.channel.base import (
+    FileAttachment,
+    ImageData,
+    IncomingMessage,
+    OutgoingMessage,
+)
 
 if TYPE_CHECKING:
     from ouro.interfaces.bot.channel.base import MessageCallback

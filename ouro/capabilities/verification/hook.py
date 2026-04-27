@@ -8,8 +8,6 @@ outer attempts, returning whatever was produced last.
 
 from __future__ import annotations
 
-from typing import List, Optional
-
 from ouro.core.llm import LLMMessage, LLMResponse
 from ouro.core.log import get_logger
 from ouro.core.loop.protocols import (
@@ -41,21 +39,19 @@ class VerificationHook:
         llm,
         *,
         max_iterations: int = 3,
-        verifier: Optional[Verifier] = None,
-        progress: Optional[ProgressSink] = None,
+        verifier: Verifier | None = None,
+        progress: ProgressSink | None = None,
     ) -> None:
         self._max_iterations = max_iterations
         self._progress: ProgressSink = progress or NullProgressSink()
         self._verifier: Verifier = verifier or LLMVerifier(llm, progress=self._progress)
         # Per-run state. Reset in on_run_start.
         self._outer_iteration = 0
-        self._previous_results: List[VerificationResult] = []
+        self._previous_results: list[VerificationResult] = []
 
     # ---- lifecycle ------------------------------------------------------
 
-    async def on_run_start(
-        self, ctx: LoopContext, messages: List[LLMMessage]
-    ) -> List[LLMMessage]:
+    async def on_run_start(self, ctx: LoopContext, messages: list[LLMMessage]) -> list[LLMMessage]:
         self._outer_iteration = 0
         self._previous_results = []
         return messages
@@ -74,8 +70,7 @@ class VerificationHook:
         self._outer_iteration += 1
         if self._outer_iteration >= self._max_iterations:
             ctx.progress.unfinished_answer(
-                f"Verification skipped (max iterations "
-                f"{self._max_iterations} reached)."
+                f"Verification skipped (max iterations " f"{self._max_iterations} reached)."
             )
             return ContinueDecision.stop()
 
@@ -84,11 +79,15 @@ class VerificationHook:
         final = ""
         try:
             # The response was already passed through after_call; surface text.
-            final = response.content if isinstance(response.content, str) else (
-                "".join(
-                    block.get("text", "")
-                    for block in (response.content or [])
-                    if isinstance(block, dict) and block.get("type") == "text"
+            final = (
+                response.content
+                if isinstance(response.content, str)
+                else (
+                    "".join(
+                        block.get("text", "")
+                        for block in (response.content or [])
+                        if isinstance(block, dict) and block.get("type") == "text"
+                    )
                 )
             )
         except Exception:
@@ -119,6 +118,4 @@ class VerificationHook:
             f"⟳ Verification feedback (attempt {self._outer_iteration}/"
             f"{self._max_iterations}): {verification.reason}"
         )
-        return ContinueDecision.retry_with_feedback(
-            LLMMessage(role="user", content=feedback)
-        )
+        return ContinueDecision.retry_with_feedback(LLMMessage(role="user", content=feedback))

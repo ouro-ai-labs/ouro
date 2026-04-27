@@ -197,9 +197,7 @@ Input parameters:
         schemas (sent to the LLM) and the executable registry guarantees that.
         """
         sub_tools = [
-            tool
-            for name, tool in self.agent.tool_executor.tools.items()
-            if name != self.name
+            tool for name, tool in self.agent.tool_executor.tools.items() if name != self.name
         ]
         return ToolExecutor(sub_tools)
 
