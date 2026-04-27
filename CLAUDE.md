@@ -39,15 +39,31 @@ Optional (recommended): enable git hooks:
 pre-commit install
 ```
 
+## Three-Layer Architecture (Read First)
+
+The codebase is organized into three namespace subpackages with a
+strict import direction enforced by `import-linter`:
+
+```
+ouro.interfaces  →  ouro.capabilities  →  ouro.core
+```
+
+Reverse imports are forbidden. Run `./scripts/dev.sh importlint` to
+verify. See `ouro/CLAUDE.md` for the layer contract.
+
 ## Scoped Instructions (Read When Touching These Areas)
 
-This repo uses directory-scoped rule files for focus. If you modify code/docs under these paths, also read the matching file first:
+This repo uses directory-scoped rule files for focus. If you modify
+code/docs under these paths, also read the matching file first:
 
-- `agent/CLAUDE.md` (runtime/loop safety + verification)
-- `tools/CLAUDE.md` (tool contracts + targeted tests)
-- `llm/CLAUDE.md` (provider safety + timeouts)
-- `memory/CLAUDE.md` (serialization invariants + memory suite)
-- `utils/tui/CLAUDE.md` (TUI UX stability + autocomplete/skills tests)
+- `ouro/CLAUDE.md` (umbrella: layer contract + boundary rules)
+- `ouro/core/CLAUDE.md` (loop runtime/async rules + LLM client)
+- `ouro/core/llm/CLAUDE.md` (provider safety + timeouts)
+- `ouro/capabilities/CLAUDE.md` (capabilities layer + hooks discipline)
+- `ouro/capabilities/memory/CLAUDE.md` (serialization invariants + memory suite)
+- `ouro/capabilities/tools/CLAUDE.md` (tool contracts + targeted tests)
+- `ouro/interfaces/CLAUDE.md` (CLI / TUI / bot entry points)
+- `ouro/interfaces/tui/CLAUDE.md` (TUI UX stability + autocomplete/skills tests)
 - `rfc/CLAUDE.md` (RFC writing discipline + template)
 - `docs/CLAUDE.md` (docs consistency/executable examples)
 - `test/CLAUDE.md` (test strategy + integration gating)
