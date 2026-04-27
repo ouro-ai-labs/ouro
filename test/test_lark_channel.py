@@ -110,7 +110,7 @@ def _mock_lark():
         # Re-import so the patched modules are used.
         import importlib
 
-        import bot.channel.lark as lark_mod
+        import ouro.interfaces.bot.channel.lark as lark_mod
 
         importlib.reload(lark_mod)
 

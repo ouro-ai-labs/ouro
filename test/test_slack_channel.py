@@ -92,7 +92,7 @@ def _mock_slack():
 
         import importlib
 
-        import bot.channel.slack as slack_mod
+        import ouro.interfaces.bot.channel.slack as slack_mod
 
         importlib.reload(slack_mod)
         # Bind the real SocketModeResponse into the reloaded module so ack works.
@@ -416,7 +416,7 @@ async def test_send_message(channel):
 
 def test_dedup_bounded_size(channel):
     """Dedup dict should not grow beyond _DEDUP_MAX_SIZE."""
-    import bot.channel.slack as slack_mod
+    import ouro.interfaces.bot.channel.slack as slack_mod
 
     original_max = slack_mod._DEDUP_MAX_SIZE
     slack_mod._DEDUP_MAX_SIZE = 5
