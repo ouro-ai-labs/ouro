@@ -87,6 +87,17 @@ export OURO_API_KEY=<your-api-key>
 
 Extra flags are forwarded to `harbor run`, so any Harbor CLI option works. See [ouro_harbor/README.md](ouro_harbor/README.md) for full details.
 
+## Architecture
+
+Ouro is a three-layer namespace package. Imports flow downward only;
+boundaries are enforced by `import-linter`. Each layer has its own
+README — start with the umbrella overview, then drill in:
+
+- **[Architecture overview](ouro/README.md)** -- the three layers and how they fit together
+- [`ouro.core`](ouro/core/README.md) -- agent loop + LLM primitives + hook protocol (Python SDK)
+- [`ouro.capabilities`](ouro/capabilities/README.md) -- `AgentBuilder`, tools, memory, skills, verification (Python SDK)
+- [`ouro.interfaces`](ouro/interfaces/README.md) -- CLI / TUI / bot entry points (no SDK)
+
 ## Documentation
 
 - **[CLI Guide](docs/cli-guide.md)** -- interactive mode, task mode, commands, shortcuts
