@@ -4,8 +4,8 @@ This folder contains design RFCs for significant changes in ouro.
 
 ## How to add a new RFC
 
-1. Copy `TEMPLATE.md` to a new file named `NNN-short-description.md`.
-2. Pick the next available 3-digit number (do **not** reuse numbers).
+1. Copy `TEMPLATE.md` to a new file named `short-description.md`.
+2. Use a concise, descriptive filename (no numeric prefix needed).
 3. Keep the first draft short and functional:
    - Goals / Non-goals
    - Proposed behavior (user-facing)
@@ -16,19 +16,23 @@ This folder contains design RFCs for significant changes in ouro.
 
 Tip: keep this list up to date when adding an RFC.
 
-- RFC 001: Four-Phase Agent Architecture
-- RFC 002: Tool Result Handling / Size Validation
-- RFC 003: AsyncIO-First Migration
-- RFC 004: Composable Planning Tools
-- RFC 005: Timer + Notify Tools
-- RFC 006: Ralph Loop (Outer Verification)
-- RFC 007: Memory Persistence Refactor
-- RFC 008: Cross-Session Long-Term Memory
-- RFC 009: Codex Login via LiteLLM ChatGPT Provider
-- RFC 010: Multi-Model Configuration (v2)
-- RFC 011: Skills System MVP
-- RFC 012: Bot Message Queue with Intelligent Coalescing
-
-## Note on numbering
-
-RFC numbers must be unique. If you add an RFC from a long-lived branch, renumber it before merge.
+- [enhanced-plan-execute-agent.md](enhanced-plan-execute-agent.md) — Four-Phase Agent Architecture
+- [tool-result-handling.md](tool-result-handling.md) — Tool Result Handling / Size Validation
+- [asyncio-migration.md](asyncio-migration.md) — AsyncIO-First Migration
+- [composable-plan-tools.md](composable-plan-tools.md) — Composable Planning Tools
+- [timer-notify.md](timer-notify.md) — Timer + Notify Tools
+- [ralph-loop.md](ralph-loop.md) — Ralph Loop (Outer Verification)
+- [memory-persistence-refactor.md](memory-persistence-refactor.md) — Memory Persistence Refactor
+- [long-term-memory.md](long-term-memory.md) — Cross-Session Long-Term Memory
+- [codex-login-via-litellm-chatgpt.md](codex-login-via-litellm-chatgpt.md) — Codex Login via LiteLLM ChatGPT Provider
+- [multi-model-v2.md](multi-model-v2.md) — Multi-Model Configuration (v2)
+- [skills-system.md](skills-system.md) — Skills System MVP
+- [bot-message-queue.md](bot-message-queue.md) — Bot Message Queue with Intelligent Coalescing
+- [bot-mode.md](bot-mode.md) — Bot Mode
+- [cache-safe-compaction.md](cache-safe-compaction.md) — Cache Safe Compaction
+- [skills-simplification.md](skills-simplification.md) — Skills Simplification
+- [proactive-mechanisms.md](proactive-mechanisms.md) — Proactive Mechanisms
+- [heartbeat-system-prompt-injection.md](heartbeat-system-prompt-injection.md) — Heartbeat System Prompt Injection
+- [loop-owned-message-list.md](loop-owned-message-list.md) — Loop Owned Message List
+- [reasoning-controls.md](reasoning-controls.md) — Reasoning Controls
+- [token-counting-accuracy.md](token-counting-accuracy.md) — Token Counting Accuracy
