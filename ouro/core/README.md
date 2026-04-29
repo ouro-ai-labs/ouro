@@ -9,6 +9,7 @@ The bottom layer. Pure SDK with no UI dependencies. Depends only on
 ouro.core
 ├── loop/                    # ReAct loop + hook protocol
 │   ├── agent.py             # the Agent class
+│   ├── message_list.py      # MessageList conversation-history wrapper
 │   └── protocols.py         # Hook, ToolRegistry, ProgressSink, LoopContext
 ├── llm/                     # LiteLLM client + message types
 │   ├── litellm_adapter.py   # LiteLLMAdapter
@@ -28,6 +29,7 @@ ouro.core
 from ouro.core import (
     # Loop
     Agent,
+    MessageList,
     Hook,
     ToolRegistry,
     ProgressSink,
@@ -86,6 +88,11 @@ asyncio.run(main())
 Most users won't construct `Agent` directly — they go through
 `ouro.capabilities.AgentBuilder`, which wires memory, tools, and
 verification hooks for you.
+
+Internally, `Agent` now owns a mutable `MessageList` for per-run
+conversation state instead of threading a bare Python list through loop
+mutation sites. Hooks still receive ordinary `list[LLMMessage]`
+snapshots so the hook protocol stays simple and serialization-friendly.
 
 ## The hook protocol
 

@@ -12,6 +12,7 @@ from typing import Any
 
 from ouro.core.llm import LLMMessage, LLMResponse, ToolCall, ToolResult
 from ouro.core.log import get_logger
+from ouro.core.loop.message_list import MessageList
 from ouro.core.loop.protocols import (
     CompactionDecision,
     LoopContext,
@@ -54,7 +55,9 @@ class MemoryHook:
         self.memory.set_tool_schemas(tools)
         return self.memory.get_context_for_llm()
 
-    async def after_call(self, ctx: LoopContext, response: LLMResponse) -> LLMResponse:
+    async def after_call(
+        self, ctx: LoopContext, messages: list[LLMMessage], response: LLMResponse
+    ) -> LLMResponse:
         usage = getattr(response, "usage", None)
         await self.memory.add_message(response.to_message(), usage=usage)
         if self.memory.was_compressed_last_iteration:
@@ -90,7 +93,7 @@ class MemoryHook:
             return None
         prompt = await self.memory.get_compaction_prompt()
 
-        async def _on_summary(summary: str, usage: dict[str, int]) -> None:
+        async def _on_summary(summary: str, usage: dict[str, int], _messages: MessageList) -> None:
             self.memory.apply_compression(summary, usage=usage)
 
         return CompactionDecision(compaction_prompt=prompt, on_summary=_on_summary)

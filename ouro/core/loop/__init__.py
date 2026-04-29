@@ -3,6 +3,7 @@
 Public surface:
 
 - `Agent` — class-based ReAct loop with optional hooks.
+- `MessageList` — mutable conversation history wrapper owned by the loop.
 - `Hook`, `ToolRegistry`, `ProgressSink`, `NullProgressSink`, `LoopContext`
   — protocols capabilities/interfaces implement to plug in.
 - `CompactionDecision`, `ContinueDecision`, `ContinueKind` — return types
@@ -10,6 +11,7 @@ Public surface:
 """
 
 from .agent import Agent
+from .message_list import MessageList
 from .protocols import (
     CompactionDecision,
     ContinueDecision,
@@ -23,6 +25,7 @@ from .protocols import (
 
 __all__ = [
     "Agent",
+    "MessageList",
     "CompactionDecision",
     "ContinueDecision",
     "ContinueKind",
