@@ -83,6 +83,7 @@ class BotServer:
         "  /compact   — Compress conversation memory to save tokens\n"
         "  /status    — Show session statistics\n"
         "  /sessions  — List or resume saved sessions\n"
+        "  /model     — Show or switch the current LLM model\n"
         "  /cron      — Manage cron jobs (list | add | remove)\n"
         "  /help      — Show this message"
     )
@@ -178,6 +179,10 @@ class BotServer:
             await self._handle_cron_command(channel, msg)
             return True
 
+        if cmd == "/model":
+            await self._handle_model_command(channel, msg)
+            return True
+
         if cmd == "/help":
             await channel.send_message(
                 OutgoingMessage(
@@ -189,6 +194,64 @@ class BotServer:
 
         # Unknown /command — pass through to agent as a normal message
         return False
+
+    async def _handle_model_command(self, channel: Channel, msg: IncomingMessage) -> None:
+        """Handle /model subcommands: show current model or switch."""
+        parts = msg.text.strip().split(maxsplit=2)
+        sub = parts[1].lower() if len(parts) > 1 else "show"
+
+        agent = await self._router.get_or_create_agent(msg.channel, msg.conversation_id)
+
+        if sub == "show":
+            info = agent.get_current_model_info()
+            if info:
+                lines = [
+                    f"Current model: {info['name']}",
+                    f"Provider: {info['provider']}",
+                ]
+            else:
+                lines = ["Current model: unknown"]
+            await channel.send_message(
+                OutgoingMessage(conversation_id=msg.conversation_id, text="\n".join(lines))
+            )
+            return
+
+        if sub == "switch":
+            target = parts[2].strip() if len(parts) > 2 else ""
+            if not target:
+                await channel.send_message(
+                    OutgoingMessage(
+                        conversation_id=msg.conversation_id,
+                        text="Usage: /model switch <model-id>",
+                    )
+                )
+                return
+            ok = agent.switch_model(target)
+            if ok:
+                info = agent.get_current_model_info()
+                name = info["name"] if info else target
+                await channel.send_message(
+                    OutgoingMessage(
+                        conversation_id=msg.conversation_id,
+                        text=f"Switched to model: {name}",
+                    )
+                )
+            else:
+                await channel.send_message(
+                    OutgoingMessage(
+                        conversation_id=msg.conversation_id,
+                        text=f"Failed to switch to '{target}'. Check the model ID and try again.",
+                    )
+                )
+            return
+
+        # Unknown subcommand
+        await channel.send_message(
+            OutgoingMessage(
+                conversation_id=msg.conversation_id,
+                text="Usage: /model show | /model switch <model-id>",
+            )
+        )
 
     async def _handle_sessions_command(self, channel: Channel, msg: IncomingMessage) -> None:
         """Handle /sessions subcommands: list, resume."""

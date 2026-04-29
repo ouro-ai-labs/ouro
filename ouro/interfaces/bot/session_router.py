@@ -143,11 +143,11 @@ class SessionRouter:
         agent = self._sessions.get(key)
         # Bot agents always have memory enabled (see factory). The None check
         # narrows for mypy and short-circuits for the unlikely standalone case.
-        if not agent or agent.memory is None or not agent.memory.session_id:
+        if not agent or agent.memory is None or not agent.session_id:
             return
         old = self._conversation_map.get(key)
-        if old != agent.memory.session_id:
-            self._conversation_map[key] = agent.memory.session_id
+        if old != agent.session_id:
+            self._conversation_map[key] = agent.session_id
             await self._save_conversation_map()
 
     async def cleanup_stale_sessions(self, max_age_days: int = _DEFAULT_STALE_DAYS) -> int:
@@ -233,7 +233,7 @@ class SessionRouter:
         key = self._session_key(channel, conversation_id)
         agent = self._sessions.get(key)
         if agent and agent.memory is not None:
-            await agent.memory.save_memory()
+            await agent.memory.save_memory()  # persistence stays on MemoryManager
 
     async def list_persisted_sessions(self, limit: int = 20) -> list[dict[str, Any]]:
         """List persisted sessions from disk.

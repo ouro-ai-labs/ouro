@@ -6,8 +6,9 @@ memory, skills, soul, verification, and progress UI, then call
 `.build()` to get a `ComposedAgent`.
 
 `ComposedAgent` is `core.Agent` plus convenience proxies for
-`memory`, `tool_executor`, model switching, and session loading, so the
-existing TUI/bot consumers can keep using familiar surfaces.
+`memory`, `tool_executor`, model switching, session loading, and
+session-history snapshots, so the existing TUI/bot consumers can keep
+using familiar surfaces without reaching into loop or memory internals.
 """
 
 from __future__ import annotations
@@ -247,13 +248,21 @@ class ComposedAgent:
     """Convenience wrapper around `core.loop.Agent` with stateful proxies.
 
     Provides:
-    - `.run(task, *, verify=False, images=None)` — the user-facing entry that
-      handles system prompt assembly, optional multimodal images, and dispatch
+    - `.run(task, verify=False, images=None)` — assembles system prompt,
+      persists the user message if memory is enabled, then dispatches
       to the core loop.
     - `.memory`, `.tool_executor`, `.todo_list` — back-compat surfaces.
     - `.set_reasoning_effort(...)`, `.switch_model(...)`, `.load_session(...)`,
-      `.get_memory_stats()`, `.list_sessions()` — convenience proxies the
-      TUI/bot consumers depend on.
+      `.get_memory_stats()`, `.get_session_messages()`,
+      `.get_session_message_count()`, `.reset_memory()`, `.compact_memory()`,
+      `.rollback_incomplete_exchange()`, `.session_id`, `.list_sessions()` —
+      convenience proxies the TUI/bot consumers depend on.
+
+    Contract note:
+    - The core loop owns transient per-run messages.
+    - Persisted/resumed conversation history should be accessed through
+      `ComposedAgent` convenience methods rather than UI code reaching into
+      `memory.short_term` directly.
     """
 
     def __init__(
@@ -320,8 +329,10 @@ class ComposedAgent:
                 "back to plain ReAct loop."
             )
 
-        # 4) Drive the core loop.
-        result = await self._core.run(task, initial_messages=[])
+        # 4) Drive the core loop. In memory-backed mode the MemoryHook owns
+        # persisted conversation history; the core loop's local MessageList is
+        # just transient per-run state.
+        result = await self._core.run(task)
 
         # 5) Replace any image content blocks with text placeholders to keep
         # the persisted memory small.
@@ -389,6 +400,53 @@ class ComposedAgent:
         if self.memory is None:
             return {}
         return self.memory.get_stats()
+
+    def get_session_messages(self) -> list[LLMMessage]:
+        """Return persisted conversation messages for UI/session display.
+
+        The core loop owns per-run transient message state. UI surfaces that
+        need resumed-session history should go through this convenience method
+        instead of reaching into `memory.short_term` directly.
+        """
+        if self.memory is None:
+            return []
+        return self.memory.get_context_for_llm()
+
+    def get_session_message_count(self) -> int:
+        """Return the number of persisted messages available for session UI."""
+        return len(self.get_session_messages())
+
+    def reset_memory(self) -> None:
+        """Reset the agent's memory state (clear short-term + system messages).
+
+        This is a convenience proxy so UI layers don't reach into
+        `memory.reset()` directly.
+        """
+        if self.memory is not None:
+            self.memory.reset()
+
+    def rollback_incomplete_exchange(self) -> None:
+        """Roll back the last incomplete assistant response with tool_calls.
+
+        This prevents API errors about missing tool responses on the next turn.
+        """
+        if self.memory is not None:
+            self.memory.rollback_incomplete_exchange()
+
+    async def compact_memory(self):
+        """Trigger a manual memory compression.
+
+        Returns the same ``CompressedMemory`` result as
+        ``MemoryManager.compress()``, or ``None`` if nothing to compress.
+        """
+        if self.memory is None:
+            return None
+        return await self.memory.compress()
+
+    @property
+    def session_id(self) -> str | None:
+        """Current memory session ID, or None if memory is disabled / not yet created."""
+        return self.memory.session_id if self.memory is not None else None
 
     def switch_model(self, model_id: str) -> bool:
         if not self.model_manager:

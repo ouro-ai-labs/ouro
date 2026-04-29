@@ -192,7 +192,7 @@ class InteractiveSession:
     def _show_stats(self) -> None:
         """Display current memory and token statistics."""
         terminal_ui.console.print()
-        stats = self.agent.memory.get_stats()
+        stats = self.agent.get_memory_stats()
         terminal_ui.print_memory_stats(stats)
         terminal_ui.console.print()
 
@@ -246,10 +246,10 @@ class InteractiveSession:
             # Load session via agent (agent owns memory lifecycle)
             await self.agent.load_session(resolved_id)
 
-            msg_count = self.agent.memory.short_term.count()
+            msg_count = self.agent.get_session_message_count()
             terminal_ui.print_success(
                 f"Resumed session {resolved_id} ({msg_count} messages, "
-                f"{self.agent.memory.current_tokens} tokens)"
+                f"{self.agent.get_memory_stats().get('current_tokens', 0)} tokens)"
             )
             terminal_ui.console.print()
 
@@ -261,7 +261,7 @@ class InteractiveSession:
 
     def _print_session_history(self) -> None:
         """Print conversation history from a resumed session."""
-        messages = self.agent.memory.short_term.get_messages()
+        messages = [msg for msg in self.agent.get_session_messages() if msg.role != "system"]
         if not messages:
             return
 
@@ -317,7 +317,7 @@ class InteractiveSession:
 
     async def _compact_memory(self) -> None:
         """Compress conversation memory."""
-        result = await self.agent.memory.compress()
+        result = await self.agent.compact_memory()
         if result is None:
             terminal_ui.print_info("Nothing to compress.")
         else:
@@ -382,7 +382,7 @@ class InteractiveSession:
 
     def _update_status_bar(self) -> None:
         """Update status bar with current stats."""
-        stats = self.agent.memory.get_stats()
+        stats = self.agent.get_memory_stats()
         model_info = self.agent.get_current_model_info()
         model_name = model_info["name"] if model_info else ""
         self.status_bar.update(
@@ -416,7 +416,7 @@ class InteractiveSession:
             self._show_help()
 
         elif command == "/reset":
-            self.agent.memory.reset()
+            self.agent.reset_memory()
             self.conversation_count = 0
             self._update_status_bar()
             terminal_ui.print_success("Memory cleared. Starting fresh conversation.")
@@ -555,7 +555,8 @@ class InteractiveSession:
             if Config.TUI_STATUS_BAR:
                 self.status_bar.update(is_processing=False)
             self.current_task = None
-            self.agent.memory.rollback_incomplete_exchange()
+            if getattr(self.agent, "memory", None) is not None:
+                self.agent.rollback_incomplete_exchange()
         except Exception as e:
             terminal_ui.print_error(str(e))
             if Config.TUI_STATUS_BAR:
@@ -847,10 +848,10 @@ class InteractiveSession:
         colors = Theme.get_colors()
 
         # If session was loaded via --resume, print history
-        if self.agent.memory.short_term.count() > 0:
+        resumed_count = self.agent.get_session_message_count()
+        if resumed_count > 0:
             terminal_ui.print_info(
-                f"Resumed session: {self.agent.memory.session_id} "
-                f"({self.agent.memory.short_term.count()} messages)"
+                f"Resumed session: {self.agent.session_id} " f"({resumed_count} messages)"
             )
             terminal_ui.console.print()
             self._print_session_history()
@@ -935,8 +936,10 @@ class InteractiveSession:
                         self.status_bar.update(is_processing=False)
                     self.current_task = None
 
-                    # Rollback incomplete exchange to prevent API errors on next turn
-                    self.agent.memory.rollback_incomplete_exchange()
+                    # Roll back any dangling assistant tool-call message kept
+                    # by memory-backed runs to prevent API errors next turn.
+                    if getattr(self.agent, "memory", None) is not None:
+                        self.agent.rollback_incomplete_exchange()
 
                     continue
                 except KeyboardInterrupt:
@@ -968,7 +971,7 @@ class InteractiveSession:
         terminal_ui.console.print(
             f"\n[bold {colors.primary}]Final Session Statistics:[/bold {colors.primary}]"
         )
-        stats = self.agent.memory.get_stats()
+        stats = self.agent.get_memory_stats()
         terminal_ui.print_memory_stats(stats)
 
         # Show log file location

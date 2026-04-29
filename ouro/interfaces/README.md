@@ -74,9 +74,11 @@ catalog and keyboard shortcuts.
 
 `TuiProgressSink` is the bridge between capabilities and rich UI: it
 implements the `ouro.core.loop.ProgressSink` Protocol and renders via
-`terminal_ui` + `AsyncSpinner`. When you pass `--bot` (or call
-`AgentBuilder` yourself with a quieter sink), capabilities' UI calls
-become no-ops automatically.
+`terminal_ui` + `AsyncSpinner`. The interactive shell still prints the
+final returned answer itself; the sink is mainly for incremental
+progress events (thinking, tool calls/results, spinners, completion
+markers). When you pass `--bot` (or call `AgentBuilder` yourself with a
+quieter sink), capabilities' UI calls become no-ops automatically.
 
 ## Bot
 

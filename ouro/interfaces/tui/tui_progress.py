@@ -35,6 +35,9 @@ class TuiProgressSink:
         terminal_ui.print_tool_result(result)
 
     def final_answer(self, text: str) -> None:
+        # The interactive shell renders the returned final answer itself; here
+        # we only emit a lightweight completion marker for non-interactive
+        # progress consumers.
         terminal_ui.console.print("\n[bold green]✓ Final answer received[/bold green]")
 
     def unfinished_answer(self, text: str) -> None:

@@ -4,7 +4,6 @@ import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Set
 
-from ouro.core.llm import LLMMessage
 from ouro.core.loop import Agent as CoreAgent
 from ouro.core.loop import NullProgressSink
 
@@ -317,33 +316,6 @@ Input parameters:
         tools: List[Dict[str, Any]],
         dependency_results: Dict[int, TaskExecutionResult],
     ) -> str:
-        context = self._build_task_context(dependency_results)
-
-        prompt = f"""<role>
-You are a sub-agent executing one task in a parallel plan.
-Complete this task using the tools available to you.
-</role>
-
-<task>
-Task #{idx}: {task_desc}
-</task>
-
-{context}
-
-<instructions>
-1. Use available tools to accomplish the task
-2. Focus ONLY on this specific task
-3. Final response MUST follow this exact structure:
-   SUMMARY: <concise summary, max 300 chars>
-   KEY_FINDINGS:
-   - <finding 1>
-   - <finding 2>
-   ERRORS:
-   - none (if no errors) OR list concrete errors
-</instructions>
-
-Execute the task now:"""
-
         # Run the sub-task in a fresh memoryless core.Agent so it cannot
         # touch the parent's memory or persistence. The parent's tool set
         # (minus multi_task itself) is reused via a freshly-built registry.
@@ -354,10 +326,7 @@ Execute the task now:"""
             hooks=(),  # no memory, no verification — pure ReAct
             progress=NullProgressSink(),  # sub-task UI is silent by design
         )
-        return await sub_agent.run(
-            task=task_desc,
-            initial_messages=[LLMMessage(role="user", content=prompt)],
-        )
+        return await sub_agent.run(task=task_desc)
 
     def _build_success_result(self, output: str) -> TaskExecutionResult:
         summary, key_findings, errors = self._extract_structured_sections(output)

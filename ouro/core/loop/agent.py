@@ -10,16 +10,11 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Sequence
 
-from ouro.core.llm import (
-    LLMMessage,
-    LLMResponse,
-    StopReason,
-    ToolCall,
-    ToolResult,
-)
+from ouro.core.llm import LLMMessage, LLMResponse, StopReason, ToolCall, ToolResult
 from ouro.core.llm.reasoning import normalize_reasoning_effort
 from ouro.core.log import get_logger
 
+from .message_list import MessageList
 from .protocols import (
     CompactionDecision,
     ContinueDecision,
@@ -53,16 +48,11 @@ class _RunContext:
 
 
 class Agent:
-    """Hooks-based core loop.
-
-    No knowledge of MemoryManager, BaseTool, Verifier, or Config. Memory,
-    compaction, and verification plug in as hooks; the tool layer
-    plugs in via `ToolRegistry`.
-    """
+    """Hooks-based core loop."""
 
     def __init__(
         self,
-        llm: Any,  # LiteLLMAdapter (avoid hard dep for testability)
+        llm: Any,
         tools: ToolRegistry,
         hooks: Sequence[Hook] = (),
         max_iterations: int = 1000,
@@ -77,44 +67,28 @@ class Agent:
         self.progress: ProgressSink = progress or NullProgressSink()
         self._reasoning_effort: str | None = None
 
-    # ---- caller-facing knobs -------------------------------------------------
-
     def set_reasoning_effort(self, value: str | None) -> None:
         self._reasoning_effort = normalize_reasoning_effort(value)
 
     def add_hook(self, hook: Hook) -> None:
         self.hooks.append(hook)
 
-    # ---- main entry ----------------------------------------------------------
-
-    async def run(
-        self,
-        task: str,
-        *,
-        initial_messages: list[LLMMessage] | None = None,
-    ) -> str:
+    async def run(self, task: str) -> str:
         ctx = _RunContext(task=task, progress=self.progress)
-        messages: list[LLMMessage] = list(initial_messages or [])
-
-        messages = await self._chain_async("on_run_start", ctx, messages, default=messages)
+        messages = MessageList()
+        await self._fanout_async("on_run_start", ctx, messages)
 
         tool_schemas = self.tools.get_tool_schemas()
-
         final_answer: str = ""
         try:
             for ctx.iteration in range(1, self.max_iterations + 1):
-                # 1) Compaction fork (cache-safe). Hook decides; loop calls LLM.
                 decision = await self._first_non_none_async("on_compact_check", ctx, messages)
                 if decision is not None:
                     await self._do_compaction(ctx, messages, tool_schemas, decision)
                     continue
 
-                # 2) Build outgoing messages via before_call chain.
-                outgoing = await self._chain_async(
-                    "before_call", ctx, messages, tool_schemas, default=messages
-                )
+                outgoing = await self._build_outgoing(ctx, messages, tool_schemas)
 
-                # 3) LLM call.
                 async with self.progress.spinner(
                     "Analyzing request..." if ctx.iteration == 1 else "Processing results..."
                 ):
@@ -128,25 +102,19 @@ class Agent:
                             else {}
                         ),
                     )
-                response = await self._chain_async("after_call", ctx, response, default=response)
+                response = await self._chain_response("after_call", ctx, messages, response)
                 ctx.stop_reason_last = response.stop_reason
                 ctx.add_usage(getattr(response, "usage", None))
 
-                # Append assistant message to local list (memoryless mode needs it;
-                # memory hook keeps its own copy via after_call → memory.add_message).
-                messages.append(response.to_message())
-
-                # Surface thinking (provider-specific helper) via progress sink.
                 extract_thinking = getattr(self.llm, "extract_thinking", None)
                 if extract_thinking is not None:
                     thinking = extract_thinking(response)
                     if thinking:
                         self.progress.thinking(thinking)
 
-                # 4) STOP path.
                 if response.stop_reason == StopReason.STOP:
                     final_answer = self.llm.extract_text(response)
-                    cont = await self._aggregate_continue(ctx, response, finished=True)
+                    cont = await self._aggregate_continue(ctx, messages, response, finished=True)
                     if cont.kind == ContinueKind.STOP:
                         self.progress.final_answer(final_answer)
                         return final_answer
@@ -154,47 +122,54 @@ class Agent:
                         for fb in cont.feedback_messages:
                             messages.append(fb)
                         continue
-                    # CONTINUE: fall through to next iteration with current messages.
                     continue
 
-                # 5) TOOL_CALLS path.
                 if response.stop_reason == StopReason.TOOL_CALLS:
                     if response.content:
                         self.progress.assistant_message(response.content)
 
                     tool_calls = self.llm.extract_tool_calls(response)
                     if not tool_calls:
-                        # No tool calls present despite stop_reason — treat as final.
                         final_answer = self.llm.extract_text(response) or ""
                         return final_answer or "No response generated."
 
                     tool_results = await self._dispatch_tools(ctx, tool_calls)
+                    await self._fanout_async(
+                        "on_tool_results", ctx, messages, tool_calls, tool_results
+                    )
+                    continue
 
-                    # Format & append tool result messages.
-                    formatted = self.llm.format_tool_results(tool_results)
-                    if isinstance(formatted, list):
-                        messages.extend(formatted)
-                    else:
-                        messages.append(formatted)
-
-            # Hit max_iterations.
             logger.warning("Agent.run reached max_iterations=%d without STOP", self.max_iterations)
             return final_answer
         finally:
-            await self._fanout_async("on_run_end", ctx, final_answer)
+            await self._fanout_async("on_run_end", ctx, messages, final_answer)
 
-    # ---- compaction fork -----------------------------------------------------
+    async def _build_outgoing(
+        self,
+        ctx: LoopContext,
+        messages: MessageList,
+        tool_schemas: list[dict[str, Any]],
+    ) -> list[LLMMessage]:
+        outgoing = messages.snapshot()
+        any_called = False
+        for hook in self.hooks:
+            fn = getattr(hook, "before_call", None)
+            if fn is None:
+                continue
+            any_called = True
+            outgoing = await fn(ctx, messages, tool_schemas)
+        return outgoing if any_called else messages.snapshot()
 
     async def _do_compaction(
         self,
         ctx: _RunContext,
-        messages: list[LLMMessage],
+        messages: MessageList,
         tool_schemas: list[dict[str, Any]],
         decision: CompactionDecision,
     ) -> None:
-        fork = list(messages) + [decision.compaction_prompt]
-        # Run before_call so memory hooks can substitute compressed prefix etc.
-        outgoing = await self._chain_async("before_call", ctx, fork, tool_schemas, default=fork)
+        fork = MessageList(messages.snapshot())
+        fork.append(decision.compaction_prompt)
+        outgoing = await self._build_outgoing(ctx, fork, tool_schemas)
         async with self.progress.spinner("Compressing memory...", title="Working"):
             response = await self.llm.call_async(
                 messages=outgoing,
@@ -203,23 +178,19 @@ class Agent:
             )
         summary = self.llm.extract_text(response)
         usage = getattr(response, "usage", None) or {}
-        result = decision.on_summary(summary, usage)
+        result = decision.on_summary(summary, usage, messages)
         if asyncio.iscoroutine(result):
             await result
         ctx.add_usage(usage)
-
-    # ---- tool dispatch -------------------------------------------------------
 
     async def _dispatch_tools(
         self,
         ctx: _RunContext,
         tool_calls: list[ToolCall],
     ) -> list[ToolResult]:
-        # Hook chain rewrites each call before execution.
         rewritten: list[ToolCall] = [
-            await self._chain_async("before_tool", ctx, tc, default=tc) for tc in tool_calls
+            await self._chain_tool_call("before_tool", ctx, tc) for tc in tool_calls
         ]
-
         all_readonly = len(rewritten) > 1 and all(
             self.tools.is_tool_readonly(tc.name) for tc in rewritten
         )
@@ -237,7 +208,7 @@ class Agent:
                 output = await self.tools.execute_tool_call(tc.name, tc.arguments)
             self.progress.tool_result(output)
             tr = ToolResult(tool_call_id=tc.id, content=output, name=tc.name)
-            tr = await self._chain_async("after_tool", ctx, tc, tr, default=tr)
+            tr = await self._chain_tool_result("after_tool", ctx, tc, tr)
             results.append(tr)
         return results
 
@@ -265,35 +236,52 @@ class Agent:
             output = outputs[i] or ""
             self.progress.tool_result(output)
             tr = ToolResult(tool_call_id=tc.id, content=output, name=tc.name)
-            tr = await self._chain_async("after_tool", ctx, tc, tr, default=tr)
+            tr = await self._chain_tool_result("after_tool", ctx, tc, tr)
             results.append(tr)
         return results
 
-    # ---- hook plumbing -------------------------------------------------------
-
-    async def _chain_async(
+    async def _chain_response(
         self,
         method: str,
         ctx: LoopContext,
-        value: Any,
-        *extra: Any,
-        default: Any = None,
-    ) -> Any:
-        """Call hooks[i].method(ctx, value, *extra) in order, threading the return.
-
-        Hooks that don't define `method` are skipped. If no hooks define it,
-        returns `default` (defaults to `value`).
-        """
-        out = value
-        any_called = False
+        messages: MessageList,
+        response: LLMResponse,
+    ) -> LLMResponse:
+        out = response
         for hook in self.hooks:
             fn = getattr(hook, method, None)
             if fn is None:
                 continue
-            any_called = True
-            out = await fn(ctx, out, *extra)
-        if not any_called:
-            return default if default is not None else value
+            out = await fn(ctx, messages, out)
+        return out
+
+    async def _chain_tool_call(
+        self,
+        method: str,
+        ctx: LoopContext,
+        tool_call: ToolCall,
+    ) -> ToolCall:
+        out = tool_call
+        for hook in self.hooks:
+            fn = getattr(hook, method, None)
+            if fn is None:
+                continue
+            out = await fn(ctx, out)
+        return out
+
+    async def _chain_tool_result(
+        self,
+        method: str,
+        ctx: LoopContext,
+        tool_call: ToolCall,
+        result: ToolResult,
+    ) -> ToolResult:
+        out = result
+        for hook in self.hooks:
+            fn = getattr(hook, method, None)
+            if fn is None:
+                continue
+            out = await fn(ctx, tool_call, out)
         return out
 
     async def _first_non_none_async(self, method: str, ctx: LoopContext, *args: Any) -> Any:
@@ -316,12 +304,12 @@ class Agent:
     async def _aggregate_continue(
         self,
         ctx: LoopContext,
+        messages: MessageList,
         response: LLMResponse,
         *,
         finished: bool,
     ) -> ContinueDecision:
-        """STOP > RETRY > CONTINUE; multiple RETRYs concatenate feedback."""
-        decision = ContinueDecision.stop()  # default: terminate when finished
+        decision = ContinueDecision.stop()
         retries: list[LLMMessage] = []
         any_called = False
         for hook in self.hooks:
@@ -329,12 +317,12 @@ class Agent:
             if fn is None:
                 continue
             any_called = True
-            d = await fn(ctx, response, finished)
+            d = await fn(ctx, messages, response, finished)
             if d.kind == ContinueKind.STOP:
                 return ContinueDecision.stop()
             if d.kind == ContinueKind.RETRY:
                 retries.extend(d.feedback_messages)
-                decision = ContinueDecision.retry_with_feedback()  # placeholder
+                decision = ContinueDecision.retry_with_feedback()
         if not any_called:
             return ContinueDecision.stop() if finished else ContinueDecision.cont()
         if retries:

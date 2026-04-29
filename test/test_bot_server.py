@@ -488,6 +488,83 @@ async def test_command_case_insensitive(bot_server, fake_channel, mock_router):
     assert "Session reset" in fake_channel.sent_messages[0].text
 
 
+async def test_command_model_show(bot_server, fake_channel, mock_router):
+    """'/model' shows current model info."""
+    agent = await mock_router.get_or_create_agent("test", "conv_cmd")
+    agent.get_current_model_info.return_value = {
+        "name": "gpt-4o",
+        "model_id": "gpt-4o",
+        "provider": "openai",
+    }
+
+    await bot_server._process_message(fake_channel, _make_msg("/model"))
+
+    assert len(fake_channel.sent_messages) == 1
+    reply = fake_channel.sent_messages[0].text
+    assert "Current model: gpt-4o" in reply
+    assert "Provider: openai" in reply
+
+
+async def test_command_model_show_no_info(bot_server, fake_channel, mock_router):
+    """'/model' when get_current_model_info returns None."""
+    agent = await mock_router.get_or_create_agent("test", "conv_cmd")
+    agent.get_current_model_info.return_value = None
+
+    await bot_server._process_message(fake_channel, _make_msg("/model"))
+
+    assert len(fake_channel.sent_messages) == 1
+    assert "Current model: unknown" in fake_channel.sent_messages[0].text
+
+
+async def test_command_model_switch_success(bot_server, fake_channel, mock_router):
+    """'/model switch <id>' switches model on success."""
+    agent = await mock_router.get_or_create_agent("test", "conv_cmd")
+    agent.switch_model.return_value = True
+    agent.get_current_model_info.return_value = {
+        "name": "claude-3-opus",
+        "model_id": "claude-3-opus",
+        "provider": "anthropic",
+    }
+
+    await bot_server._process_message(fake_channel, _make_msg("/model switch claude-3-opus"))
+
+    agent.switch_model.assert_called_once_with("claude-3-opus")
+    assert len(fake_channel.sent_messages) == 1
+    assert "Switched to model: claude-3-opus" in fake_channel.sent_messages[0].text
+
+
+async def test_command_model_switch_failure(bot_server, fake_channel, mock_router):
+    """'/model switch <id>' reports failure when switch_model returns False."""
+    agent = await mock_router.get_or_create_agent("test", "conv_cmd")
+    agent.switch_model.return_value = False
+
+    await bot_server._process_message(fake_channel, _make_msg("/model switch bad-model"))
+
+    agent.switch_model.assert_called_once_with("bad-model")
+    assert len(fake_channel.sent_messages) == 1
+    assert "Failed to switch to 'bad-model'" in fake_channel.sent_messages[0].text
+
+
+async def test_command_model_switch_missing_arg(bot_server, fake_channel, mock_router):
+    """'/model switch' without model ID shows usage."""
+    await mock_router.get_or_create_agent("test", "conv_cmd")
+
+    await bot_server._process_message(fake_channel, _make_msg("/model switch"))
+
+    assert len(fake_channel.sent_messages) == 1
+    assert "Usage: /model switch <model-id>" in fake_channel.sent_messages[0].text
+
+
+async def test_command_model_unknown_subcommand(bot_server, fake_channel, mock_router):
+    """'/model foo' shows usage for unknown subcommand."""
+    await mock_router.get_or_create_agent("test", "conv_cmd")
+
+    await bot_server._process_message(fake_channel, _make_msg("/model foo"))
+
+    assert len(fake_channel.sent_messages) == 1
+    assert "Usage: /model show | /model switch <model-id>" in fake_channel.sent_messages[0].text
+
+
 # ---------------------------------------------------------------------------
 # File attachment processing tests
 # ---------------------------------------------------------------------------
