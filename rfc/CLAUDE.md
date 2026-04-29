@@ -20,5 +20,5 @@ This directory contains design RFCs for significant changes.
 
 ## Naming
 
-- New RFCs: `NNN-short-description.md` (3-digit number).
-- Do not reuse an existing number.
+- New RFCs: `short-description.md` (no numeric prefix).
+- Use a concise, descriptive filename.

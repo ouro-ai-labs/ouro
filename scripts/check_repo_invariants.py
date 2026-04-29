@@ -7,7 +7,7 @@ import re
 import sys
 from pathlib import Path
 
-RFC_FILENAME_RE = re.compile(r"^(?P<num>\\d{3})-[^/]+\\.md$")
+RFC_FILENAME_RE = re.compile(r"^[^/]+\.md$")
 
 
 def _repo_root() -> Path:
@@ -20,22 +20,11 @@ def _check_rfc_numbering(root: Path) -> list[str]:
     if not rfc_dir.exists():
         return errors
 
-    by_number: dict[str, list[Path]] = {}
     for entry in sorted(rfc_dir.iterdir()):
         if not entry.is_file():
             continue
-        match = RFC_FILENAME_RE.match(entry.name)
-        if not match:
-            continue
-        num = match.group("num")
-        by_number.setdefault(num, []).append(entry)
-
-    duplicates = {num: files for num, files in by_number.items() if len(files) > 1}
-    if duplicates:
-        errors.append("Duplicate RFC numbers detected (rfc/NNN-*.md must be unique):")
-        for num, files in sorted(duplicates.items()):
-            file_list = ", ".join(str(p.relative_to(root)) for p in files)
-            errors.append(f"  - {num}: {file_list}")
+        if not RFC_FILENAME_RE.match(entry.name):
+            errors.append(f"Invalid RFC filename: {entry.relative_to(root)} (must be *.md)")
 
     return errors
 
