@@ -8,7 +8,6 @@ long-term memory.
 from .compressor import WorkingMemoryCompressor
 from .long_term import LongTermMemoryManager
 from .manager import MemoryManager
-from .short_term import ShortTermMemory
 from .token_tracker import TokenTracker
 from .types import CompressedMemory, CompressionStrategy
 
@@ -17,7 +16,6 @@ __all__ = [
     "CompressionStrategy",
     "LongTermMemoryManager",
     "MemoryManager",
-    "ShortTermMemory",
     "WorkingMemoryCompressor",
     "TokenTracker",
 ]

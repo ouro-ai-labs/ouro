@@ -85,7 +85,7 @@ async def main():
     print(f"Total savings: {stats['total_savings']} tokens")
     print(f"Compression cost: {stats['compression_cost']} tokens")
     print(f"Net savings: {stats['net_savings']} tokens")
-    print(f"Short-term messages: {stats['short_term_count']}")
+    print(f"Messages: {stats.get('message_count', stats.get('detached_message_count', 0))}")
 
     # Show context structure
     print("\n4. Context Structure:")

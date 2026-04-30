@@ -1,4 +1,10 @@
-"""Core memory manager that orchestrates all memory operations."""
+"""Core memory manager that orchestrates all memory operations.
+
+This module has been refactored so that ``MemoryManager`` no longer owns
+short-term message storage.  Instead it exposes ``MemoryHooks`` (see
+``agent.run_context``) that mutate a ``RunContext`` at well-defined
+lifecycle points.
+"""
 
 import logging
 import re
@@ -12,7 +18,6 @@ from ouro.core.llm.message_types import LLMMessage
 from ouro.core.loop.protocols import NullProgressSink, ProgressSink
 
 from .compressor import WorkingMemoryCompressor
-from .short_term import ShortTermMemory
 from .token_tracker import TokenTracker
 from .types import CompressedMemory, CompressionStrategy
 
@@ -36,7 +41,8 @@ def _extract_ltm_block(text: str) -> str:
 
 
 if TYPE_CHECKING:
-    from ouro.core.llm import LiteLLMAdapter
+    from ouro.agent.run_context import RunContext
+    from ouro.core.llm import LiteLLMAdapter, LLMResponse
 
     from .long_term import LongTermMemoryManager
 
@@ -86,11 +92,14 @@ class MemoryManager:
             self._session_created = False
 
         # Initialize components using Config directly
-        self.short_term = ShortTermMemory()
+        # NOTE: short_term memory has been removed.  Message storage now lives
+        # in ``RunContext`` (see ``agent.run_context``).  MemoryManager only
+        # provides *hooks* that mutate that context at lifecycle points.
         self.compressor = WorkingMemoryCompressor(llm)
         self.token_tracker = TokenTracker()
 
-        # Storage for system messages
+        # Storage for system messages — still owned here because they are
+        # session-scoped and rarely change.
         self.system_messages: List[LLMMessage] = []
 
         # State tracking
@@ -152,12 +161,10 @@ class MemoryManager:
         # Restore state
         manager.system_messages = session_data["system_messages"]
 
-        # Add messages to short-term memory (including any summary messages)
-        for msg in session_data["messages"]:
-            manager.short_term.add_message(msg)
-
-        # Recalculate tokens
-        manager.current_tokens = manager._recalculate_current_tokens()
+        # Session data messages are now returned to the caller (usually
+        # LoopAgent.run) which will populate a RunContext.  We only keep
+        # system messages here.
+        manager.current_tokens = 0  # will be recalculated once bound to a context
 
         logger.info(
             f"Loaded session {session_id}: "
@@ -236,74 +243,148 @@ class MemoryManager:
                 logger.error(f"Failed to create session: {e}")
                 raise RuntimeError(f"Failed to create memory session: {e}") from e
 
-    async def add_message(self, message: LLMMessage, usage: Dict[str, int] = None) -> None:
-        """Add a message to memory and trigger compression if needed.
+    # ==================================================================
+    # Hook-based API (new) — MemoryManager no longer owns message storage
+    # ==================================================================
 
-        Args:
-            message: Message to add
-            usage: Optional usage dict from LLM response (response.usage).
-                   Keys: input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens.
+    async def on_run_start(self, context: "RunContext") -> None:
+        """Called at the start of a run.
+
+        Syncs ``MemoryManager.system_messages`` into the *context* so that
+        the agent loop always sees the latest system prompts.
         """
-        # Ensure session exists before adding messages
-        await self._ensure_session()
+        context.system_messages = list(self.system_messages)
 
-        # Track system messages separately
-        if message.role == "system":
-            self.system_messages.append(message)
-            return
+    async def on_llm_call_start(
+        self,
+        context: "RunContext",
+        messages: List[LLMMessage],
+    ) -> List[LLMMessage]:
+        """Hook called before every LLM API call.
 
-        # Record token usage if provided
-        if usage:
-            self.token_tracker.record_usage(usage)
+        Currently a no-op (messages already contain system + context), but
+        reserved for future injection (e.g. dynamic LTM retrieval).
+        """
+        return messages
+
+    async def on_llm_call_end(
+        self,
+        context: "RunContext",
+        response: "LLMResponse",
+    ) -> None:
+        """Hook called after each LLM response.
+
+        Records token usage and checks whether compaction is needed.
+        """
+        if response.usage:
+            self.token_tracker.record_usage(response.usage)
             logger.debug(
-                f"API usage: input={usage.get('input_tokens', 0)}, "
-                f"output={usage.get('output_tokens', 0)}, "
-                f"cache_read={usage.get('cache_read_tokens', 0)}, "
-                f"cache_creation={usage.get('cache_creation_tokens', 0)}"
+                f"API usage: input={response.usage.get('input_tokens', 0)}, "
+                f"output={response.usage.get('output_tokens', 0)}, "
+                f"cache_read={response.usage.get('cache_read_tokens', 0)}, "
+                f"cache_creation={response.usage.get('cache_creation_tokens', 0)}"
             )
-        # Non-API messages (user, tool results) are not tracked here — their
-        # tokens will be counted in the next API call's response.usage.input_tokens.
 
-        # Add to short-term memory
-        self.short_term.add_message(message)
-
-        # Recalculate current tokens based on actual stored content
-        # This gives accurate count for compression decisions
-        self.current_tokens = self._recalculate_current_tokens()
-
-        # Log memory state (stored content size, not API usage)
+        # Recalculate tokens based on the *context* content
+        self.current_tokens = self._recalculate_current_tokens(context)
         logger.debug(
             f"Memory state: {self.current_tokens} stored tokens, "
-            f"{self.short_term.count()} messages"
+            f"{context.message_count()} messages"
         )
 
-        # Check if compression is needed (deferred to _react_loop for cache-safe forking)
         self.was_compressed_last_iteration = False
         should_compress, reason = self._should_compress()
         if should_compress:
             self._compression_needed = True
             logger.info(f"🗜️  Compression needed: {reason} (deferred to react loop)")
         else:
-            # Log compression check details
             logger.debug(
                 f"Compression check: stored={self.current_tokens}, "
                 f"threshold={Config.MEMORY_COMPRESSION_THRESHOLD}"
             )
 
-    def get_context_for_llm(self) -> List[LLMMessage]:
-        """Get optimized context for LLM call.
+    async def on_tool_call_start(
+        self,
+        context: "RunContext",
+        tool_calls: List[Any],
+    ) -> None:
+        """Hook called before tool calls are executed."""
+        pass
 
-        Returns:
-            List of messages: system messages + short-term messages (which includes summaries)
+    async def on_tool_call_end(
+        self,
+        context: "RunContext",
+        results: List[Any],
+    ) -> None:
+        """Hook called after tool results have been appended to *context*."""
+        # Tool result tokens will be counted in the next LLM call's
+        # response.usage.input_tokens via on_llm_call_end.
+        pass
+
+    async def on_compact_needed(self, context: "RunContext") -> bool:
+        """Hook called when the agent loop decides compaction is required.
+
+        Mutates ``context.messages`` in-place and returns ``True`` if
+        compaction was actually performed.
         """
-        context = []
+        if not self._compression_needed:
+            return False
 
-        # 1. Add system messages (always included)
-        context.extend(self.system_messages)
+        # Build compaction prompt (cache-safe fork)
+        compaction_prompt = await self._build_compaction_prompt(context)
+        # The prompt is returned as a user message; the caller will append it
+        # to context, call LLM, then call apply_compression with the summary.
+        context.add_message(compaction_prompt)
+        return True
 
-        # 2. Add short-term memory (includes summary messages and recent messages)
-        context.extend(self.short_term.get_messages())
+    async def on_run_end(self, context: "RunContext") -> None:
+        """Called at the end of a run.
 
+        Saves the session state (system messages + context messages).
+        """
+        await self.save_memory(context)
+
+    # ==================================================================
+    # Legacy helpers (kept for internal use / backward compat)
+    # ==================================================================
+
+    async def add_message(self, message: LLMMessage, usage: Dict[str, int] = None) -> None:
+        """Legacy helper — adds a message *without* a RunContext.
+
+        This is still used by callers that haven't migrated to the hook API
+        (e.g. interactive.py, ralph_loop feedback injection).  It maintains
+        an internal "detached" message list that can be flushed to a context
+        later.
+        """
+        await self._ensure_session()
+
+        if message.role == "system":
+            self.system_messages.append(message)
+            return
+
+        if usage:
+            self.token_tracker.record_usage(usage)
+
+        # Store in a temporary detached list
+        if not hasattr(self, "_detached_messages"):
+            self._detached_messages: List[LLMMessage] = []
+        self._detached_messages.append(message)
+
+        self.current_tokens = self._recalculate_current_tokens()
+        self.was_compressed_last_iteration = False
+        should_compress, reason = self._should_compress()
+        if should_compress:
+            self._compression_needed = True
+            logger.info(f"🗜️  Compression needed: {reason} (deferred to react loop)")
+
+    def get_context_for_llm(self) -> List[LLMMessage]:
+        """Legacy helper — builds context from internal state.
+
+        Used by callers that still expect MemoryManager to hold messages.
+        """
+        context = list(self.system_messages)
+        if hasattr(self, "_detached_messages"):
+            context.extend(self._detached_messages)
         return context
 
     @property
@@ -357,7 +438,7 @@ class MemoryManager:
         """
         return self._compression_needed
 
-    async def get_compaction_prompt(self) -> LLMMessage:
+    async def _build_compaction_prompt(self, context: "RunContext") -> LLMMessage:
         """Build the compaction instruction as a user message.
 
         Delegates to the compressor for prompt generation. The resulting prompt
@@ -373,7 +454,7 @@ class MemoryManager:
         """
         from datetime import date
 
-        messages = self.short_term.get_messages()
+        messages = context.snapshot()
         strategy = self._select_strategy(messages)
         target_tokens = self._calculate_target_tokens()
         todo_context = self._todo_context_provider() if self._todo_context_provider else None
@@ -395,6 +476,17 @@ class MemoryManager:
             existing_memories=existing_memories,
         )
         return LLMMessage(role="user", content=prompt_text)
+
+    # Legacy alias — some callers still reference get_compaction_prompt()
+    async def get_compaction_prompt(self) -> LLMMessage:
+        """Deprecated — use ``_build_compaction_prompt(context)`` instead."""
+        # Build a throw-away context from detached messages for backward compat
+        from ouro.core.loop.message_list import MessageList
+
+        ctx = MessageList()
+        if hasattr(self, "_detached_messages"):
+            ctx.extend(self._detached_messages)
+        return await self._build_compaction_prompt(ctx)
 
     def _assemble_compressed_messages(
         self,
@@ -421,10 +513,15 @@ class MemoryManager:
             return [summary_message] + non_system_preserved
         return [summary_message]
 
-    def apply_compression(self, summary_text: str, usage: Optional[Dict[str, int]] = None) -> None:
+    def apply_compression(
+        self,
+        summary_text: str,
+        context: Optional["RunContext"] = None,
+        usage: Optional[Dict[str, int]] = None,
+    ) -> None:
         """Apply the LLM's summary to compress memory.
 
-        This is the counterpart to get_compaction_prompt() — called after
+        This is the counterpart to ``_build_compaction_prompt()`` — called after
         the LLM produces the summary in the react loop.
 
         When long-term memory is enabled, this also extracts and persists
@@ -432,9 +529,18 @@ class MemoryManager:
 
         Args:
             summary_text: The LLM-generated summary text
+            context: The ``RunContext`` whose ``messages`` will be replaced.
+                If ``None``, falls back to the legacy detached message list.
             usage: Optional token usage from the compression LLM call
         """
-        messages = self.short_term.get_messages()
+        if context is not None:
+            messages = context.get_messages()
+        elif hasattr(self, "_detached_messages"):
+            messages = list(self._detached_messages)
+        else:
+            self._compression_needed = False
+            return
+
         if not messages:
             self._compression_needed = False
             return
@@ -481,40 +587,56 @@ class MemoryManager:
         self.token_tracker.add_compression_savings(token_savings)
         self.token_tracker.add_compression_cost(compressed_tokens)
 
-        # Replace short-term memory with compressed messages
-        self.short_term.clear()
-        for msg in result_messages:
-            self.short_term.add_message(msg)
+        # Replace context messages (or detached list) with compressed messages
+        if context is not None:
+            context.replace_messages(result_messages)
+        else:
+            self._detached_messages = list(result_messages)
 
         # Update state
         old_tokens = self.current_tokens
-        self.current_tokens = self._recalculate_current_tokens()
+        self.current_tokens = self._recalculate_current_tokens(context)
         self._compression_needed = False
 
         compression_ratio = compressed_tokens / original_tokens if original_tokens > 0 else 0
         savings_pct = (token_savings / original_tokens * 100) if original_tokens > 0 else 0
+        msg_count = (
+            context.message_count() if context else len(getattr(self, "_detached_messages", []))
+        )
         logger.info(
             f"✅ Compression complete: {original_tokens} → {compressed_tokens} tokens "
             f"({savings_pct:.1f}% saved, ratio: {compression_ratio:.2f}), "
             f"context: {old_tokens} → {self.current_tokens} tokens, "
-            f"short_term now has {self.short_term.count()} messages"
+            f"messages now has {msg_count} messages"
         )
 
-    async def compress(self, strategy: str = None) -> Optional[CompressedMemory]:
-        """Compress current short-term memory.
+    async def compress(
+        self,
+        strategy: str = None,
+        context: Optional["RunContext"] = None,
+    ) -> Optional[CompressedMemory]:
+        """Compress messages in a RunContext (or legacy detached list).
 
-        After compression, the compressed messages (including any summary as user message)
-        are put back into short_term as regular messages.
+        After compression, the compressed messages (including any summary as
+        user message) are put back into the context.
 
         Args:
             strategy: Compression strategy (None = auto-select)
+            context: The ``RunContext`` to compress.  If ``None``, falls back
+                to the legacy detached message list.
 
         Returns:
             CompressedMemory object if compression was performed
         """
-        messages = self.short_term.get_messages()
-        message_count = len(messages)
+        if context is not None:
+            messages = context.get_messages()
+        elif hasattr(self, "_detached_messages"):
+            messages = list(self._detached_messages)
+        else:
+            logger.warning("No messages to compress")
+            return None
 
+        message_count = len(messages)
         if not messages:
             logger.warning("No messages to compress")
             return None
@@ -549,24 +671,28 @@ class MemoryManager:
             self.token_tracker.add_compression_savings(compressed.token_savings)
             self.token_tracker.add_compression_cost(compressed.compressed_tokens)
 
-            # Replace short-term memory with compressed messages
-            self.short_term.clear()
-            for msg in compressed.messages:
-                self.short_term.add_message(msg)
+            # Replace context messages (or detached list) with compressed messages
+            if context is not None:
+                context.replace_messages(compressed.messages)
+            else:
+                self._detached_messages = list(compressed.messages)
 
             # Update current token count
             old_tokens = self.current_tokens
-            self.current_tokens = self._recalculate_current_tokens()
+            self.current_tokens = self._recalculate_current_tokens(context)
 
             # Clear the deferred compression flag
             self._compression_needed = False
 
             # Log compression results
+            msg_count = (
+                context.message_count() if context else len(getattr(self, "_detached_messages", []))
+            )
             logger.info(
                 f"✅ Compression complete: {compressed.original_tokens} → {compressed.compressed_tokens} tokens "
                 f"({compressed.savings_percentage:.1f}% saved, ratio: {compressed.compression_ratio:.2f}), "
                 f"context: {old_tokens} → {self.current_tokens} tokens, "
-                f"short_term now has {self.short_term.count()} messages"
+                f"messages now has {msg_count} messages"
             )
 
             return compressed
@@ -648,10 +774,14 @@ class MemoryManager:
         target = int(original_tokens * Config.MEMORY_COMPRESSION_RATIO)
         return max(target, 500)  # Minimum 500 tokens for summary
 
-    def _recalculate_current_tokens(self) -> int:
+    def _recalculate_current_tokens(self, context: Optional["RunContext"] = None) -> int:
         """Recalculate current token count from scratch.
 
         Includes message tokens + tool schema overhead.
+
+        Args:
+            context: Optional ``RunContext`` to read messages from.  If
+                ``None``, falls back to the legacy detached message list.
 
         Returns:
             Current token count
@@ -665,8 +795,15 @@ class MemoryManager:
         for msg in self.system_messages:
             total += self.token_tracker.count_message_tokens(msg, provider, model)
 
-        # Count short-term messages (includes summary messages)
-        for msg in self.short_term.get_messages():
+        # Count context messages (or legacy detached messages)
+        if context is not None:
+            messages = context.get_messages()
+        elif hasattr(self, "_detached_messages"):
+            messages = self._detached_messages
+        else:
+            messages = []
+
+        for msg in messages:
             total += self.token_tracker.count_message_tokens(msg, provider, model)
 
         # Add tool schema overhead
@@ -674,12 +811,20 @@ class MemoryManager:
 
         return total
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self, context: Optional["RunContext"] = None) -> Dict[str, Any]:
         """Get memory statistics.
+
+        Args:
+            context: Optional ``RunContext`` to read message count from.
 
         Returns:
             Dict with statistics
         """
+        msg_count = (
+            context.message_count()
+            if context is not None
+            else len(getattr(self, "_detached_messages", []))
+        )
         stats: Dict[str, Any] = {
             "current_tokens": self.current_tokens,
             "total_input_tokens": self.token_tracker.total_input_tokens,
@@ -691,28 +836,38 @@ class MemoryManager:
             "compression_cost": self.token_tracker.compression_cost,
             "net_savings": self.token_tracker.compression_savings
             - self.token_tracker.compression_cost,
-            "short_term_count": self.short_term.count(),
+            "message_count": msg_count,
+            "detached_message_count": msg_count,  # new alias
+            "short_term_count": msg_count,  # legacy alias
             "tool_schema_tokens": self._tool_schema_tokens,
             "total_cost": self.token_tracker.get_total_cost(self.llm.model),
             "ltm_enabled": self._long_term is not None,
         }
         return stats
 
-    async def save_memory(self):
+    async def save_memory(self, context: Optional["RunContext"] = None):
         """Save current memory state to store.
 
         This saves the complete memory state including:
         - System messages
-        - Short-term messages (which includes summary messages after compression)
+        - Context messages (or legacy detached messages)
 
         Call this method after completing a task or at key checkpoints.
+
+        Args:
+            context: Optional ``RunContext`` to read messages from.
         """
         # Skip if no session was created (no messages were ever added)
         if not self._store or not self._session_created or not self.session_id:
             logger.debug("Skipping save_memory: no session created")
             return
 
-        messages = self.short_term.get_messages()
+        if context is not None:
+            messages = context.get_messages()
+        elif hasattr(self, "_detached_messages"):
+            messages = list(self._detached_messages)
+        else:
+            messages = []
 
         # Skip saving if there are no messages (empty conversation)
         if not messages and not self.system_messages:
@@ -728,7 +883,8 @@ class MemoryManager:
 
     def reset(self):
         """Reset memory manager state."""
-        self.short_term.clear()
+        if hasattr(self, "_detached_messages"):
+            self._detached_messages.clear()
         self.system_messages.clear()
         self.token_tracker.reset()
         self.current_tokens = 0
@@ -768,7 +924,7 @@ class MemoryManager:
             # No running loop — shouldn't happen in normal flow, but be safe
             logger.debug("No running event loop; skipping LTM save")
 
-    def rollback_incomplete_exchange(self) -> None:
+    def rollback_incomplete_exchange(self, context: Optional["RunContext"] = None) -> None:
         """Rollback the last incomplete assistant response with tool_calls.
 
         This is used when a task is interrupted before tool execution completes.
@@ -776,8 +932,18 @@ class MemoryManager:
         The user message is preserved so the agent can see the original question.
 
         This prevents API errors about missing tool responses on the next turn.
+
+        Args:
+            context: The ``RunContext`` to operate on.  If ``None``, falls back
+                to the legacy detached message list.
         """
-        messages = self.short_term.get_messages()
+        if context is not None:
+            messages = context.get_messages()
+        elif hasattr(self, "_detached_messages"):
+            messages = list(self._detached_messages)
+        else:
+            return
+
         if not messages:
             return
 
@@ -786,8 +952,11 @@ class MemoryManager:
         if last_msg.role == "assistant" and self._message_has_tool_calls(last_msg):
             # Remove only the assistant message with tool_calls
             # Keep the user message so the agent can still see the question
-            self.short_term.remove_last(1)
+            if context is not None:
+                context.pop_last(1)
+            else:
+                self._detached_messages.pop()
             logger.debug("Removed incomplete assistant message with tool_calls")
 
             # Recalculate token count
-            self.current_tokens = self._recalculate_current_tokens()
+            self.current_tokens = self._recalculate_current_tokens(context)
