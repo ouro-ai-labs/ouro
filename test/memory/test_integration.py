@@ -408,7 +408,7 @@ class TestEdgeCaseIntegration:
 
         # Should have multiple compressions with different strategies
         assert manager.compression_count == 2
-        # Summaries are now stored as messages in short_term, check context has summary messages
+        # Summaries are now stored as messages in detached list, check context has summary messages
         context = manager.get_context_for_llm()
         summary_count = sum(
             1
@@ -477,7 +477,7 @@ class TestMemoryReset:
         # Everything should be cleared
         assert manager.current_tokens == 0
         assert manager.compression_count == 0
-        assert manager.short_term.count() == 0
+        assert len(getattr(manager, "_detached_messages", [])) == 0
 
     async def test_reuse_after_reset(self, set_memory_config, mock_llm):
         """Test that manager can be reused after reset."""

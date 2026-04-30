@@ -16,7 +16,7 @@ class TestMemoryManagerBasics:
         assert manager.current_tokens == 0
         assert manager.compression_count == 0
         assert len(manager.system_messages) == 0
-        assert manager.short_term.count() == 0
+        assert len(getattr(manager, "_detached_messages", [])) == 0
 
     async def test_add_system_message(self, mock_llm):
         """Test that system messages are stored separately."""
@@ -27,8 +27,8 @@ class TestMemoryManagerBasics:
 
         assert len(manager.system_messages) == 1
         assert manager.system_messages[0] == system_msg
-        # System messages don't go to short-term memory
-        assert manager.short_term.count() == 0
+        # System messages don't go to detached message list
+        assert len(getattr(manager, "_detached_messages", [])) == 0
 
     async def test_add_user_message(self, mock_llm):
         """Test adding user messages."""
@@ -37,7 +37,7 @@ class TestMemoryManagerBasics:
         user_msg = LLMMessage(role="user", content="Hello")
         await manager.add_message(user_msg)
 
-        assert manager.short_term.count() == 1
+        assert len(getattr(manager, "_detached_messages", [])) == 1
         assert manager.current_tokens > 0
 
     async def test_add_assistant_message(self, mock_llm):
@@ -47,7 +47,7 @@ class TestMemoryManagerBasics:
         assistant_msg = LLMMessage(role="assistant", content="Hi there!")
         await manager.add_message(assistant_msg)
 
-        assert manager.short_term.count() == 1
+        assert len(getattr(manager, "_detached_messages", [])) == 1
         assert manager.current_tokens > 0
 
     async def test_get_context_structure(self, mock_llm, simple_messages):
@@ -82,7 +82,7 @@ class TestMemoryManagerBasics:
         assert manager.current_tokens == 0
         assert manager.compression_count == 0
         assert len(manager.system_messages) == 0
-        assert manager.short_term.count() == 0
+        assert len(getattr(manager, "_detached_messages", [])) == 0
 
 
 class TestMemoryCompression:
@@ -101,7 +101,7 @@ class TestMemoryCompression:
         for i in range(50):
             await manager.add_message(LLMMessage(role="user", content=f"Message {i}"))
 
-        assert manager.short_term.count() == 50
+        assert len(getattr(manager, "_detached_messages", [])) == 50
         assert not manager.needs_compression()
 
     async def test_compression_on_hard_limit(self, set_memory_config, mock_llm):
@@ -126,7 +126,7 @@ class TestMemoryCompression:
         assert manager.compression_count >= 1
 
     async def test_compression_creates_summary(self, set_memory_config, mock_llm, simple_messages):
-        """Test that compression creates a summary message in short_term."""
+        """Test that compression creates a summary message in detached messages."""
         set_memory_config(
             MEMORY_COMPRESSION_THRESHOLD=200000,
         )
@@ -141,7 +141,7 @@ class TestMemoryCompression:
         assert result is not None
         assert manager.compression_count == 1
 
-        # Check that summary message exists in short_term (at the front)
+        # Check that summary message exists in detached messages (at the front)
         context = manager.get_context_for_llm()
         has_summary = any(
             isinstance(msg.content, str)
@@ -166,7 +166,7 @@ class TestMemoryCompression:
         assert "total_savings" in stats
         assert "compression_cost" in stats
         assert "net_savings" in stats
-        assert "short_term_count" in stats
+        assert "detached_message_count" in stats
         assert "tool_schema_tokens" in stats
 
 
@@ -497,14 +497,15 @@ class TestMemoryManagerRollback:
         await manager.add_message(assistant_msg)
 
         # Should have 2 messages
-        assert manager.short_term.count() == 2
+        assert len(getattr(manager, "_detached_messages", [])) == 2
 
         # Rollback incomplete exchange
         manager.rollback_incomplete_exchange()
 
         # Should only remove the assistant message, keep the user message
-        assert manager.short_term.count() == 1
-        assert manager.short_term.get_messages()[0].role == "user"
+        detached = getattr(manager, "_detached_messages", [])
+        assert len(detached) == 1
+        assert detached[0].role == "user"
 
     async def test_rollback_incomplete_exchange_no_rollback_needed(self, mock_llm):
         """Test rollback when last message is complete (no tool_calls)."""
@@ -518,13 +519,13 @@ class TestMemoryManagerRollback:
         await manager.add_message(assistant_msg)
 
         # Should have 2 messages
-        assert manager.short_term.count() == 2
+        assert len(getattr(manager, "_detached_messages", [])) == 2
 
         # Rollback should not remove anything (no tool_calls)
         manager.rollback_incomplete_exchange()
 
         # Should still have 2 messages
-        assert manager.short_term.count() == 2
+        assert len(getattr(manager, "_detached_messages", [])) == 2
 
     async def test_rollback_incomplete_exchange_with_tool_results(self, mock_llm):
         """Test rollback when exchange is complete (has tool results)."""
@@ -551,13 +552,13 @@ class TestMemoryManagerRollback:
             await manager.add_message(msg)
 
         # Should have 4 messages
-        assert manager.short_term.count() == 4
+        assert len(getattr(manager, "_detached_messages", [])) == 4
 
         # Rollback should not remove anything (exchange is complete)
         manager.rollback_incomplete_exchange()
 
         # Should still have 4 messages
-        assert manager.short_term.count() == 4
+        assert len(getattr(manager, "_detached_messages", [])) == 4
 
     async def test_rollback_incomplete_exchange_empty_memory(self, mock_llm):
         """Test rollback on empty memory."""
@@ -566,7 +567,7 @@ class TestMemoryManagerRollback:
         # Should not crash
         manager.rollback_incomplete_exchange()
 
-        assert manager.short_term.count() == 0
+        assert len(getattr(manager, "_detached_messages", [])) == 0
 
     async def test_rollback_incomplete_exchange_only_user_message(self, mock_llm):
         """Test rollback when only user message exists."""
@@ -579,7 +580,7 @@ class TestMemoryManagerRollback:
         manager.rollback_incomplete_exchange()
 
         # Should still have 1 message
-        assert manager.short_term.count() == 1
+        assert len(getattr(manager, "_detached_messages", [])) == 1
 
     async def test_rollback_recalculates_tokens(self, mock_llm):
         """Test that rollback recalculates token count."""
@@ -695,7 +696,7 @@ class TestDeferredCompression:
         for msg in simple_messages:
             await manager.add_message(msg)
 
-        original_count = manager.short_term.count()
+        original_count = len(getattr(manager, "_detached_messages", []))
         assert original_count == len(simple_messages)
 
         # Simulate the react loop: apply a summary
@@ -759,7 +760,7 @@ class TestDeferredCompression:
         for msg in tool_use_messages:
             await manager.add_message(msg)
 
-        original_count = manager.short_term.count()
+        original_count = len(getattr(manager, "_detached_messages", []))
         assert original_count == len(tool_use_messages)
 
         manager.apply_compression("User asked for a calculation.")
