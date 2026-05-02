@@ -15,6 +15,8 @@ from ouro.core.log import get_logger
 from ouro.core.loop.message_list import MessageList
 from ouro.core.loop.protocols import (
     CompactionDecision,
+    ContinueDecision,
+    Hook,
     LoopContext,
 )
 
@@ -23,8 +25,10 @@ from .manager import MemoryManager
 logger = get_logger(__name__)
 
 
-class MemoryHook:
+class MemoryHook(Hook):
     """Wires a MemoryManager into the core agent loop.
+
+    Implements the ``core.loop.Hook`` protocol.
 
     Lifecycle:
     - before_call: substitute messages with `memory.get_context_for_llm()`.
@@ -43,7 +47,34 @@ class MemoryHook:
     def __init__(self, memory: MemoryManager) -> None:
         self.memory = memory
 
-    # ---- lifecycle ------------------------------------------------------
+    # ---- lifecycle (Hook protocol) --------------------------------------
+
+    async def on_run_start(self, ctx: LoopContext, messages: MessageList) -> None:
+        pass
+
+    async def on_run_end(self, ctx: LoopContext, messages: MessageList, final_answer: str) -> None:
+        pass
+
+    async def before_tool(self, ctx: LoopContext, tool_call: ToolCall) -> ToolCall:
+        return tool_call
+
+    async def on_tool_results(
+        self,
+        ctx: LoopContext,
+        messages: MessageList,
+        calls: list[ToolCall],
+        results: list[ToolResult],
+    ) -> None:
+        pass
+
+    async def on_iteration_end(
+        self,
+        ctx: LoopContext,
+        messages: MessageList,
+        response: LLMResponse,
+        finished: bool,
+    ) -> ContinueDecision:
+        return ContinueDecision.cont()
 
     async def before_call(
         self,
