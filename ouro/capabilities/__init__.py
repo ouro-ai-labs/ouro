@@ -13,7 +13,6 @@ from ouro.capabilities.memory import (
     CompressionStrategy,
     LongTermMemoryManager,
     MemoryManager,
-    ShortTermMemory,
     TokenTracker,
     WorkingMemoryCompressor,
 )

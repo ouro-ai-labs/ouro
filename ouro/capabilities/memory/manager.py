@@ -1,4 +1,9 @@
-"""Core memory manager that orchestrates all memory operations."""
+"""
+MemoryManager owns the detached message list and provides the *mechanisms*
+(persistence, compression, token tracking).  ``MemoryHook`` (in ``hook.py``)
+adapts it into the core loop's ``Hook`` protocol; the *policy* (when to
+persist, when to compress) lives in ``MemoryHook``.
+"""
 
 import logging
 import re
@@ -12,7 +17,6 @@ from ouro.core.llm.message_types import LLMMessage
 from ouro.core.loop.protocols import NullProgressSink, ProgressSink
 
 from .compressor import WorkingMemoryCompressor
-from .short_term import ShortTermMemory
 from .token_tracker import TokenTracker
 from .types import CompressedMemory, CompressionStrategy
 
@@ -86,11 +90,14 @@ class MemoryManager:
             self._session_created = False
 
         # Initialize components using Config directly
-        self.short_term = ShortTermMemory()
+        # NOTE: short_term memory has been removed.  Message storage now lives
+        # in ``MemoryManager._detached_messages``.  MemoryManager provides
+        # *hooks* that mutate the message list at lifecycle points.
         self.compressor = WorkingMemoryCompressor(llm)
         self.token_tracker = TokenTracker()
 
-        # Storage for system messages
+        # Storage for system messages — still owned here because they are
+        # session-scoped and rarely change.
         self.system_messages: List[LLMMessage] = []
 
         # State tracking
@@ -152,11 +159,8 @@ class MemoryManager:
         # Restore state
         manager.system_messages = session_data["system_messages"]
 
-        # Add messages to short-term memory (including any summary messages)
-        for msg in session_data["messages"]:
-            manager.short_term.add_message(msg)
-
-        # Recalculate tokens
+        # Session data messages are restored into the detached message list.
+        manager._detached_messages = list(session_data.get("messages", []))
         manager.current_tokens = manager._recalculate_current_tokens()
 
         logger.info(
@@ -236,74 +240,45 @@ class MemoryManager:
                 logger.error(f"Failed to create session: {e}")
                 raise RuntimeError(f"Failed to create memory session: {e}") from e
 
-    async def add_message(self, message: LLMMessage, usage: Dict[str, int] = None) -> None:
-        """Add a message to memory and trigger compression if needed.
+    # ==================================================================
+    # Public API (used by MemoryHook and other callers)
+    # ==================================================================
 
-        Args:
-            message: Message to add
-            usage: Optional usage dict from LLM response (response.usage).
-                   Keys: input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens.
+    async def add_message(self, message: LLMMessage, usage: Dict[str, int] = None) -> None:
+        """Add a message to the internal detached list.
+
+        Used by MemoryHook (after_call / after_tool) and legacy callers
+        that haven't migrated to the hook API.
         """
-        # Ensure session exists before adding messages
         await self._ensure_session()
 
-        # Track system messages separately
         if message.role == "system":
             self.system_messages.append(message)
             return
 
-        # Record token usage if provided
         if usage:
             self.token_tracker.record_usage(usage)
-            logger.debug(
-                f"API usage: input={usage.get('input_tokens', 0)}, "
-                f"output={usage.get('output_tokens', 0)}, "
-                f"cache_read={usage.get('cache_read_tokens', 0)}, "
-                f"cache_creation={usage.get('cache_creation_tokens', 0)}"
-            )
-        # Non-API messages (user, tool results) are not tracked here — their
-        # tokens will be counted in the next API call's response.usage.input_tokens.
 
-        # Add to short-term memory
-        self.short_term.add_message(message)
+        # Store in a temporary detached list
+        if not hasattr(self, "_detached_messages"):
+            self._detached_messages: List[LLMMessage] = []
+        self._detached_messages.append(message)
 
-        # Recalculate current tokens based on actual stored content
-        # This gives accurate count for compression decisions
         self.current_tokens = self._recalculate_current_tokens()
-
-        # Log memory state (stored content size, not API usage)
-        logger.debug(
-            f"Memory state: {self.current_tokens} stored tokens, "
-            f"{self.short_term.count()} messages"
-        )
-
-        # Check if compression is needed (deferred to _react_loop for cache-safe forking)
         self.was_compressed_last_iteration = False
         should_compress, reason = self._should_compress()
         if should_compress:
             self._compression_needed = True
             logger.info(f"🗜️  Compression needed: {reason} (deferred to react loop)")
-        else:
-            # Log compression check details
-            logger.debug(
-                f"Compression check: stored={self.current_tokens}, "
-                f"threshold={Config.MEMORY_COMPRESSION_THRESHOLD}"
-            )
 
     def get_context_for_llm(self) -> List[LLMMessage]:
-        """Get optimized context for LLM call.
+        """Legacy helper — builds context from internal state.
 
-        Returns:
-            List of messages: system messages + short-term messages (which includes summaries)
+        Used by callers that still expect MemoryManager to hold messages.
         """
-        context = []
-
-        # 1. Add system messages (always included)
-        context.extend(self.system_messages)
-
-        # 2. Add short-term memory (includes summary messages and recent messages)
-        context.extend(self.short_term.get_messages())
-
+        context = list(self.system_messages)
+        if hasattr(self, "_detached_messages"):
+            context.extend(self._detached_messages)
         return context
 
     @property
@@ -357,7 +332,7 @@ class MemoryManager:
         """
         return self._compression_needed
 
-    async def get_compaction_prompt(self) -> LLMMessage:
+    async def _build_compaction_prompt(self) -> LLMMessage:
         """Build the compaction instruction as a user message.
 
         Delegates to the compressor for prompt generation. The resulting prompt
@@ -373,7 +348,7 @@ class MemoryManager:
         """
         from datetime import date
 
-        messages = self.short_term.get_messages()
+        messages = list(getattr(self, "_detached_messages", []))
         strategy = self._select_strategy(messages)
         target_tokens = self._calculate_target_tokens()
         todo_context = self._todo_context_provider() if self._todo_context_provider else None
@@ -395,6 +370,11 @@ class MemoryManager:
             existing_memories=existing_memories,
         )
         return LLMMessage(role="user", content=prompt_text)
+
+    # Legacy alias — some callers still reference get_compaction_prompt()
+    async def get_compaction_prompt(self) -> LLMMessage:
+        """Deprecated — use ``_build_compaction_prompt()`` instead."""
+        return await self._build_compaction_prompt()
 
     def _assemble_compressed_messages(
         self,
@@ -421,10 +401,15 @@ class MemoryManager:
             return [summary_message] + non_system_preserved
         return [summary_message]
 
-    def apply_compression(self, summary_text: str, usage: Optional[Dict[str, int]] = None) -> None:
+    def apply_compression(
+        self,
+        summary_text: str,
+        messages: Optional[List[LLMMessage]] = None,
+        usage: Optional[Dict[str, int]] = None,
+    ) -> None:
         """Apply the LLM's summary to compress memory.
 
-        This is the counterpart to get_compaction_prompt() — called after
+        This is the counterpart to ``_build_compaction_prompt()`` — called after
         the LLM produces the summary in the react loop.
 
         When long-term memory is enabled, this also extracts and persists
@@ -432,9 +417,17 @@ class MemoryManager:
 
         Args:
             summary_text: The LLM-generated summary text
+            messages: The message list to compress in-place.  If ``None``,
+                falls back to the legacy detached message list.
             usage: Optional token usage from the compression LLM call
         """
-        messages = self.short_term.get_messages()
+        if messages is None:
+            if hasattr(self, "_detached_messages"):
+                messages = list(self._detached_messages)
+            else:
+                self._compression_needed = False
+                return
+
         if not messages:
             self._compression_needed = False
             return
@@ -481,10 +474,8 @@ class MemoryManager:
         self.token_tracker.add_compression_savings(token_savings)
         self.token_tracker.add_compression_cost(compressed_tokens)
 
-        # Replace short-term memory with compressed messages
-        self.short_term.clear()
-        for msg in result_messages:
-            self.short_term.add_message(msg)
+        # Replace detached messages with compressed messages
+        self._detached_messages = list(result_messages)
 
         # Update state
         old_tokens = self.current_tokens
@@ -493,18 +484,22 @@ class MemoryManager:
 
         compression_ratio = compressed_tokens / original_tokens if original_tokens > 0 else 0
         savings_pct = (token_savings / original_tokens * 100) if original_tokens > 0 else 0
+        msg_count = len(getattr(self, "_detached_messages", []))
         logger.info(
             f"✅ Compression complete: {original_tokens} → {compressed_tokens} tokens "
             f"({savings_pct:.1f}% saved, ratio: {compression_ratio:.2f}), "
             f"context: {old_tokens} → {self.current_tokens} tokens, "
-            f"short_term now has {self.short_term.count()} messages"
+            f"messages now has {msg_count} messages"
         )
 
-    async def compress(self, strategy: str = None) -> Optional[CompressedMemory]:
-        """Compress current short-term memory.
+    async def compress(
+        self,
+        strategy: str = None,
+    ) -> Optional[CompressedMemory]:
+        """Compress messages in the detached message list.
 
-        After compression, the compressed messages (including any summary as user message)
-        are put back into short_term as regular messages.
+        After compression, the compressed messages (including any summary as
+        user message) are put back into the detached message list.
 
         Args:
             strategy: Compression strategy (None = auto-select)
@@ -512,9 +507,8 @@ class MemoryManager:
         Returns:
             CompressedMemory object if compression was performed
         """
-        messages = self.short_term.get_messages()
+        messages = list(getattr(self, "_detached_messages", []))
         message_count = len(messages)
-
         if not messages:
             logger.warning("No messages to compress")
             return None
@@ -549,10 +543,8 @@ class MemoryManager:
             self.token_tracker.add_compression_savings(compressed.token_savings)
             self.token_tracker.add_compression_cost(compressed.compressed_tokens)
 
-            # Replace short-term memory with compressed messages
-            self.short_term.clear()
-            for msg in compressed.messages:
-                self.short_term.add_message(msg)
+            # Replace detached messages with compressed messages
+            self._detached_messages = list(compressed.messages)
 
             # Update current token count
             old_tokens = self.current_tokens
@@ -562,11 +554,12 @@ class MemoryManager:
             self._compression_needed = False
 
             # Log compression results
+            msg_count = len(getattr(self, "_detached_messages", []))
             logger.info(
                 f"✅ Compression complete: {compressed.original_tokens} → {compressed.compressed_tokens} tokens "
                 f"({compressed.savings_percentage:.1f}% saved, ratio: {compressed.compression_ratio:.2f}), "
                 f"context: {old_tokens} → {self.current_tokens} tokens, "
-                f"short_term now has {self.short_term.count()} messages"
+                f"messages now has {msg_count} messages"
             )
 
             return compressed
@@ -665,8 +658,9 @@ class MemoryManager:
         for msg in self.system_messages:
             total += self.token_tracker.count_message_tokens(msg, provider, model)
 
-        # Count short-term messages (includes summary messages)
-        for msg in self.short_term.get_messages():
+        # Count detached messages
+        messages = getattr(self, "_detached_messages", [])
+        for msg in messages:
             total += self.token_tracker.count_message_tokens(msg, provider, model)
 
         # Add tool schema overhead
@@ -680,6 +674,7 @@ class MemoryManager:
         Returns:
             Dict with statistics
         """
+        msg_count = len(getattr(self, "_detached_messages", []))
         stats: Dict[str, Any] = {
             "current_tokens": self.current_tokens,
             "total_input_tokens": self.token_tracker.total_input_tokens,
@@ -691,7 +686,9 @@ class MemoryManager:
             "compression_cost": self.token_tracker.compression_cost,
             "net_savings": self.token_tracker.compression_savings
             - self.token_tracker.compression_cost,
-            "short_term_count": self.short_term.count(),
+            "message_count": msg_count,
+            "detached_message_count": msg_count,  # new alias
+            "short_term_count": msg_count,  # legacy alias
             "tool_schema_tokens": self._tool_schema_tokens,
             "total_cost": self.token_tracker.get_total_cost(self.llm.model),
             "ltm_enabled": self._long_term is not None,
@@ -703,7 +700,7 @@ class MemoryManager:
 
         This saves the complete memory state including:
         - System messages
-        - Short-term messages (which includes summary messages after compression)
+        - Detached messages
 
         Call this method after completing a task or at key checkpoints.
         """
@@ -712,7 +709,7 @@ class MemoryManager:
             logger.debug("Skipping save_memory: no session created")
             return
 
-        messages = self.short_term.get_messages()
+        messages = list(getattr(self, "_detached_messages", []))
 
         # Skip saving if there are no messages (empty conversation)
         if not messages and not self.system_messages:
@@ -728,7 +725,8 @@ class MemoryManager:
 
     def reset(self):
         """Reset memory manager state."""
-        self.short_term.clear()
+        if hasattr(self, "_detached_messages"):
+            self._detached_messages.clear()
         self.system_messages.clear()
         self.token_tracker.reset()
         self.current_tokens = 0
@@ -777,7 +775,7 @@ class MemoryManager:
 
         This prevents API errors about missing tool responses on the next turn.
         """
-        messages = self.short_term.get_messages()
+        messages = list(getattr(self, "_detached_messages", []))
         if not messages:
             return
 
@@ -786,7 +784,7 @@ class MemoryManager:
         if last_msg.role == "assistant" and self._message_has_tool_calls(last_msg):
             # Remove only the assistant message with tool_calls
             # Keep the user message so the agent can still see the question
-            self.short_term.remove_last(1)
+            self._detached_messages.pop()
             logger.debug("Removed incomplete assistant message with tool_calls")
 
             # Recalculate token count
