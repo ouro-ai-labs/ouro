@@ -2,21 +2,24 @@
 
 Built on top of `ouro.core`. Exposes a Python SDK that wires capabilities
 into a working agent via `AgentBuilder` / `ComposedAgent`. Users can also
-construct individual hooks (MemoryHook, VerificationHook) and pass them
-to the bare `core.loop.Agent` for finer control.
+construct individual hooks (CompactionHook, VerificationHook) and pass
+them to the bare `core.loop.Agent` for finer control.
 """
 
 from ouro.capabilities.builder import AgentBuilder, ComposedAgent
-from ouro.capabilities.context.env import format_context_prompt
-from ouro.capabilities.memory import (
+from ouro.capabilities.compaction import (
+    CompactionHook,
+    CompactionManager,
     CompressedMemory,
     CompressionStrategy,
+    WorkingMemoryCompressor,
+)
+from ouro.capabilities.context.env import format_context_prompt
+from ouro.capabilities.memory import (
     LongTermMemoryManager,
     MemoryManager,
     TokenTracker,
-    WorkingMemoryCompressor,
 )
-from ouro.capabilities.memory.hook import MemoryHook
 from ouro.capabilities.prompts import DEFAULT_SYSTEM_PROMPT
 from ouro.capabilities.skills import SkillInfo, SkillsRegistry, render_skills_section
 from ouro.capabilities.todo.state import TodoList
@@ -38,11 +41,12 @@ __all__ = [
     "ToolExecutor",
     # Memory
     "MemoryManager",
-    "MemoryHook",
-    "ShortTermMemory",
-    "WorkingMemoryCompressor",
     "TokenTracker",
     "LongTermMemoryManager",
+    # Compaction
+    "CompactionManager",
+    "CompactionHook",
+    "WorkingMemoryCompressor",
     "CompressedMemory",
     "CompressionStrategy",
     # Skills

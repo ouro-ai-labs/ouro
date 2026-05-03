@@ -6,7 +6,7 @@ only — never on `ouro.capabilities` or `ouro.interfaces`.
 Public SDK surface:
 
 - Loop: `Agent`, `Hook`, `ToolRegistry`, `ProgressSink`, `NullProgressSink`,
-  `LoopContext`, `CompactionDecision`, `ContinueDecision`, `ContinueKind`.
+  `LoopContext`, `ContinueDecision`, `ContinueKind`.
 - LLM types: `LLMMessage`, `LLMResponse`, `ToolCall`, `ToolResult`,
   `ToolCallBlock`, `FunctionCall`, `StopReason`.
 - LLM client: `LiteLLMAdapter`, `ModelManager`, `ModelProfile`.
@@ -48,7 +48,6 @@ from ouro.core.llm import (
 from ouro.core.log import get_log_file_path, get_logger, setup_logger
 from ouro.core.loop import (
     Agent,
-    CompactionDecision,
     ContinueDecision,
     ContinueKind,
     Hook,
@@ -78,7 +77,6 @@ __all__ = [
     "ProgressSink",
     "NullProgressSink",
     "LoopContext",
-    "CompactionDecision",
     "ContinueDecision",
     "ContinueKind",
     # LLM types

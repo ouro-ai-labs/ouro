@@ -13,14 +13,13 @@ from enum import Enum
 from typing import (
     TYPE_CHECKING,
     Any,
-    Awaitable,
-    Callable,
     Protocol,
     runtime_checkable,
 )
 
 if TYPE_CHECKING:
-    from ouro.core.llm import LLMMessage, LLMResponse, ToolCall, ToolResult
+    from ouro.core.llm import LLMMessage, LLMResponse
+    from ouro.core.loop.context import MessageListContext
     from ouro.core.loop.message_list import MessageList
 
 
@@ -88,12 +87,7 @@ class LoopContext(Protocol):
     def stop_reason_last(self) -> str | None: ...
     @property
     def progress(self) -> ProgressSink: ...
-
-
-@dataclass(frozen=True)
-class CompactionDecision:
-    compaction_prompt: LLMMessage
-    on_summary: Callable[[str, dict[str, int], MessageList], Awaitable[None] | None]
+    def add_usage(self, usage: dict[str, int] | None) -> None: ...
 
 
 class _ContinueKind(str, Enum):
@@ -125,44 +119,30 @@ ContinueKind = _ContinueKind
 
 @runtime_checkable
 class Hook(Protocol):
+    """Lifecycle hooks the agent loop dispatches.
+
+    Three integration points:
+
+    - ``on_run_start`` — once at the start of ``Agent.run``.
+      Pure fanout (all hooks run, no return value).
+    - ``on_iteration_start`` — at the top of every iteration *before*
+      the LLM call.  Pure fanout.  Hooks may mutate ``context`` in
+      place; the loop continues with the mutated state this same
+      iteration.  Used by ``CompactionHook`` to compress
+      ``context.detached`` when token usage gets close to the limit.
+    - ``on_iteration_end`` — after the LLM returns ``STOP``.  Hooks
+      vote ``ContinueDecision.stop()`` / ``cont()`` /
+      ``retry_with_feedback(...)``; the loop aggregates with
+      STOP > RETRY > CONTINUE.  Used by ``VerificationHook``.
+    """
+
     async def on_run_start(self, ctx: LoopContext, messages: MessageList) -> None: ...
-    async def on_run_end(
+    async def on_iteration_start(
         self,
         ctx: LoopContext,
-        messages: MessageList,
-        final_answer: str,
-    ) -> None: ...
-    async def before_call(
-        self,
-        ctx: LoopContext,
-        messages: MessageList,
+        context: MessageListContext,
         tools: list[dict[str, Any]],
-    ) -> list[LLMMessage]: ...
-    async def after_call(
-        self,
-        ctx: LoopContext,
-        messages: MessageList,
-        response: LLMResponse,
-    ) -> LLMResponse: ...
-    async def before_tool(self, ctx: LoopContext, tool_call: ToolCall) -> ToolCall: ...
-    async def after_tool(
-        self,
-        ctx: LoopContext,
-        tool_call: ToolCall,
-        result: ToolResult,
-    ) -> ToolResult: ...
-    async def on_tool_results(
-        self,
-        ctx: LoopContext,
-        messages: MessageList,
-        calls: list[ToolCall],
-        results: list[ToolResult],
     ) -> None: ...
-    async def on_compact_check(
-        self,
-        ctx: LoopContext,
-        messages: MessageList,
-    ) -> CompactionDecision | None: ...
     async def on_iteration_end(
         self,
         ctx: LoopContext,

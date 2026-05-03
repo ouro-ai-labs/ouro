@@ -14,9 +14,9 @@ from ouro.core.llm import LLMMessage, LLMResponse, StopReason, ToolCall, ToolRes
 from ouro.core.llm.reasoning import normalize_reasoning_effort
 from ouro.core.log import get_logger
 
+from .context import MessageListContext, RunStatistic
 from .message_list import MessageList
 from .protocols import (
-    CompactionDecision,
     ContinueDecision,
     ContinueKind,
     Hook,
@@ -27,24 +27,6 @@ from .protocols import (
 )
 
 logger = get_logger(__name__)
-
-
-class _RunContext:
-    """Mutable run state. Exposed to hooks via the LoopContext Protocol view."""
-
-    def __init__(self, task: str, progress: ProgressSink) -> None:
-        self.task = task
-        self.iteration = 0
-        self.usage_total: dict[str, int] = {}
-        self.stop_reason_last: str | None = None
-        self.progress = progress
-
-    def add_usage(self, usage: dict[str, int] | None) -> None:
-        if not usage:
-            return
-        for k, v in usage.items():
-            if isinstance(v, int):
-                self.usage_total[k] = self.usage_total.get(k, 0) + v
 
 
 class Agent:
@@ -73,133 +55,142 @@ class Agent:
     def add_hook(self, hook: Hook) -> None:
         self.hooks.append(hook)
 
-    async def run(self, task: str) -> str:
-        ctx = _RunContext(task=task, progress=self.progress)
-        messages = MessageList()
+    async def run(
+        self,
+        task: str,
+        *,
+        context: MessageListContext | None = None,
+    ) -> str:
+        # ``context`` carries the canonical conversation state across runs
+        # (system messages + a mutable detached MessageList).  When None,
+        # the loop runs in transient mode with an empty context — useful
+        # for unit tests and one-shot uses.
+        if context is None:
+            context = MessageListContext()
+        ctx = RunStatistic(task=task, progress=self.progress)
+        messages = context.detached
         await self._fanout_async("on_run_start", ctx, messages)
 
         tool_schemas = self.tools.get_tool_schemas()
         final_answer: str = ""
-        try:
-            for ctx.iteration in range(1, self.max_iterations + 1):
-                decision = await self._first_non_none_async("on_compact_check", ctx, messages)
-                if decision is not None:
-                    await self._do_compaction(ctx, messages, tool_schemas, decision)
+        for ctx.iteration in range(1, self.max_iterations + 1):
+            # Hooks may mutate ``context`` in place here (e.g.
+            # ``CompactionHook`` compresses ``context.detached``).
+            # The loop continues with whatever state they leave behind.
+            await self._fanout_async("on_iteration_start", ctx, context, tool_schemas)
+            outgoing = context.build_context()
+
+            async with self.progress.spinner(
+                "Analyzing request..." if ctx.iteration == 1 else "Processing results..."
+            ):
+                response = await self.llm.call_async(
+                    messages=outgoing,
+                    tools=tool_schemas,
+                    max_tokens=self.max_tokens_per_call,
+                    **(
+                        {"reasoning_effort": self._reasoning_effort}
+                        if self._reasoning_effort is not None
+                        else {}
+                    ),
+                )
+            ctx.stop_reason_last = response.stop_reason
+            ctx.add_usage(getattr(response, "usage", None))
+
+            extract_thinking = getattr(self.llm, "extract_thinking", None)
+            if extract_thinking is not None:
+                thinking = extract_thinking(response)
+                if thinking:
+                    self.progress.thinking(thinking)
+
+            if response.stop_reason == StopReason.STOP:
+                # Persist the assistant's final reply into the loop's
+                # canonical history so subsequent turns / verification
+                # retries see it.  Memory persistence (disk) is a hook
+                # concern; the loop only owns in-memory state.
+                messages.append(response.to_message())
+                final_answer = self.llm.extract_text(response)
+                cont = await self._aggregate_continue(ctx, messages, response, finished=True)
+                if cont.kind == ContinueKind.STOP:
+                    self.progress.final_answer(final_answer)
+                    return final_answer
+                if cont.kind == ContinueKind.RETRY:
+                    for fb in cont.feedback_messages:
+                        messages.append(fb)
                     continue
-
-                outgoing = await self._build_outgoing(ctx, messages, tool_schemas)
-
-                async with self.progress.spinner(
-                    "Analyzing request..." if ctx.iteration == 1 else "Processing results..."
-                ):
-                    response = await self.llm.call_async(
-                        messages=outgoing,
-                        tools=tool_schemas,
-                        max_tokens=self.max_tokens_per_call,
-                        **(
-                            {"reasoning_effort": self._reasoning_effort}
-                            if self._reasoning_effort is not None
-                            else {}
-                        ),
-                    )
-                response = await self._chain_response("after_call", ctx, messages, response)
-                ctx.stop_reason_last = response.stop_reason
-                ctx.add_usage(getattr(response, "usage", None))
-
-                extract_thinking = getattr(self.llm, "extract_thinking", None)
-                if extract_thinking is not None:
-                    thinking = extract_thinking(response)
-                    if thinking:
-                        self.progress.thinking(thinking)
-
-                if response.stop_reason == StopReason.STOP:
-                    final_answer = self.llm.extract_text(response)
-                    cont = await self._aggregate_continue(ctx, messages, response, finished=True)
-                    if cont.kind == ContinueKind.STOP:
-                        self.progress.final_answer(final_answer)
-                        return final_answer
-                    if cont.kind == ContinueKind.RETRY:
-                        for fb in cont.feedback_messages:
-                            messages.append(fb)
-                        continue
-                    continue
-
-                if response.stop_reason == StopReason.TOOL_CALLS:
-                    if response.content:
-                        self.progress.assistant_message(response.content)
-
-                    tool_calls = self.llm.extract_tool_calls(response)
-                    if not tool_calls:
-                        final_answer = self.llm.extract_text(response) or ""
-                        return final_answer or "No response generated."
-
-                    tool_results = await self._dispatch_tools(ctx, tool_calls)
-                    await self._fanout_async(
-                        "on_tool_results", ctx, messages, tool_calls, tool_results
-                    )
-                    continue
-
-            logger.warning("Agent.run reached max_iterations=%d without STOP", self.max_iterations)
-            return final_answer
-        finally:
-            await self._fanout_async("on_run_end", ctx, messages, final_answer)
-
-    async def _build_outgoing(
-        self,
-        ctx: LoopContext,
-        messages: MessageList,
-        tool_schemas: list[dict[str, Any]],
-    ) -> list[LLMMessage]:
-        outgoing = messages.snapshot()
-        any_called = False
-        for hook in self.hooks:
-            fn = getattr(hook, "before_call", None)
-            if fn is None:
                 continue
-            any_called = True
-            outgoing = await fn(ctx, messages, tool_schemas)
-        return outgoing if any_called else messages.snapshot()
 
-    async def _do_compaction(
-        self,
-        ctx: _RunContext,
-        messages: MessageList,
-        tool_schemas: list[dict[str, Any]],
-        decision: CompactionDecision,
-    ) -> None:
-        fork = MessageList(messages.snapshot())
-        fork.append(decision.compaction_prompt)
-        outgoing = await self._build_outgoing(ctx, fork, tool_schemas)
-        async with self.progress.spinner("Compressing memory...", title="Working"):
-            response = await self.llm.call_async(
-                messages=outgoing,
-                tools=tool_schemas,
-                max_tokens=self.max_tokens_per_call,
+            if response.stop_reason == StopReason.TOOL_CALLS:
+                if response.content:
+                    self.progress.assistant_message(response.content)
+
+                tool_calls = self.llm.extract_tool_calls(response)
+                if not tool_calls:
+                    final_answer = self.llm.extract_text(response) or ""
+                    return final_answer or "No response generated."
+
+                # Persist the assistant's tool-call message before
+                # dispatching, so the tool result messages we append
+                # below sit in the correct chronological order.
+                messages.append(response.to_message())
+                tool_results = await self._dispatch_tools(ctx, tool_calls)
+                for tc, tr in zip(tool_calls, tool_results):
+                    messages.append(
+                        LLMMessage(
+                            role="tool",
+                            content=tr.content,
+                            tool_call_id=tc.id,
+                            name=tc.name,
+                        )
+                    )
+                continue
+
+            if response.stop_reason == StopReason.LENGTH:
+                # Output was truncated by max_tokens. Any tool_calls in
+                # this response are likely to have malformed JSON args
+                # (incomplete brackets/quotes), so dispatching them
+                # would just produce parse errors and the model would
+                # retry with the same truncated output — a silent
+                # death-loop. Surface the partial text and stop.
+                partial = self.llm.extract_text(response) or ""
+                logger.warning(
+                    "Agent.run: LLM response truncated at max_tokens=%d on "
+                    "iteration %d. Returning partial answer (%d chars). "
+                    "Raise max_tokens_per_call or shorten the prompt.",
+                    self.max_tokens_per_call,
+                    ctx.iteration,
+                    len(partial),
+                )
+                final_answer = partial or f"[truncated at max_tokens={self.max_tokens_per_call}]"
+                self.progress.unfinished_answer(final_answer)
+                return final_answer
+
+            # Unknown / unexpected stop_reason — terminate instead of
+            # silently looping.
+            logger.warning(
+                "Agent.run: unhandled stop_reason=%r on iteration %d, terminating.",
+                response.stop_reason,
+                ctx.iteration,
             )
-        summary = self.llm.extract_text(response)
-        usage = getattr(response, "usage", None) or {}
-        result = decision.on_summary(summary, usage, messages)
-        if asyncio.iscoroutine(result):
-            await result
-        ctx.add_usage(usage)
+            final_answer = self.llm.extract_text(response) or final_answer
+            return final_answer or "No response generated."
+
+        logger.warning("Agent.run reached max_iterations=%d without STOP", self.max_iterations)
+        return final_answer
 
     async def _dispatch_tools(
         self,
-        ctx: _RunContext,
+        ctx: RunStatistic,
         tool_calls: list[ToolCall],
     ) -> list[ToolResult]:
-        rewritten: list[ToolCall] = [
-            await self._chain_tool_call("before_tool", ctx, tc) for tc in tool_calls
-        ]
-        all_readonly = len(rewritten) > 1 and all(
-            self.tools.is_tool_readonly(tc.name) for tc in rewritten
+        all_readonly = len(tool_calls) > 1 and all(
+            self.tools.is_tool_readonly(tc.name) for tc in tool_calls
         )
         if all_readonly:
-            return await self._exec_parallel(ctx, rewritten)
-        return await self._exec_sequential(ctx, rewritten)
+            return await self._exec_parallel(ctx, tool_calls)
+        return await self._exec_sequential(ctx, tool_calls)
 
     async def _exec_sequential(
-        self, ctx: _RunContext, tool_calls: list[ToolCall]
+        self, ctx: RunStatistic, tool_calls: list[ToolCall]
     ) -> list[ToolResult]:
         results: list[ToolResult] = []
         for tc in tool_calls:
@@ -207,13 +198,11 @@ class Agent:
             async with self.progress.spinner(f"Executing {tc.name}...", title="Working"):
                 output = await self.tools.execute_tool_call(tc.name, tc.arguments)
             self.progress.tool_result(output)
-            tr = ToolResult(tool_call_id=tc.id, content=output, name=tc.name)
-            tr = await self._chain_tool_result("after_tool", ctx, tc, tr)
-            results.append(tr)
+            results.append(ToolResult(tool_call_id=tc.id, content=output, name=tc.name))
         return results
 
     async def _exec_parallel(
-        self, ctx: _RunContext, tool_calls: list[ToolCall]
+        self, ctx: RunStatistic, tool_calls: list[ToolCall]
     ) -> list[ToolResult]:
         for tc in tool_calls:
             self.progress.tool_call(tc.name, tc.arguments)
@@ -235,64 +224,8 @@ class Agent:
         for i, tc in enumerate(tool_calls):
             output = outputs[i] or ""
             self.progress.tool_result(output)
-            tr = ToolResult(tool_call_id=tc.id, content=output, name=tc.name)
-            tr = await self._chain_tool_result("after_tool", ctx, tc, tr)
-            results.append(tr)
+            results.append(ToolResult(tool_call_id=tc.id, content=output, name=tc.name))
         return results
-
-    async def _chain_response(
-        self,
-        method: str,
-        ctx: LoopContext,
-        messages: MessageList,
-        response: LLMResponse,
-    ) -> LLMResponse:
-        out = response
-        for hook in self.hooks:
-            fn = getattr(hook, method, None)
-            if fn is None:
-                continue
-            out = await fn(ctx, messages, out)
-        return out
-
-    async def _chain_tool_call(
-        self,
-        method: str,
-        ctx: LoopContext,
-        tool_call: ToolCall,
-    ) -> ToolCall:
-        out = tool_call
-        for hook in self.hooks:
-            fn = getattr(hook, method, None)
-            if fn is None:
-                continue
-            out = await fn(ctx, out)
-        return out
-
-    async def _chain_tool_result(
-        self,
-        method: str,
-        ctx: LoopContext,
-        tool_call: ToolCall,
-        result: ToolResult,
-    ) -> ToolResult:
-        out = result
-        for hook in self.hooks:
-            fn = getattr(hook, method, None)
-            if fn is None:
-                continue
-            out = await fn(ctx, tool_call, out)
-        return out
-
-    async def _first_non_none_async(self, method: str, ctx: LoopContext, *args: Any) -> Any:
-        for hook in self.hooks:
-            fn = getattr(hook, method, None)
-            if fn is None:
-                continue
-            result = await fn(ctx, *args)
-            if result is not None:
-                return result
-        return None
 
     async def _fanout_async(self, method: str, ctx: LoopContext, *args: Any) -> None:
         for hook in self.hooks:

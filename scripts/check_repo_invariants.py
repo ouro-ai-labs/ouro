@@ -39,13 +39,19 @@ def _readlink_text(path: Path) -> str:
 def _check_agents_symlinks(root: Path) -> list[str]:
     errors: list[str] = []
 
+    # Updated for the three-layer architecture (commit c8d5017+):
+    # core / capabilities / interfaces under the ``ouro/`` package root.
+    pkg = root / "ouro"
     dirs = [
         root,
-        root / "agent",
-        root / "tools",
-        root / "llm",
-        root / "memory",
-        root / "utils" / "tui",
+        pkg,
+        pkg / "core",
+        pkg / "core" / "llm",
+        pkg / "capabilities",
+        pkg / "capabilities" / "memory",
+        pkg / "capabilities" / "tools",
+        pkg / "interfaces",
+        pkg / "interfaces" / "tui",
         root / "rfc",
         root / "docs",
         root / "test",

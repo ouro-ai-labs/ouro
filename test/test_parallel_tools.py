@@ -9,8 +9,7 @@ import pytest
 from ouro.capabilities.tools.base import BaseTool
 from ouro.capabilities.tools.executor import ToolExecutor
 from ouro.core.llm import ToolCall
-from ouro.core.loop import Agent, NullProgressSink
-from ouro.core.loop.agent import _RunContext
+from ouro.core.loop import Agent, NullProgressSink, RunStatistic
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -108,8 +107,8 @@ def _make_agent_with_tools(tools) -> Agent:
     )
 
 
-def _make_ctx() -> _RunContext:
-    return _RunContext(task="test", progress=NullProgressSink())
+def _make_ctx() -> RunStatistic:
+    return RunStatistic(task="test", progress=NullProgressSink())
 
 
 # ---------------------------------------------------------------------------
