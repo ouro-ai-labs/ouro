@@ -38,7 +38,7 @@ class Agent:
         tools: ToolRegistry,
         hooks: Sequence[Hook] = (),
         max_iterations: int = 1000,
-        max_tokens_per_call: int = 4096,
+        max_tokens_per_call: int | None = None,
         progress: ProgressSink | None = None,
     ) -> None:
         self.llm = llm
@@ -83,16 +83,18 @@ class Agent:
             async with self.progress.spinner(
                 "Analyzing request..." if ctx.iteration == 1 else "Processing results..."
             ):
-                response = await self.llm.call_async(
-                    messages=outgoing,
-                    tools=tool_schemas,
-                    max_tokens=self.max_tokens_per_call,
+                call_kwargs: dict[str, Any] = {
+                    "messages": outgoing,
+                    "tools": tool_schemas,
                     **(
                         {"reasoning_effort": self._reasoning_effort}
                         if self._reasoning_effort is not None
                         else {}
                     ),
-                )
+                }
+                if self.max_tokens_per_call is not None:
+                    call_kwargs["max_tokens"] = self.max_tokens_per_call
+                response = await self.llm.call_async(**call_kwargs)
             ctx.stop_reason_last = response.stop_reason
             ctx.add_usage(getattr(response, "usage", None))
 

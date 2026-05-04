@@ -151,7 +151,7 @@ class LiteLLMAdapter:
         self,
         messages: List[LLMMessage],
         tools: Optional[List[Dict[str, Any]]],
-        max_tokens: int,
+        max_tokens: int | None,
         **kwargs,
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """Prepare LiteLLM call parameters and converted messages."""
@@ -160,9 +160,10 @@ class LiteLLMAdapter:
         call_params: Dict[str, Any] = {
             "model": self.model,
             "messages": litellm_messages,
-            "max_tokens": max_tokens,
             "timeout": self.timeout,
         }
+        if max_tokens is not None:
+            call_params["max_tokens"] = max_tokens
 
         # Add API key if provided
         if self.api_key:
@@ -185,7 +186,7 @@ class LiteLLMAdapter:
         self,
         messages: List[LLMMessage],
         tools: Optional[List[Dict[str, Any]]] = None,
-        max_tokens: int = 4096,
+        max_tokens: int | None = None,
         **kwargs,
     ) -> LLMResponse:
         """Async LLM call via LiteLLM with automatic retry."""
