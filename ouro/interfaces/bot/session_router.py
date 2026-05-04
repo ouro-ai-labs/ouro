@@ -233,7 +233,7 @@ class SessionRouter:
         key = self._session_key(channel, conversation_id)
         agent = self._sessions.get(key)
         if agent and agent.memory is not None:
-            await agent.memory.save_memory()  # persistence stays on MemoryManager
+            await agent.save_session()
 
     async def list_persisted_sessions(self, limit: int = 20) -> list[dict[str, Any]]:
         """List persisted sessions from disk.

@@ -458,6 +458,17 @@ class ComposedAgent:
             return None
         return await self.memory.compress(context=self._context)
 
+    async def save_session(self) -> None:
+        """Persist the current conversation to disk.
+
+        No-op when memory is disabled.  Bot session_router uses this
+        on shutdown / idle eviction; ``ComposedAgent.run`` already
+        saves at the end of each turn.
+        """
+        if self.memory is None:
+            return
+        await self.memory.save_memory(context=self._context)
+
     @property
     def session_id(self) -> str | None:
         """Current memory session ID, or None if memory is disabled / not yet created."""

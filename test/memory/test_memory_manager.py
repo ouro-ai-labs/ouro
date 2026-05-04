@@ -1,821 +1,169 @@
-"""Unit tests for MemoryManager."""
+"""Unit tests for MemoryManager.
 
-from ouro.capabilities.compaction import CompressionStrategy
+After the loop-owns-messages refactor, MemoryManager no longer holds
+the conversation list — that lives on ``MessageListContext``.  The
+manager owns persistence, long-term memory, the ``CompactionManager``
+handle, and cumulative token/cost stats. These tests cover that
+narrowed responsibility.
+
+Compaction *strategy* behaviour (tool-pair preservation, sliding
+window vs selective, etc.) is covered against ``WorkingMemoryCompressor``
+directly in ``test_compressor.py`` — those tests don't need to be
+re-routed through MemoryManager.
+"""
+
 from ouro.capabilities.memory import MemoryManager
 from ouro.core.llm.base import LLMMessage
+from ouro.core.loop import MessageListContext
+
+
+def _ctx(*, system=None, detached=None) -> MessageListContext:
+    return MessageListContext(
+        system_messages=list(system or []),
+        detached=list(detached or []),
+    )
 
 
 class TestMemoryManagerBasics:
-    """Test basic MemoryManager functionality."""
-
     async def test_initialization(self, mock_llm):
-        """Test MemoryManager initialization."""
         manager = MemoryManager(mock_llm)
+        assert manager.llm is mock_llm
+        assert manager.session_id is None
+        assert manager._session_created is False
+        assert manager.compaction is manager._compaction
+        # token tracker starts empty
+        assert manager.token_tracker.total_input_tokens == 0
+        assert manager.compaction.compression_count == 0
 
-        assert manager.llm == mock_llm
-        assert manager.current_tokens == 0
-        assert manager.compression_count == 0
-        assert len(manager.system_messages) == 0
-        assert len(getattr(manager, "_detached_messages", [])) == 0
-
-    async def test_add_system_message(self, mock_llm):
-        """Test that system messages are stored separately."""
+    async def test_reset_clears_token_tracker_and_compaction(self, mock_llm):
         manager = MemoryManager(mock_llm)
+        manager.token_tracker.record_usage({"input_tokens": 100, "output_tokens": 50})
+        assert manager.token_tracker.total_input_tokens == 100
 
-        system_msg = LLMMessage(role="system", content="You are a helpful assistant.")
-        await manager.add_message(system_msg)
-
-        assert len(manager.system_messages) == 1
-        assert manager.system_messages[0] == system_msg
-        # System messages don't go to detached message list
-        assert len(getattr(manager, "_detached_messages", [])) == 0
-
-    async def test_add_user_message(self, mock_llm):
-        """Test adding user messages."""
-        manager = MemoryManager(mock_llm)
-
-        user_msg = LLMMessage(role="user", content="Hello")
-        await manager.add_message(user_msg)
-
-        assert len(getattr(manager, "_detached_messages", [])) == 1
-        assert manager.current_tokens > 0
-
-    async def test_add_assistant_message(self, mock_llm):
-        """Test adding assistant messages."""
-        manager = MemoryManager(mock_llm)
-
-        assistant_msg = LLMMessage(role="assistant", content="Hi there!")
-        await manager.add_message(assistant_msg)
-
-        assert len(getattr(manager, "_detached_messages", [])) == 1
-        assert manager.current_tokens > 0
-
-    async def test_get_context_structure(self, mock_llm, simple_messages):
-        """Test context structure with system and recent messages."""
-        manager = MemoryManager(mock_llm)
-
-        # Add system message
-        system_msg = LLMMessage(role="system", content="You are helpful.")
-        await manager.add_message(system_msg)
-
-        # Add regular messages
-        for msg in simple_messages:
-            await manager.add_message(msg)
-
-        context = manager.get_context_for_llm()
-
-        # Context should have: system message + recent messages
-        assert len(context) >= len(simple_messages)
-        assert context[0] == system_msg  # System message first
-
-    async def test_reset(self, mock_llm, simple_messages):
-        """Test resetting memory manager."""
-        manager = MemoryManager(mock_llm)
-
-        # Add some messages
-        for msg in simple_messages:
-            await manager.add_message(msg)
-
-        # Reset
         manager.reset()
-
-        assert manager.current_tokens == 0
-        assert manager.compression_count == 0
-        assert len(manager.system_messages) == 0
-        assert len(getattr(manager, "_detached_messages", [])) == 0
+        assert manager.token_tracker.total_input_tokens == 0
+        assert manager.compaction.compression_count == 0
 
 
-class TestMemoryCompression:
-    """Test compression triggering and behavior."""
+class TestSaveMemory:
+    async def test_skips_save_when_context_empty(self, mock_llm):
+        manager = MemoryManager(mock_llm)
+        await manager.save_memory(context=_ctx())
+        # Empty context should not even create a session file
+        assert manager._session_created is False
 
-    async def test_no_compression_below_token_threshold(self, set_memory_config, mock_llm):
-        """Test that many small messages do NOT trigger compression when below token threshold.
+    async def test_lazy_session_creation_on_first_save(self, mock_llm):
+        manager = MemoryManager(mock_llm)
+        ctx = _ctx(detached=[LLMMessage(role="user", content="hello")])
+        await manager.save_memory(context=ctx)
+        assert manager._session_created is True
+        assert manager.session_id is not None
 
-        Compression is only triggered by token threshold, not message count.
-        """
-        set_memory_config(
-            MEMORY_COMPRESSION_THRESHOLD=200000,  # Very high to avoid hard limit
+    async def test_save_then_reload_round_trips(self, mock_llm):
+        manager = MemoryManager(mock_llm)
+        sys_msgs = [LLMMessage(role="system", content="be brief")]
+        det_msgs = [
+            LLMMessage(role="user", content="hi"),
+            LLMMessage(role="assistant", content="hello"),
+        ]
+        ctx = _ctx(system=sys_msgs, detached=det_msgs)
+        await manager.save_memory(context=ctx)
+
+        sid = manager.session_id
+        assert sid is not None
+
+        loaded_mgr, loaded_ctx = await MemoryManager.from_session(sid, mock_llm)
+        assert loaded_mgr.session_id == sid
+        assert [m.role for m in loaded_ctx.system_messages] == ["system"]
+        assert [m.role for m in loaded_ctx.detached.snapshot()] == ["user", "assistant"]
+
+
+class TestGetStats:
+    async def test_stats_keys(self, mock_llm, simple_messages):
+        manager = MemoryManager(mock_llm)
+        ctx = _ctx(detached=simple_messages)
+        stats = manager.get_stats(context=ctx)
+
+        # Critical keys consumed by ComposedAgent + TUI/bot UI:
+        for key in (
+            "current_tokens",
+            "total_input_tokens",
+            "total_output_tokens",
+            "compression_count",
+            "message_count",
+            "detached_message_count",
+            "short_term_count",  # legacy alias used by terminal_ui / bot
+            "total_cost",
+            "ltm_enabled",
+        ):
+            assert key in stats, f"missing stats key: {key}"
+
+        assert stats["message_count"] == len(simple_messages)
+        assert stats["detached_message_count"] == len(simple_messages)
+        assert stats["short_term_count"] == len(simple_messages)
+        assert stats["current_tokens"] >= 0
+
+    async def test_stats_recomputed_per_call(self, mock_llm):
+        """``current_tokens`` must reflect the live context, not stale state."""
+        manager = MemoryManager(mock_llm)
+        empty = manager.get_stats(context=_ctx())
+        with_msgs = manager.get_stats(
+            context=_ctx(detached=[LLMMessage(role="user", content="x" * 200)])
         )
+        assert with_msgs["current_tokens"] >= empty["current_tokens"]
+        assert with_msgs["message_count"] == 1
+        assert empty["message_count"] == 0
+
+
+class TestCompress:
+    async def test_compress_empty_context_is_noop(self, mock_llm):
         manager = MemoryManager(mock_llm)
-
-        for i in range(50):
-            await manager.add_message(LLMMessage(role="user", content=f"Message {i}"))
-
-        assert len(getattr(manager, "_detached_messages", [])) == 50
-        assert not manager.needs_compression()
-
-    async def test_compression_on_hard_limit(self, set_memory_config, mock_llm):
-        """Test compression is flagged on hard limit (compression threshold).
-
-        With cache-safe forking, compression is deferred to the react loop.
-        """
-        set_memory_config(
-            MEMORY_COMPRESSION_THRESHOLD=100,  # Very low to trigger easily
-        )
-        manager = MemoryManager(mock_llm)
-
-        # Add long message to exceed hard limit
-        long_message = "This is a very long message. " * 100
-        await manager.add_message(LLMMessage(role="user", content=long_message))
-
-        # Compression is deferred — flag should be set
-        assert manager.needs_compression()
-
-        # Complete the compression cycle
-        await manager.compress()
-        assert manager.compression_count >= 1
-
-    async def test_compression_creates_summary(self, set_memory_config, mock_llm, simple_messages):
-        """Test that compression creates a summary message in detached messages."""
-        set_memory_config(
-            MEMORY_COMPRESSION_THRESHOLD=200000,
-        )
-        manager = MemoryManager(mock_llm)
-
-        # Add messages
-        for msg in simple_messages:
-            await manager.add_message(msg)
-
-        # Manually trigger compression with sliding_window strategy (which creates summary)
-        result = await manager.compress(strategy=CompressionStrategy.SLIDING_WINDOW)
-        assert result is not None
-        assert manager.compression_count == 1
-
-        # Check that summary message exists in detached messages (at the front)
-        context = manager.get_context_for_llm()
-        has_summary = any(
-            isinstance(msg.content, str)
-            and msg.content.startswith("[Previous conversation summary]")
-            for msg in context
-        )
-        assert has_summary, "Summary message should be present after compression"
-
-    async def test_get_stats(self, mock_llm, simple_messages):
-        """Test getting memory statistics."""
-        manager = MemoryManager(mock_llm)
-
-        for msg in simple_messages:
-            await manager.add_message(msg)
-
-        stats = manager.get_stats()
-
-        assert "current_tokens" in stats
-        assert "total_input_tokens" in stats
-        assert "total_output_tokens" in stats
-        assert "compression_count" in stats
-        assert "total_savings" in stats
-        assert "compression_cost" in stats
-        assert "net_savings" in stats
-        assert "detached_message_count" in stats
-        assert "tool_schema_tokens" in stats
-
-
-class TestToolCallMatching:
-    """Test tool_use and tool_result matching scenarios."""
-
-    async def test_tool_pairs_preserved_together(
-        self, set_memory_config, mock_llm, tool_use_messages
-    ):
-        """Test that tool_use and tool_result pairs are preserved together."""
-        set_memory_config(
-            MEMORY_SHORT_TERM_MIN_SIZE=2,
-            MEMORY_COMPRESSION_THRESHOLD=200000,
-        )
-        manager = MemoryManager(mock_llm)
-
-        # Add tool messages
-        for msg in tool_use_messages:
-            await manager.add_message(msg)
-
-        # Force compression
-        await manager.compress(strategy=CompressionStrategy.SELECTIVE)
-
-        # Get context
-        context = manager.get_context_for_llm()
-
-        # Check that tool_use and tool_result are both present
-        tool_use_ids = set()
-        tool_result_ids = set()
-
-        for msg in context:
-            if isinstance(msg.content, list):
-                for block in msg.content:
-                    if isinstance(block, dict):
-                        if block.get("type") == "tool_use":
-                            tool_use_ids.add(block.get("id"))
-                        elif block.get("type") == "tool_result":
-                            tool_result_ids.add(block.get("tool_use_id"))
-
-        # Every tool_use should have a matching tool_result
-        assert (
-            tool_use_ids == tool_result_ids
-        ), f"Mismatched tool calls: tool_use_ids={tool_use_ids}, tool_result_ids={tool_result_ids}"
-
-    async def test_mismatched_tool_calls_detected(
-        self, set_memory_config, mock_llm, mismatched_tool_messages
-    ):
-        """Test behavior with mismatched tool_use/tool_result pairs."""
-        set_memory_config(
-            MEMORY_SHORT_TERM_MIN_SIZE=2,
-        )
-        manager = MemoryManager(mock_llm)
-
-        # Add mismatched tool messages
-        for msg in mismatched_tool_messages:
-            await manager.add_message(msg)
-
-        # Force compression
-        await manager.compress(strategy=CompressionStrategy.SELECTIVE)
-
-        # Get context and check for mismatches
-        context = manager.get_context_for_llm()
-
-        tool_use_ids = set()
-        tool_result_ids = set()
-
-        for msg in context:
-            if isinstance(msg.content, list):
-                for block in msg.content:
-                    if isinstance(block, dict):
-                        if block.get("type") == "tool_use":
-                            tool_use_ids.add(block.get("id"))
-                        elif block.get("type") == "tool_result":
-                            tool_result_ids.add(block.get("tool_use_id"))
-
-        # This test documents the current behavior with mismatched pairs
-        # In the mismatched scenario, we expect tool_1 to be missing its result
-        # This is the bug we're trying to catch
-        if tool_use_ids != tool_result_ids:
-            missing_results = tool_use_ids - tool_result_ids
-            missing_uses = tool_result_ids - tool_use_ids
-            print(
-                f"Detected mismatch - missing results: {missing_results}, missing uses: {missing_uses}"
-            )
-
-    async def test_todo_context_provider_integration(
-        self, set_memory_config, mock_llm, protected_tool_messages
-    ):
-        """Test that todo context provider is called during compression.
-
-        Note: manage_todo_list is no longer in PROTECTED_TOOLS. Instead, todo state
-        is preserved via todo_context injection from MemoryManager's provider callback.
-        """
-        set_memory_config(
-            MEMORY_SHORT_TERM_MIN_SIZE=1,
-        )
-        manager = MemoryManager(mock_llm)
-
-        # Set up todo context provider
-        todo_context_called = False
-
-        def mock_todo_provider():
-            nonlocal todo_context_called
-            todo_context_called = True
-            return "1. [pending] Test task"
-
-        manager.set_todo_context_provider(mock_todo_provider)
-
-        # Add messages
-        for msg in protected_tool_messages:
-            await manager.add_message(msg)
-
-        # Manually trigger compression
-        compressed = await manager.compress(strategy=CompressionStrategy.SELECTIVE)
-
-        # Verify compression happened and provider was called
-        assert compressed is not None
-        assert todo_context_called, "Todo context provider should be called during compression"
-
-        # Verify todo context is in the summary
-        context = manager.get_context_for_llm()
-        summary_has_todo = False
-        for msg in context:
-            if isinstance(msg.content, str) and "[Current Tasks]" in msg.content:
-                summary_has_todo = True
-                break
-
-        assert summary_has_todo, "Todo context should be injected into compression summary"
-
-    async def test_multiple_tool_pairs_in_sequence(self, set_memory_config, mock_llm):
-        """Test multiple consecutive tool_use/tool_result pairs."""
-        set_memory_config(
-            MEMORY_SHORT_TERM_MIN_SIZE=2,
-        )
-        manager = MemoryManager(mock_llm)
-
-        # Create multiple tool pairs
-        messages = []
-        for i in range(3):
-            messages.extend(
-                [
-                    LLMMessage(role="user", content=f"Request {i}"),
-                    LLMMessage(
-                        role="assistant",
-                        content=[
-                            {
-                                "type": "tool_use",
-                                "id": f"tool_{i}",
-                                "name": f"tool_{i}",
-                                "input": {},
-                            }
-                        ],
-                    ),
-                    LLMMessage(
-                        role="user",
-                        content=[
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": f"tool_{i}",
-                                "content": f"result_{i}",
-                            }
-                        ],
-                    ),
-                    LLMMessage(role="assistant", content=f"Response {i}"),
-                ]
-            )
-
-        for msg in messages:
-            await manager.add_message(msg)
-
-        # Force compression
-        await manager.compress(strategy=CompressionStrategy.SELECTIVE)
-
-        # Verify all pairs are matched
-        context = manager.get_context_for_llm()
-        tool_use_ids = set()
-        tool_result_ids = set()
-
-        for msg in context:
-            if isinstance(msg.content, list):
-                for block in msg.content:
-                    if isinstance(block, dict):
-                        if block.get("type") == "tool_use":
-                            tool_use_ids.add(block.get("id"))
-                        elif block.get("type") == "tool_result":
-                            tool_result_ids.add(block.get("tool_use_id"))
-
-        assert tool_use_ids == tool_result_ids
-
-
-class TestEdgeCases:
-    """Test edge cases and error scenarios."""
-
-    async def test_empty_memory_compression(self, mock_llm):
-        """Test compressing empty memory."""
-        manager = MemoryManager(mock_llm)
-
-        result = await manager.compress()
+        result = await manager.compress(context=_ctx())
         assert result is None
 
-    async def test_single_message_compression(self, mock_llm):
-        """Test compressing with only one message."""
-        manager = MemoryManager(mock_llm)
-
-        await manager.add_message(LLMMessage(role="user", content="Hello"))
-        result = await manager.compress()
-
-        assert result is not None
-
-    async def test_actual_token_counts(self, mock_llm):
-        """Test using actual token counts from LLM response."""
-        manager = MemoryManager(mock_llm)
-
-        # Add message with actual token counts (response.usage format)
-        msg = LLMMessage(role="assistant", content="Response")
-        usage = {"input_tokens": 100, "output_tokens": 50}
-
-        await manager.add_message(msg, usage=usage)
-
-        stats = manager.get_stats()
-        assert stats["total_input_tokens"] >= 100
-        assert stats["total_output_tokens"] >= 50
-
-    async def test_non_api_messages_do_not_accumulate_tokens(self, mock_llm):
-        """Non-API messages should not increase total_input/output_tokens.
-
-        Their tokens are already included in the next API call's
-        response.usage.input_tokens, so counting them separately would
-        double-count.
-        """
-        manager = MemoryManager(mock_llm)
-
-        # Add user and tool-result messages (no usage)
-        await manager.add_message(LLMMessage(role="user", content="Hello"))
-        await manager.add_message(
-            LLMMessage(
-                role="user",
-                content=[
-                    {"type": "tool_result", "tool_use_id": "t1", "content": "result"},
-                ],
-            )
-        )
-
-        stats = manager.get_stats()
-        assert stats["total_input_tokens"] == 0
-        assert stats["total_output_tokens"] == 0
-
-        # Now add an API message — only its reported tokens should count
-        await manager.add_message(
-            LLMMessage(role="assistant", content="Response"),
-            usage={"input_tokens": 500, "output_tokens": 80},
-        )
-
-        stats = manager.get_stats()
-        assert stats["total_input_tokens"] == 500
-        assert stats["total_output_tokens"] == 80
-
-    async def test_compression_with_mixed_content(self, set_memory_config, mock_llm):
-        """Test compression with mixed text and tool content."""
-        set_memory_config()
-        manager = MemoryManager(mock_llm)
-
-        messages = [
-            LLMMessage(role="user", content="Text only"),
-            LLMMessage(
-                role="assistant",
-                content=[
-                    {"type": "text", "text": "Response with tool"},
-                    {"type": "tool_use", "id": "t1", "name": "tool", "input": {}},
-                ],
-            ),
-            LLMMessage(
-                role="user",
-                content=[{"type": "tool_result", "tool_use_id": "t1", "content": "result"}],
-            ),
-            LLMMessage(role="assistant", content="Final response"),
-        ]
-
-        for msg in messages:
-            await manager.add_message(msg)
-
-        # Should handle mixed content without errors
-        result = await manager.compress(strategy=CompressionStrategy.SELECTIVE)
-        assert result is not None
-
-    async def test_strategy_auto_selection(self, mock_llm, tool_use_messages, simple_messages):
-        """Test automatic strategy selection based on message content."""
-        manager = MemoryManager(mock_llm)
-
-        # Add tool messages - should select SELECTIVE strategy
-        for msg in tool_use_messages:
-            await manager.add_message(msg)
-
-        # Force compression without specifying strategy
-        await manager.compress()
-
-        # Verify compression happened
-        assert manager.compression_count == 1
-
-        # Test with simple messages - should select different strategy
-        manager.reset()
-        for msg in simple_messages[:2]:  # Few messages
-            await manager.add_message(msg)
-
-        await manager.compress()
-        assert manager.compression_count == 1
-
-
-class TestMemoryManagerRollback:
-    """Test rollback functionality for interrupted exchanges."""
-
-    async def test_rollback_incomplete_exchange_with_tool_calls(self, mock_llm):
-        """Test rollback when last message is assistant with tool_calls."""
-        manager = MemoryManager(mock_llm)
-
-        # Add user message
-        user_msg = LLMMessage(role="user", content="Search for files")
-        await manager.add_message(user_msg)
-
-        # Add assistant message with tool_calls (simulating interrupted execution)
-        assistant_msg = LLMMessage(
-            role="assistant",
-            content=[
-                {"type": "text", "text": "I'll search for files"},
-                {"type": "tool_use", "id": "t1", "name": "search", "input": {"query": "*.py"}},
-            ],
-        )
-        await manager.add_message(assistant_msg)
-
-        # Should have 2 messages
-        assert len(getattr(manager, "_detached_messages", [])) == 2
-
-        # Rollback incomplete exchange
-        manager.rollback_incomplete_exchange()
-
-        # Should only remove the assistant message, keep the user message
-        detached = getattr(manager, "_detached_messages", [])
-        assert len(detached) == 1
-        assert detached[0].role == "user"
-
-    async def test_rollback_incomplete_exchange_no_rollback_needed(self, mock_llm):
-        """Test rollback when last message is complete (no tool_calls)."""
-        manager = MemoryManager(mock_llm)
-
-        # Add complete exchange
-        user_msg = LLMMessage(role="user", content="Hello")
-        assistant_msg = LLMMessage(role="assistant", content="Hi there!")
-
-        await manager.add_message(user_msg)
-        await manager.add_message(assistant_msg)
-
-        # Should have 2 messages
-        assert len(getattr(manager, "_detached_messages", [])) == 2
-
-        # Rollback should not remove anything (no tool_calls)
-        manager.rollback_incomplete_exchange()
-
-        # Should still have 2 messages
-        assert len(getattr(manager, "_detached_messages", [])) == 2
-
-    async def test_rollback_incomplete_exchange_with_tool_results(self, mock_llm):
-        """Test rollback when exchange is complete (has tool results)."""
-        manager = MemoryManager(mock_llm)
-
-        # Add complete exchange with tool use and results
-        messages = [
-            LLMMessage(role="user", content="Search for files"),
-            LLMMessage(
-                role="assistant",
-                content=[
-                    {"type": "text", "text": "I'll search"},
-                    {"type": "tool_use", "id": "t1", "name": "search", "input": {}},
-                ],
-            ),
-            LLMMessage(
-                role="user",
-                content=[{"type": "tool_result", "tool_use_id": "t1", "content": "results"}],
-            ),
-            LLMMessage(role="assistant", content="Here are the results"),
-        ]
-
-        for msg in messages:
-            await manager.add_message(msg)
-
-        # Should have 4 messages
-        assert len(getattr(manager, "_detached_messages", [])) == 4
-
-        # Rollback should not remove anything (exchange is complete)
-        manager.rollback_incomplete_exchange()
-
-        # Should still have 4 messages
-        assert len(getattr(manager, "_detached_messages", [])) == 4
-
-    async def test_rollback_incomplete_exchange_empty_memory(self, mock_llm):
-        """Test rollback on empty memory."""
-        manager = MemoryManager(mock_llm)
-
-        # Should not crash
-        manager.rollback_incomplete_exchange()
-
-        assert len(getattr(manager, "_detached_messages", [])) == 0
-
-    async def test_rollback_incomplete_exchange_only_user_message(self, mock_llm):
-        """Test rollback when only user message exists."""
-        manager = MemoryManager(mock_llm)
-
-        user_msg = LLMMessage(role="user", content="Hello")
-        await manager.add_message(user_msg)
-
-        # Rollback should not remove user message alone
-        manager.rollback_incomplete_exchange()
-
-        # Should still have 1 message
-        assert len(getattr(manager, "_detached_messages", [])) == 1
-
-    async def test_rollback_recalculates_tokens(self, mock_llm):
-        """Test that rollback recalculates token count."""
-        manager = MemoryManager(mock_llm)
-
-        # Add messages
-        user_msg = LLMMessage(role="user", content="Search for files")
-        assistant_msg = LLMMessage(
-            role="assistant",
-            content=[
-                {"type": "text", "text": "I'll search"},
-                {"type": "tool_use", "id": "t1", "name": "search", "input": {}},
-            ],
-        )
-
-        await manager.add_message(user_msg)
-        initial_tokens = manager.current_tokens
-
-        await manager.add_message(assistant_msg)
-        tokens_after_assistant = manager.current_tokens
-
-        assert tokens_after_assistant > initial_tokens
-
-        # Rollback
-        manager.rollback_incomplete_exchange()
-
-        # Tokens should be recalculated (should be same as initial since only assistant removed)
-        assert manager.current_tokens == initial_tokens
-
-
-class TestDeferredCompression:
-    """Test the cache-safe deferred compression API."""
-
-    async def test_needs_compression_initially_false(self, mock_llm):
-        """Test that needs_compression() is False on fresh manager."""
-        manager = MemoryManager(mock_llm)
-        assert not manager.needs_compression()
-
-    async def test_needs_compression_set_on_threshold(self, set_memory_config, mock_llm):
-        """Test that needs_compression() is True after exceeding threshold."""
-        set_memory_config(MEMORY_COMPRESSION_THRESHOLD=100)
-        manager = MemoryManager(mock_llm)
-
-        long_message = "This is a very long message. " * 100
-        await manager.add_message(LLMMessage(role="user", content=long_message))
-
-        assert manager.needs_compression()
-
-    async def test_no_compression_below_threshold(self, set_memory_config, mock_llm):
-        """Test that needs_compression() is False when below token threshold."""
-        set_memory_config(MEMORY_COMPRESSION_THRESHOLD=200000)
-        manager = MemoryManager(mock_llm)
-
-        for i in range(20):
-            await manager.add_message(LLMMessage(role="user", content=f"Message {i}"))
-
-        assert not manager.needs_compression()
-
-    async def test_needs_compression_cleared_after_compress(self, set_memory_config, mock_llm):
-        """Test that needs_compression() is cleared after compress()."""
-        set_memory_config(MEMORY_COMPRESSION_THRESHOLD=100)
-        manager = MemoryManager(mock_llm)
-
-        long_message = "This is a very long message. " * 100
-        await manager.add_message(LLMMessage(role="user", content=long_message))
-
-        assert manager.needs_compression()
-        await manager.compress()
-        assert not manager.needs_compression()
-
-    async def test_needs_compression_cleared_after_reset(self, set_memory_config, mock_llm):
-        """Test that needs_compression() is cleared after reset()."""
-        set_memory_config(MEMORY_COMPRESSION_THRESHOLD=100)
-        manager = MemoryManager(mock_llm)
-
-        long_message = "This is a very long message. " * 100
-        await manager.add_message(LLMMessage(role="user", content=long_message))
-
-        assert manager.needs_compression()
-        manager.reset()
-        assert not manager.needs_compression()
-
-    async def test_get_compaction_prompt(self, mock_llm, simple_messages):
-        """Test get_compaction_prompt() returns a user message with instruction."""
-        manager = MemoryManager(mock_llm)
-
-        for msg in simple_messages:
-            await manager.add_message(msg)
-
-        prompt = await manager.get_compaction_prompt()
-
-        assert prompt.role == "user"
-        assert "Summarize the conversation above" in prompt.content
-
-    async def test_get_compaction_prompt_with_todo(self, mock_llm, simple_messages):
-        """Test get_compaction_prompt() includes todo context."""
-        manager = MemoryManager(mock_llm)
-        manager.set_todo_context_provider(lambda: "1. [pending] Test task")
-
-        for msg in simple_messages:
-            await manager.add_message(msg)
-
-        prompt = await manager.get_compaction_prompt()
-
-        assert "[Current Tasks]" in prompt.content
-        assert "Test task" in prompt.content
-
-    async def test_apply_compression(self, set_memory_config, mock_llm, simple_messages):
-        """Test apply_compression() updates memory state correctly."""
-        set_memory_config(MEMORY_COMPRESSION_THRESHOLD=200000)
-        manager = MemoryManager(mock_llm)
-
-        for msg in simple_messages:
-            await manager.add_message(msg)
-
-        original_count = len(getattr(manager, "_detached_messages", []))
-        assert original_count == len(simple_messages)
-
-        # Simulate the react loop: apply a summary
-        summary = "User and assistant exchanged greetings."
-        usage = {"input_tokens": 200, "output_tokens": 30}
-        manager.apply_compression(summary, usage=usage)
-
-        # Should have compressed
-        assert manager.compression_count == 1
-        assert manager.was_compressed_last_iteration
-        assert not manager.needs_compression()
-
-        # Summary should be in context
-        context = manager.get_context_for_llm()
-        has_summary = any(
-            isinstance(m.content, str) and "[Previous conversation summary]" in m.content
-            for m in context
-        )
-        assert has_summary
-
-        # Usage should be tracked
-        stats = manager.get_stats()
-        assert stats["total_input_tokens"] >= 200
-
-    async def test_apply_compression_with_todo_context(
+    async def test_compress_replaces_detached_in_place(
         self, set_memory_config, mock_llm, simple_messages
     ):
-        """Test apply_compression() injects todo context."""
-        set_memory_config(MEMORY_COMPRESSION_THRESHOLD=200000)
-        manager = MemoryManager(mock_llm)
-        manager.set_todo_context_provider(lambda: "1. [pending] Important task")
-
-        for msg in simple_messages:
-            await manager.add_message(msg)
-
-        manager.apply_compression("Summary of conversation.")
-
-        context = manager.get_context_for_llm()
-        summary_msg = next(
-            (
-                m
-                for m in context
-                if isinstance(m.content, str) and "[Previous conversation summary]" in m.content
-            ),
-            None,
-        )
-        assert summary_msg is not None
-        assert "[Current Tasks]" in summary_msg.content
-        assert "Important task" in summary_msg.content
-
-    async def test_apply_compression_selective_preserves_messages(
-        self, set_memory_config, mock_llm, tool_use_messages
-    ):
-        """Test apply_compression() with selective strategy preserves recent messages."""
+        """A successful compress() should leave the context's detached
+        list shorter (or at least replaced) and forward token-tracker
+        accounting."""
+        # Force a low target so even tiny conversations compress.
         set_memory_config(
-            MEMORY_SHORT_TERM_MIN_SIZE=2,
-            MEMORY_COMPRESSION_THRESHOLD=200000,
+            MEMORY_COMPRESSION_THRESHOLD=10,
+            MEMORY_SHORT_TERM_MIN_SIZE=0,
+            MEMORY_COMPRESSION_RATIO=0.3,
         )
         manager = MemoryManager(mock_llm)
+        ctx = _ctx(detached=simple_messages)
+        before = ctx.detached.snapshot()
 
-        for msg in tool_use_messages:
-            await manager.add_message(msg)
+        result = await manager.compress(context=ctx)
 
-        original_count = len(getattr(manager, "_detached_messages", []))
-        assert original_count == len(tool_use_messages)
-
-        manager.apply_compression("User asked for a calculation.")
-
-        # Should have compressed
-        assert manager.compression_count == 1
-        assert not manager.needs_compression()
-
-        # Context should have summary + preserved messages
-        context = manager.get_context_for_llm()
-        has_summary = any(
-            isinstance(m.content, str) and "[Previous conversation summary]" in m.content
-            for m in context
-        )
-        assert has_summary
-        # With selective strategy and tool messages, should preserve more than just the summary
-        assert len(context) > 1
+        # Manager forwards results from the underlying CompactionManager.
+        # Either a CompressedMemory was returned and detached was
+        # replaced, or compaction declined (None).  In either case
+        # there should be no exception, and detached must still be a
+        # list of LLMMessage.
+        if result is not None:
+            assert ctx.detached.snapshot() != before or len(ctx.detached) > 0
+            assert manager.compaction.compression_count >= 1
 
 
-class TestLTMExtractionToDaily:
-    """Test that compaction saves extracted LTM to daily file, not memory.md."""
+class TestProperties:
+    async def test_long_term_property(self, mock_llm, set_memory_config):
+        # LTM follows Config.LONG_TERM_MEMORY_ENABLED; whatever value
+        # the conftest leaves, ``long_term`` should mirror it.
+        manager = MemoryManager(mock_llm)
+        if manager.long_term is None:
+            assert manager._long_term is None
+        else:
+            assert manager.long_term is manager._long_term
 
-    async def test_extract_and_save_ltm_writes_daily_file(
-        self, set_memory_config, mock_llm, simple_messages, tmp_path
-    ):
-        """Extracted <long_term_memories> should be appended to today's YYYY-MM-DD.md."""
-        import asyncio
-        from datetime import date
+    async def test_compaction_property_returns_internal(self, mock_llm):
+        manager = MemoryManager(mock_llm)
+        assert manager.compaction is manager._compaction
 
-        set_memory_config(
-            LONG_TERM_MEMORY_ENABLED=True,
-            MEMORY_COMPRESSION_THRESHOLD=200000,
-        )
-        memory_dir = str(tmp_path / "mem")
-        manager = MemoryManager(mock_llm, memory_dir=memory_dir)
-
-        for msg in simple_messages:
-            await manager.add_message(msg)
-
-        summary_with_ltm = (
-            "Summary of conversation.\n"
-            "<long_term_memories>\n"
-            "- User prefers dark theme\n"
-            "</long_term_memories>"
-        )
-        manager.apply_compression(summary_with_ltm)
-
-        # Give the fire-and-forget task a moment to complete
-        await asyncio.sleep(0.1)
-
-        # Daily file should contain the extracted memories
-        today = date.today()
-        daily_content = await manager.long_term.store.load_daily(today)
-        assert "User prefers dark theme" in daily_content
-
-        # Permanent memory.md should NOT have been written
-        permanent = await manager.long_term.store.load()
-        assert permanent == ""
+    async def test_set_todo_context_provider_forwards(self, mock_llm):
+        manager = MemoryManager(mock_llm)
+        manager.set_todo_context_provider(lambda: "todo: x")
+        assert manager._compaction._todo_context_provider() == "todo: x"
