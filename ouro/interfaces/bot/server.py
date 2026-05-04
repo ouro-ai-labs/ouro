@@ -114,7 +114,7 @@ class BotServer:
             agent = await self._router.get_or_create_agent(msg.channel, msg.conversation_id)
             assert agent.memory is not None  # bot agents always enable memory
             try:
-                result = await agent.memory.compress()
+                result = await agent.compact_memory()
             except Exception:
                 logger.exception("Compression failed for %s:%s", msg.channel, msg.conversation_id)
                 await channel.send_message(
@@ -151,7 +151,7 @@ class BotServer:
                 )
                 return True
 
-            stats = agent.memory.get_stats()
+            stats = agent.get_memory_stats()
             age = self._router.get_session_age(msg.channel, msg.conversation_id)
             age_str = _format_duration(age) if age is not None else "unknown"
 

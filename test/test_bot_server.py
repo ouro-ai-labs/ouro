@@ -381,18 +381,18 @@ async def test_command_reset_alias(bot_server, fake_channel, mock_router):
 
 
 async def test_command_compact(bot_server, fake_channel, mock_router):
-    """'/compact' calls agent.memory.compress() and reports savings."""
+    """'/compact' calls agent.compact_memory() and reports savings."""
     mock_result = MagicMock()
     mock_result.original_message_count = 20
     mock_result.token_savings = 1500
     mock_result.savings_percentage = 45.0
 
     agent = await mock_router.get_or_create_agent("test", "conv_cmd")
-    agent.memory.compress = AsyncMock(return_value=mock_result)
+    agent.compact_memory = AsyncMock(return_value=mock_result)
 
     await bot_server._process_message(fake_channel, _make_msg("/compact"))
 
-    agent.memory.compress.assert_awaited_once()
+    agent.compact_memory.assert_awaited_once()
     assert len(fake_channel.sent_messages) == 1
     reply = fake_channel.sent_messages[0].text
     assert "20 messages" in reply
@@ -403,7 +403,7 @@ async def test_command_compact(bot_server, fake_channel, mock_router):
 async def test_command_compact_nothing_to_compress(bot_server, fake_channel, mock_router):
     """'/compact' with nothing to compress returns appropriate message."""
     agent = await mock_router.get_or_create_agent("test", "conv_cmd")
-    agent.memory.compress = AsyncMock(return_value=None)
+    agent.compact_memory = AsyncMock(return_value=None)
 
     await bot_server._process_message(fake_channel, _make_msg("/compact"))
 
@@ -413,13 +413,15 @@ async def test_command_compact_nothing_to_compress(bot_server, fake_channel, moc
 async def test_command_status(bot_server, fake_channel, mock_router):
     """'/status' returns session statistics."""
     agent = await mock_router.get_or_create_agent("test", "conv_cmd")
-    agent.memory.get_stats.return_value = {
-        "current_tokens": 5000,
-        "total_input_tokens": 12000,
-        "total_output_tokens": 3000,
-        "compression_count": 1,
-        "short_term_count": 15,
-    }
+    agent.get_memory_stats = MagicMock(
+        return_value={
+            "current_tokens": 5000,
+            "total_input_tokens": 12000,
+            "total_output_tokens": 3000,
+            "compression_count": 1,
+            "short_term_count": 15,
+        }
+    )
 
     await bot_server._process_message(fake_channel, _make_msg("/status"))
 
