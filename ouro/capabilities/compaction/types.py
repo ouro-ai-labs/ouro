@@ -1,4 +1,4 @@
-"""Data types for memory management system."""
+"""Data types for compaction / compression system."""
 
 from dataclasses import dataclass, field
 from datetime import datetime

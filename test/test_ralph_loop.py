@@ -9,8 +9,7 @@ import pytest
 from ouro.capabilities.verification.hook import VerificationHook
 from ouro.capabilities.verification.verifier import LLMVerifier, VerificationResult, Verifier
 from ouro.core.llm import LLMMessage, LLMResponse, StopReason
-from ouro.core.loop import NullProgressSink
-from ouro.core.loop.agent import _RunContext
+from ouro.core.loop import NullProgressSink, RunStatistic
 from ouro.core.loop.message_list import MessageList
 from ouro.core.loop.protocols import ContinueKind
 
@@ -23,8 +22,8 @@ def _make_response(content: str = "answer") -> LLMResponse:
     )
 
 
-def _make_ctx(task: str = "Do something") -> _RunContext:
-    return _RunContext(task=task, progress=NullProgressSink())
+def _make_ctx(task: str = "Do something") -> RunStatistic:
+    return RunStatistic(task=task, progress=NullProgressSink())
 
 
 class _StubVerifier:

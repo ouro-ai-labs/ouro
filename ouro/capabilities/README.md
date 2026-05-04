@@ -1,4 +1,4 @@
-# `ouro.capabilities` — Tools, Memory, Skills, Verification
+# `ouro.capabilities` — Tools, Memory, Compaction, Skills, Verification
 
 The middle layer. Built on `ouro.core`. The canonical Python SDK most
 users interact with.
@@ -12,12 +12,15 @@ ouro.capabilities
 │   ├── base.py
 │   ├── executor.py          # implements ouro.core ToolRegistry
 │   └── builtins/            # FileReadTool, ShellTool, GrepTool, …
-├── memory/                  # MemoryManager + MemoryHook
-│   ├── manager.py           # short/long-term + persistence
-│   ├── compressor.py        # LLM-driven compaction
+├── memory/                  # MemoryManager (long-term + persistence)
+│   ├── manager.py           # session save/load, long-term memory wiring
 │   ├── long_term/           # ~/.ouro/memory/*.md daily notes
-│   ├── store/               # YAML session persistence
-│   └── hook.py              # MemoryHook (loop integration)
+│   └── store/               # YAML session persistence
+├── compaction/              # CompactionManager + CompactionHook
+│   ├── manager.py           # decide when / target tokens / build prompt
+│   ├── compressor.py        # LLM-driven summarization
+│   ├── hook.py              # CompactionHook (loop integration)
+│   └── types.py             # CompressedMemory, CompressionStrategy
 ├── skills/                  # progressive-disclosure skill registry
 ├── verification/            # Verifier + LLMVerifier + VerificationHook (Ralph)
 ├── todo/                    # TodoList state
@@ -36,13 +39,17 @@ from ouro.capabilities import (
     BaseTool,
     ToolExecutor,
 
-    # Memory
+    # Memory (long-term + persistence)
     MemoryManager,
-    MemoryHook,
-    ShortTermMemory,
-    WorkingMemoryCompressor,
     TokenTracker,
     LongTermMemoryManager,
+
+    # Compaction (working-memory compression)
+    CompactionManager,
+    CompactionHook,
+    WorkingMemoryCompressor,
+    CompressedMemory,
+    CompressionStrategy,
 
     # Skills
     SkillsRegistry,
@@ -118,10 +125,11 @@ asyncio.run(main())
 `ComposedAgent` wraps `ouro.core.loop.Agent` and exposes back-compat
 proxies the TUI/bot rely on.
 
-For resumed-session UI, prefer these `ComposedAgent` helpers instead of
-reaching into `agent.memory.short_term` directly. The loop owns transient
-per-run messages; `MemoryHook`/`MemoryManager` own the persisted history
-snapshot exposed here.
+`ComposedAgent` owns a single `MessageListContext` that lives across
+turns — system messages added on the first run, user / assistant /
+tool messages accumulated by the loop. UI consumers should read it
+through `get_session_messages()` rather than reaching into the
+context directly.
 
 ```python
 agent.memory                 # MemoryManager (or None if .without_memory())
@@ -138,44 +146,41 @@ agent.get_current_model_info()
 
 `agent.run(task, *, verify=False, images=None)` handles:
 - system prompt assembly (default + context + LTM + skills + soul) on
-  the first turn,
+  the first turn (appended to `context.system_messages`),
 - multimodal user message construction when `images` are provided,
-- dispatch into the core loop, whose per-run message state is transient,
-  while `MemoryHook` / `MemoryManager` own persisted conversation
-  history when memory is enabled,
+  appended to `context.detached`,
+- dispatch into the core loop, which appends assistant + tool result
+  messages to `context.detached` directly,
 - placeholder substitution for image blocks before persistence so
   saved YAML sessions stay small,
-- memory stats + flush at the end.
+- memory stats + persist-to-disk at the end via
+  `memory.save_memory(context=...)`.
 
 ## Hooks
 
 Two first-party hooks ship with this layer. Both are wired
 automatically by `AgentBuilder`:
 
-### MemoryHook
+### CompactionHook
 
-Adapts `MemoryManager` into the loop:
+Adapts `CompactionManager` into the loop. Implements only
+`on_iteration_start`:
 
-- `before_call`: substitutes the loop's transient message snapshot with
-  `memory.get_context_for_llm()` and registers tool schemas for
-  compaction accounting.
-- UI/session-history consumers should treat that substituted context as an
-  implementation detail and use `ComposedAgent.get_session_messages()` /
-  `.get_session_message_count()` instead of reading memory internals.
-- `after_call`: persists the assistant response with usage.
-- `after_tool`: persists the tool result message.
-- `on_compact_check`: returns `CompactionDecision` when memory says
-  it needs compression; the cache-safe fork call is performed by the
-  core loop.
+1. Snapshots `context.detached`, estimates tokens, calls
+   `should_compress(tokens)`.
+2. If compression is needed: builds a cache-safe fork
+   (`system_messages + detached + compaction_prompt`), runs its own
+   LLM call to produce a summary, applies `apply_compression(...)`,
+   and replaces `context.detached` in place.
+3. Returns. The loop runs its normal LLM call this same iteration
+   with the compressed history.
 
 ### VerificationHook
 
-Ralph-style outer loop:
-
-- `on_run_start`: resets per-run state.
-- `on_iteration_end(finished=True)`: runs the verifier; returns
-  `STOP` if complete, `RETRY_WITH_FEEDBACK` if not, `STOP` once
-  `max_iterations` is reached.
+Ralph-style outer loop. Implements `on_run_start` (reset state) and
+`on_iteration_end(finished=True)` (run the verifier; return
+`STOP` if complete, `RETRY_WITH_FEEDBACK` if not, `STOP` once
+`max_iterations` is reached).
 
 Bring your own verifier by passing `Verifier`-conforming objects:
 

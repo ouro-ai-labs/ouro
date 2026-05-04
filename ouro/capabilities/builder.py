@@ -25,10 +25,16 @@ from ouro.core.llm import (
     display_reasoning_effort,
 )
 from ouro.core.log import get_logger
-from ouro.core.loop import Agent, Hook, NullProgressSink, ProgressSink
+from ouro.core.loop import (
+    Agent,
+    Hook,
+    MessageListContext,
+    NullProgressSink,
+    ProgressSink,
+)
 
+from .compaction.hook import CompactionHook
 from .context.env import format_context_prompt
-from .memory.hook import MemoryHook
 from .memory.manager import MemoryManager
 from .prompts import DEFAULT_SYSTEM_PROMPT
 from .skills.registry import SkillsRegistry
@@ -176,7 +182,7 @@ class AgentBuilder:
 
         # Memory + hook (optional but typically on).
         # `Hook` is a structural Protocol with method-level optionality —
-        # capability hooks (MemoryHook, VerificationHook) implement only the
+        # capability hooks (CompactionHook, VerificationHook) implement only the
         # methods they care about, and the loop dispatches via getattr.
         # Mypy can't see that, so we keep the runtime list as `list[Any]`.
         memory: MemoryManager | None = None
@@ -189,7 +195,7 @@ class AgentBuilder:
                 progress=self.progress,
             )
             memory.set_todo_context_provider(_make_todo_context_provider(todo_list))
-            hooks.append(MemoryHook(memory))
+            hooks.append(CompactionHook(memory.compaction))
 
         # Verification hook (off by default).
         if self.verification_max_iterations > 0:
@@ -294,6 +300,11 @@ class ComposedAgent:
         self._progress = progress
         self._sessions_dir = sessions_dir
         self._memory_dir = memory_dir
+        # Persistent conversation state across multi-turn runs.  System
+        # messages stay fixed after the first turn; detached messages
+        # accumulate user / assistant / tool exchanges.  The core loop
+        # appends to ``_context.detached`` directly during ``run()``.
+        self._context = MessageListContext()
 
         # Wire any tool that needs the agent reference (e.g., MultiTaskTool).
         for t in tool_executor.tools.values() if hasattr(tool_executor, "tools") else []:
@@ -310,15 +321,15 @@ class ComposedAgent:
         images: Sequence[ImageInput] | None = None,
     ) -> str:
         if self.memory is None:
-            return await self._core.run(task)
+            return await self._core.run(task, context=self._context)
 
-        # 1) System prompt — only on first turn (memory.system_messages empty).
-        if not self.memory.system_messages:
+        # 1) System prompt — only on first turn.
+        if not self._context.has_system_messages:
             await self._add_system_prompt()
 
         # 2) User message (text or multimodal with images).
         user_msg = await self._build_user_message(task, images)
-        await self.memory.add_message(user_msg)
+        self._context.detached.append(user_msg)
 
         # 3) Verification toggle is decided at build time. If caller asks for
         # verify=True but we didn't wire a VerificationHook, log a warning.
@@ -329,10 +340,9 @@ class ComposedAgent:
                 "back to plain ReAct loop."
             )
 
-        # 4) Drive the core loop. In memory-backed mode the MemoryHook owns
-        # persisted conversation history; the core loop's local MessageList is
-        # just transient per-run state.
-        result = await self._core.run(task)
+        # 4) Drive the core loop.  The loop owns the conversation list
+        # via ``_context``; hooks observe but don't substitute.
+        result = await self._core.run(task, context=self._context)
 
         # 5) Replace any image content blocks with text placeholders to keep
         # the persisted memory small.
@@ -349,10 +359,10 @@ class ComposedAgent:
         # 6) Stats + flush.
         import contextlib
 
-        stats = self.memory.get_stats()
+        stats = self.memory.get_stats(context=self._context)
         with contextlib.suppress(Exception):  # pragma: no cover — UI path
             self._progress.info(_format_memory_stats_line(stats))
-        await self.memory.save_memory()
+        await self.memory.save_memory(context=self._context)
         return result
 
     # ---- proxies ------------------------------------------------------------
@@ -382,7 +392,7 @@ class ComposedAgent:
     async def load_session(self, session_id: str) -> None:
         if self.memory is None:
             raise RuntimeError("Cannot load_session: memory is not enabled.")
-        self.memory = await MemoryManager.from_session(
+        self.memory, loaded = await MemoryManager.from_session(
             session_id,
             self.llm,
             sessions_dir=self._sessions_dir,
@@ -390,48 +400,53 @@ class ComposedAgent:
             progress=self._progress,
         )
         self.memory.set_todo_context_provider(_make_todo_context_provider(self.todo_list))
-        # Re-bind in MemoryHook (recreate or rewire).
+        # Replace persistent conversation context with what was loaded.
+        self._context = loaded
+        # Re-bind in CompactionHook (recreate or rewire).
         for hook in self._core.hooks:
-            if isinstance(hook, MemoryHook):
-                hook.memory = self.memory
+            if isinstance(hook, CompactionHook):
+                hook.compaction = self.memory.compaction
                 break
 
     def get_memory_stats(self) -> dict:
         if self.memory is None:
             return {}
-        return self.memory.get_stats()
+        return self.memory.get_stats(context=self._context)
 
     def get_session_messages(self) -> list[LLMMessage]:
         """Return persisted conversation messages for UI/session display.
 
-        The core loop owns per-run transient message state. UI surfaces that
-        need resumed-session history should go through this convenience method
-        instead of reaching into `memory.short_term` directly.
+        Reads from the loop-owned ``MessageListContext`` (system + detached).
         """
-        if self.memory is None:
-            return []
-        return self.memory.get_context_for_llm()
+        return self._context.build_context()
 
     def get_session_message_count(self) -> int:
         """Return the number of persisted messages available for session UI."""
         return len(self.get_session_messages())
 
     def reset_memory(self) -> None:
-        """Reset the agent's memory state (clear short-term + system messages).
+        """Reset the agent's conversation state (system + detached messages).
 
-        This is a convenience proxy so UI layers don't reach into
-        `memory.reset()` directly.
+        Long-term memory (cross-session) and persistence-side state on
+        ``MemoryManager`` are preserved.
         """
+        self._context.clear_system_messages()
+        self._context.detached.clear()
         if self.memory is not None:
             self.memory.reset()
 
     def rollback_incomplete_exchange(self) -> None:
         """Roll back the last incomplete assistant response with tool_calls.
 
-        This prevents API errors about missing tool responses on the next turn.
+        Prevents API errors about missing tool responses on the next turn.
         """
-        if self.memory is not None:
-            self.memory.rollback_incomplete_exchange()
+        snap = self._context.detached.snapshot()
+        if not snap:
+            return
+        last = snap[-1]
+        if last.role == "assistant" and getattr(last, "tool_calls", None):
+            self._context.detached.replace(snap[:-1])
+            logger.debug("Removed incomplete assistant message with tool_calls")
 
     async def compact_memory(self):
         """Trigger a manual memory compression.
@@ -441,7 +456,7 @@ class ComposedAgent:
         """
         if self.memory is None:
             return None
-        return await self.memory.compress()
+        return await self.memory.compress(context=self._context)
 
     @property
     def session_id(self) -> str | None:
@@ -527,7 +542,7 @@ class ComposedAgent:
                 + self.soul_section
                 + "\n</soul>"
             )
-        await self.memory.add_message(LLMMessage(role="system", content=system_content))
+        self._context.add_system_message(LLMMessage(role="system", content=system_content))
 
     async def _build_user_message(
         self, task: str, images: Sequence[ImageInput] | None
