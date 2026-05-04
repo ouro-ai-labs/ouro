@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Callable
 
 from ouro.config import Config
 from ouro.core.llm.content_utils import content_has_tool_calls
@@ -38,9 +38,8 @@ def _extract_ltm_block(text: str) -> str:
 
 
 if TYPE_CHECKING:
-    from ouro.core.llm import LiteLLMAdapter
-
     from ouro.capabilities.memory.long_term import LongTermMemoryManager
+    from ouro.core.llm import LiteLLMAdapter
 
 
 class CompactionManager:
@@ -55,8 +54,8 @@ class CompactionManager:
 
     def __init__(
         self,
-        llm: "LiteLLMAdapter",
-        long_term: Optional["LongTermMemoryManager"] = None,
+        llm: LiteLLMAdapter,
+        long_term: LongTermMemoryManager | None = None,
     ) -> None:
         self.llm = llm
         self.compressor = WorkingMemoryCompressor(llm)
@@ -71,13 +70,13 @@ class CompactionManager:
         self._compression_needed = False
 
         # Optional callback to get current todo context for compression
-        self._todo_context_provider: Optional[Callable[[], Optional[str]]] = None
+        self._todo_context_provider: Callable[[], str | None] | None = None
 
     # ------------------------------------------------------------------
     # Policy / decision-making
     # ------------------------------------------------------------------
 
-    def should_compress(self, current_tokens: int) -> tuple[bool, Optional[str]]:
+    def should_compress(self, current_tokens: int) -> tuple[bool, str | None]:
         """Check if compression should be triggered.
 
         Args:
@@ -110,7 +109,7 @@ class CompactionManager:
         """Clear the deferred compression flag."""
         self._compression_needed = False
 
-    def estimate_tokens(self, messages: List[LLMMessage]) -> int:
+    def estimate_tokens(self, messages: list[LLMMessage]) -> int:
         """Estimate the token cost of a message list.
 
         Used by ``CompactionHook`` each iteration to decide whether
@@ -126,7 +125,7 @@ class CompactionManager:
 
     async def build_compaction_prompt(
         self,
-        messages: List[LLMMessage],
+        messages: list[LLMMessage],
         current_tokens: int,
     ) -> LLMMessage:
         """Build the compaction instruction as a user message.
@@ -150,9 +149,7 @@ class CompactionManager:
 
         strategy = self._select_strategy(messages)
         target_tokens = self._calculate_target_tokens(current_tokens)
-        todo_context = (
-            self._todo_context_provider() if self._todo_context_provider else None
-        )
+        todo_context = self._todo_context_provider() if self._todo_context_provider else None
 
         # Read today's daily file so the LLM knows what's already saved
         existing_memories = ""
@@ -160,9 +157,7 @@ class CompactionManager:
             try:
                 existing_memories = await self._long_term.store.load_daily(date.today())
             except Exception:
-                logger.debug(
-                    "Failed to read today's daily file for compaction", exc_info=True
-                )
+                logger.debug("Failed to read today's daily file for compaction", exc_info=True)
 
         prompt_text = self.compressor.build_compaction_prompt(
             messages,
@@ -177,7 +172,7 @@ class CompactionManager:
     # Legacy alias
     async def get_compaction_prompt(
         self,
-        messages: List[LLMMessage],
+        messages: list[LLMMessage],
         current_tokens: int,
     ) -> LLMMessage:
         """Deprecated — use ``build_compaction_prompt()`` instead."""
@@ -190,9 +185,9 @@ class CompactionManager:
     def apply_compression(
         self,
         summary_text: str,
-        messages: List[LLMMessage],
-        usage: Optional[Dict[str, int]] = None,
-    ) -> List[LLMMessage]:
+        messages: list[LLMMessage],
+        usage: dict[str, int] | None = None,
+    ) -> list[LLMMessage]:
         """Apply the LLM's summary to compress a message list.
 
         When long-term memory is enabled, this also extracts and persists
@@ -211,9 +206,7 @@ class CompactionManager:
             return list(messages)
 
         strategy = self._select_strategy(messages)
-        todo_context = (
-            self._todo_context_provider() if self._todo_context_provider else None
-        )
+        todo_context = self._todo_context_provider() if self._todo_context_provider else None
 
         logger.info(
             f"🗜️  Applying compression to {len(messages)} messages using {strategy} strategy"
@@ -238,9 +231,7 @@ class CompactionManager:
 
         # Assemble final message list and calculate metrics
         original_tokens = self.compressor._estimate_tokens(messages)
-        result_messages = self._assemble_compressed_messages(
-            messages, summary_message, strategy
-        )
+        result_messages = self._assemble_compressed_messages(messages, summary_message, strategy)
         compressed_tokens = self.compressor._estimate_tokens(result_messages)
         token_savings = original_tokens - compressed_tokens
 
@@ -252,12 +243,8 @@ class CompactionManager:
         # Clear the deferred flag
         self._compression_needed = False
 
-        compression_ratio = (
-            compressed_tokens / original_tokens if original_tokens > 0 else 0
-        )
-        savings_pct = (
-            (token_savings / original_tokens * 100) if original_tokens > 0 else 0
-        )
+        compression_ratio = compressed_tokens / original_tokens if original_tokens > 0 else 0
+        savings_pct = (token_savings / original_tokens * 100) if original_tokens > 0 else 0
         logger.info(
             f"✅ Compression complete: {original_tokens} → {compressed_tokens} tokens "
             f"({savings_pct:.1f}% saved, ratio: {compression_ratio:.2f}), "
@@ -272,10 +259,10 @@ class CompactionManager:
 
     async def compress(
         self,
-        messages: List[LLMMessage],
-        strategy: Optional[str] = None,
-        target_tokens: Optional[int] = None,
-    ) -> Optional[CompressedMemory]:
+        messages: list[LLMMessage],
+        strategy: str | None = None,
+        target_tokens: int | None = None,
+    ) -> CompressedMemory | None:
         """Compress messages using the compressor.
 
         After compression, the compressed messages (including any summary as
@@ -298,9 +285,7 @@ class CompactionManager:
         if strategy is None:
             strategy = self._select_strategy(messages)
 
-        logger.info(
-            f"🗜️  Compressing {message_count} messages using {strategy} strategy"
-        )
+        logger.info(f"🗜️  Compressing {message_count} messages using {strategy} strategy")
 
         try:
             # Get todo context if provider is set
@@ -345,17 +330,15 @@ class CompactionManager:
     # Helpers
     # ------------------------------------------------------------------
 
-    def set_todo_context_provider(
-        self, provider: Callable[[], Optional[str]]
-    ) -> None:
+    def set_todo_context_provider(self, provider: Callable[[], str | None]) -> None:
         """Set a callback to provide current todo context for compression."""
         self._todo_context_provider = provider
 
-    def set_long_term(self, long_term: Optional["LongTermMemoryManager"]) -> None:
+    def set_long_term(self, long_term: LongTermMemoryManager | None) -> None:
         """Set the long-term memory manager."""
         self._long_term = long_term
 
-    def _select_strategy(self, messages: List[LLMMessage]) -> str:
+    def _select_strategy(self, messages: list[LLMMessage]) -> str:
         """Auto-select compression strategy based on message characteristics."""
         has_tool_calls = any(self._message_has_tool_calls(msg) for msg in messages)
 
@@ -382,10 +365,10 @@ class CompactionManager:
 
     def _assemble_compressed_messages(
         self,
-        messages: List[LLMMessage],
+        messages: list[LLMMessage],
         summary_message: LLMMessage,
         strategy: str,
-    ) -> List[LLMMessage]:
+    ) -> list[LLMMessage]:
         """Assemble the post-compression message list."""
         if strategy == CompressionStrategy.SELECTIVE:
             preserved, _ = self.compressor._separate_messages(messages)
@@ -412,9 +395,7 @@ class CompactionManager:
                     len(new_memories),
                 )
             except Exception:
-                logger.warning(
-                    "Failed to save long-term memories during compaction", exc_info=True
-                )
+                logger.warning("Failed to save long-term memories during compaction", exc_info=True)
 
         try:
             loop = asyncio.get_running_loop()

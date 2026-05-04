@@ -12,7 +12,11 @@ the injected `ProgressSink` Protocol from `ouro.core.loop`.
 
 - `tools/` — `BaseTool` interface, `ToolExecutor` (implements the
   core `ToolRegistry` Protocol), and 13 builtins under `builtins/`.
-- `memory/` — `MemoryManager` + persistence + `MemoryHook`.
+- `memory/` — `MemoryManager` (long-term memory + session
+  persistence). The conversation list itself lives on the loop's
+  `MessageListContext`, not in memory.
+- `compaction/` — `CompactionManager` + `WorkingMemoryCompressor`
+  + `CompactionHook` (the only hook that pre-empts an iteration).
 - `skills/` — registry, parser, render, installer, bundled system data.
 - `verification/` — `Verifier` Protocol + `LLMVerifier` +
   `VerificationHook` (Ralph-style outer loop).
@@ -28,11 +32,11 @@ the injected `ProgressSink` Protocol from `ouro.core.loop`.
   Prefer native async; if unavoidable, use `asyncio.to_thread` with
   timeouts and cancellation.
 
-## Editing memory / verification / hooks
+## Editing memory / compaction / verification / hooks
 
-- `MemoryHook` and `VerificationHook` are the only first-party hooks.
-  Their composition with `core.loop.Agent` is described in
-  `ouro/CLAUDE.md`.
+- `CompactionHook` and `VerificationHook` are the only first-party
+  hooks. Their composition with `core.loop.Agent` is described in
+  `ouro/CLAUDE.md` and `ouro/core/README.md`.
 - If you change compaction strategy or persistence shape, run
   `./scripts/dev.sh test -q test/memory/`.
 - If you change the Ralph outer loop, run `./scripts/dev.sh test -q
@@ -51,5 +55,9 @@ the injected `ProgressSink` Protocol from `ouro.core.loop`.
 ## Adding a new hook
 
 Implement the relevant `Hook` Protocol method(s) (defined in
-`ouro.core.loop.protocols`). Don't subclass — Protocol is structural.
-Pass it through `AgentBuilder.with_hook(...)`.
+`ouro.core.loop.protocols` — currently `on_run_start`,
+`on_iteration_start`, `on_iteration_end`). Don't subclass `Hook` —
+Protocol is structural, and inheriting it pulls in `...` method
+bodies that resolve to `return None` at runtime, silently
+clobbering chain semantics for any future hook method that returns
+a value. Pass the hook through `AgentBuilder.with_hook(...)`.

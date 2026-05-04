@@ -32,7 +32,8 @@ arguments).
 
 ### `ouro.capabilities` — built on core
 - Tools (BaseTool + builtins + ToolExecutor implementing ToolRegistry).
-- Memory (MemoryManager + MemoryHook for the loop).
+- Memory (MemoryManager — long-term memory + session persistence).
+- Compaction (CompactionManager + CompactionHook for the loop).
 - Skills (registry, render, parser, installer).
 - Verification (Verifier protocol + LLMVerifier + VerificationHook).
 - Todo state, context env, prompts.

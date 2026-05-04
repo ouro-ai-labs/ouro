@@ -15,4 +15,4 @@ __all__ = [
     "CompactionManager",
     "CompressionStrategy",
     "WorkingMemoryCompressor",
-] 
+]
