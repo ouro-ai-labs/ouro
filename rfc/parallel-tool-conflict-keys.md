@@ -134,7 +134,10 @@ This preserves emit order and never reorders calls across a conflict.
 ### 4. Built-in opt-ins (this PR)
 
 - `FileWriteTool` → `{os.path.abspath(file_path)}`
-- (Future PRs can add `SmartEditTool`, `EditTool` if it lands, etc.)
+- `SmartEditTool` → `{os.path.abspath(file_path)}` (all three modes —
+  `diff_replace` / `smart_insert` / `block_edit` — touch only `file_path`;
+  the optional `.bak` companion lives at `path + ".bak"`, so disjoint
+  inputs produce disjoint backup paths automatically).
 
 ## Alternatives Considered
 

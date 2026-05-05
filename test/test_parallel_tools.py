@@ -360,6 +360,25 @@ def test_file_write_tool_conflict_keys_missing_path_is_none():
     assert tool.conflict_keys(file_path="") is None
 
 
+def test_smart_edit_tool_conflict_keys_returns_abs_path():
+    """SmartEditTool opts in via abspath of file_path (all edit modes)."""
+    import os
+
+    from ouro.capabilities.tools.builtins.smart_edit import SmartEditTool
+
+    tool = SmartEditTool()
+    keys = tool.conflict_keys(file_path="relative/path.py", mode="diff_replace")
+    assert keys == {os.path.abspath("relative/path.py")}
+
+
+def test_smart_edit_tool_conflict_keys_missing_path_is_none():
+    from ouro.capabilities.tools.builtins.smart_edit import SmartEditTool
+
+    tool = SmartEditTool()
+    assert tool.conflict_keys() is None
+    assert tool.conflict_keys(file_path="") is None
+
+
 # ---------------------------------------------------------------------------
 # _dispatch_tools: end-to-end with mixed readonly + scoped writes
 # ---------------------------------------------------------------------------
