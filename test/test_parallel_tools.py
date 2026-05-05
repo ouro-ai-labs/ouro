@@ -67,6 +67,16 @@ class WritableStubTool(BaseTool):
         return self._result
 
 
+class ScopedWritableStubTool(WritableStubTool):
+    """Writable stub that declares its conflict scope from arguments."""
+
+    def conflict_keys(self, **kwargs):
+        path = kwargs.get("path")
+        if not isinstance(path, str) or not path:
+            return None
+        return {path}
+
+
 class FailingStubTool(BaseTool):
     """A readonly stub tool that raises an exception."""
 
@@ -91,10 +101,10 @@ class FailingStubTool(BaseTool):
         raise RuntimeError("tool failed")
 
 
-def _make_tool_call(name: str, call_id: str = "") -> ToolCall:
+def _make_tool_call(name: str, call_id: str = "", **arguments) -> ToolCall:
     if not call_id:
         call_id = f"call_{name}"
-    return ToolCall(id=call_id, name=name, arguments={})
+    return ToolCall(id=call_id, name=name, arguments=arguments)
 
 
 def _make_agent_with_tools(tools) -> Agent:
@@ -147,29 +157,91 @@ def test_is_tool_readonly_unknown_tool():
 
 
 # ---------------------------------------------------------------------------
-# Parallel vs sequential dispatch decision
+# BaseTool.conflict_keys defaults + ToolExecutor passthrough
 # ---------------------------------------------------------------------------
 
 
-def test_dispatch_picks_parallel_when_all_readonly_and_multi():
-    executor = ToolExecutor([ReadonlyStubTool("a"), ReadonlyStubTool("b")])
+def test_conflict_keys_default_readonly_is_empty_set():
+    assert ReadonlyStubTool("a").conflict_keys() == set()
+
+
+def test_conflict_keys_default_writable_is_none():
+    assert WritableStubTool("a").conflict_keys() is None
+
+
+def test_executor_conflict_keys_unknown_tool_is_none():
+    executor = ToolExecutor([])
+    assert executor.conflict_keys("nonexistent", {}) is None
+
+
+def test_executor_conflict_keys_passes_arguments_through():
+    executor = ToolExecutor([ScopedWritableStubTool("write")])
+    assert executor.conflict_keys("write", {"path": "/abs/x"}) == {"/abs/x"}
+    assert executor.conflict_keys("write", {}) is None
+
+
+# ---------------------------------------------------------------------------
+# Agent._build_batches: prefix-greedy grouping
+# ---------------------------------------------------------------------------
+
+
+def test_build_batches_all_readonly_one_parallel_batch():
+    agent = _make_agent_with_tools([ReadonlyStubTool("a"), ReadonlyStubTool("b")])
     tcs = [_make_tool_call("a"), _make_tool_call("b")]
-    all_readonly = len(tcs) > 1 and all(executor.is_tool_readonly(tc.name) for tc in tcs)
-    assert all_readonly is True
+    assert agent._build_batches(tcs) == [[0, 1]]
 
 
-def test_dispatch_picks_sequential_when_mixed():
-    executor = ToolExecutor([ReadonlyStubTool("a"), WritableStubTool("b")])
-    tcs = [_make_tool_call("a"), _make_tool_call("b")]
-    all_readonly = len(tcs) > 1 and all(executor.is_tool_readonly(tc.name) for tc in tcs)
-    assert all_readonly is False
+def test_build_batches_unknown_scope_runs_alone():
+    # A non-readonly tool with no conflict_keys override returns None,
+    # so it must run alone and split surrounding readonly calls.
+    agent = _make_agent_with_tools([ReadonlyStubTool("ro"), WritableStubTool("wr")])
+    tcs = [_make_tool_call("ro", "1"), _make_tool_call("wr", "2"), _make_tool_call("ro", "3")]
+    assert agent._build_batches(tcs) == [[0], [1], [2]]
 
 
-def test_dispatch_picks_sequential_for_single_tool():
-    executor = ToolExecutor([ReadonlyStubTool("a")])
+def test_build_batches_disjoint_scoped_writes_parallel():
+    agent = _make_agent_with_tools([ScopedWritableStubTool("wr")])
+    tcs = [
+        _make_tool_call("wr", "1", path="/a"),
+        _make_tool_call("wr", "2", path="/b"),
+    ]
+    assert agent._build_batches(tcs) == [[0, 1]]
+
+
+def test_build_batches_overlapping_scoped_writes_split():
+    agent = _make_agent_with_tools([ScopedWritableStubTool("wr")])
+    tcs = [
+        _make_tool_call("wr", "1", path="/a"),
+        _make_tool_call("wr", "2", path="/a"),
+    ]
+    assert agent._build_batches(tcs) == [[0], [1]]
+
+
+def test_build_batches_readonly_joins_scoped_write_batch():
+    # readonly's empty key set is disjoint with anything; it should join.
+    agent = _make_agent_with_tools([ReadonlyStubTool("ro"), ScopedWritableStubTool("wr")])
+    tcs = [
+        _make_tool_call("ro", "1"),
+        _make_tool_call("wr", "2", path="/a"),
+        _make_tool_call("ro", "3"),
+    ]
+    assert agent._build_batches(tcs) == [[0, 1, 2]]
+
+
+def test_build_batches_single_tool_one_singleton_batch():
+    agent = _make_agent_with_tools([ReadonlyStubTool("a")])
     tcs = [_make_tool_call("a")]
-    all_readonly = len(tcs) > 1 and all(executor.is_tool_readonly(tc.name) for tc in tcs)
-    assert all_readonly is False
+    assert agent._build_batches(tcs) == [[0]]
+
+
+def test_build_batches_preserves_emit_order_across_batches():
+    agent = _make_agent_with_tools([ScopedWritableStubTool("wr"), ReadonlyStubTool("ro")])
+    tcs = [
+        _make_tool_call("wr", "1", path="/a"),
+        _make_tool_call("wr", "2", path="/a"),  # conflicts with #1
+        _make_tool_call("ro", "3"),  # joins batch 2
+    ]
+    assert agent._build_batches(tcs) == [[0], [1, 2]]
 
 
 # ---------------------------------------------------------------------------
@@ -266,3 +338,64 @@ def test_real_tools_readonly_flags():
     assert GrepTool.readonly is True
     assert WebSearchTool.readonly is True
     assert FileWriteTool.readonly is False
+
+
+def test_file_write_tool_conflict_keys_returns_abs_path():
+    """FileWriteTool opts in to scoped batching via abspath of file_path."""
+    import os
+
+    from ouro.capabilities.tools.builtins.file_ops import FileWriteTool
+
+    tool = FileWriteTool()
+    keys = tool.conflict_keys(file_path="relative/path.txt", content="x")
+    assert keys == {os.path.abspath("relative/path.txt")}
+
+
+def test_file_write_tool_conflict_keys_missing_path_is_none():
+    """Without a usable file_path argument, fall back to unknown scope."""
+    from ouro.capabilities.tools.builtins.file_ops import FileWriteTool
+
+    tool = FileWriteTool()
+    assert tool.conflict_keys() is None
+    assert tool.conflict_keys(file_path="") is None
+
+
+# ---------------------------------------------------------------------------
+# _dispatch_tools: end-to-end with mixed readonly + scoped writes
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_dispatch_runs_disjoint_writes_in_one_parallel_batch():
+    """Two scoped writes to disjoint paths must run concurrently."""
+    delay = 0.05
+
+    class DelayedScopedWrite(ScopedWritableStubTool):
+        async def execute(self, **kwargs) -> str:
+            await asyncio.sleep(delay)
+            return self._result
+
+    agent = _make_agent_with_tools([DelayedScopedWrite("wr", result="ok")])
+    tcs = [
+        _make_tool_call("wr", "1", path="/a"),
+        _make_tool_call("wr", "2", path="/b"),
+    ]
+
+    start = asyncio.get_event_loop().time()
+    results = await agent._dispatch_tools(_make_ctx(), tcs)
+    elapsed = asyncio.get_event_loop().time() - start
+
+    assert [r.tool_call_id for r in results] == ["1", "2"]
+    assert elapsed < delay * 2  # parallel, not sequential
+
+
+@pytest.mark.asyncio
+async def test_dispatch_preserves_order_across_split_batches():
+    agent = _make_agent_with_tools([ScopedWritableStubTool("wr"), ReadonlyStubTool("ro")])
+    tcs = [
+        _make_tool_call("wr", "1", path="/a"),
+        _make_tool_call("wr", "2", path="/a"),  # conflicts → new batch
+        _make_tool_call("ro", "3"),  # joins batch 2
+    ]
+    results = await agent._dispatch_tools(_make_ctx(), tcs)
+    assert [r.tool_call_id for r in results] == ["1", "2", "3"]

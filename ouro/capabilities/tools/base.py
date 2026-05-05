@@ -12,6 +12,19 @@ class BaseTool(ABC):
     CHARS_PER_TOKEN = 4  # Conservative estimate
     readonly: bool = False
 
+    def conflict_keys(self, **kwargs: Any) -> set[str] | None:
+        """Resource keys this call would touch, for parallel-dispatch grouping.
+
+        - ``set()``: no conflicts (parallel-safe with anything).
+        - non-empty: parallel-safe with calls whose keys are disjoint.
+        - ``None``: unknown scope; runs alone.
+
+        Default: ``set()`` if ``readonly`` else ``None``. Override to declare
+        a narrower scope; normalize keys at the tool boundary
+        (``os.path.abspath`` for paths) so disjointness is sound.
+        """
+        return set() if self.readonly else None
+
     @property
     @abstractmethod
     def name(self) -> str:

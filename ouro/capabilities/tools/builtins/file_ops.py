@@ -110,6 +110,12 @@ class FileWriteTool(BaseTool):
             },
         }
 
+    def conflict_keys(self, **kwargs: Any) -> set[str] | None:
+        file_path = kwargs.get("file_path")
+        if not isinstance(file_path, str) or not file_path:
+            return None
+        return {os.path.abspath(file_path)}
+
     async def execute(self, file_path: str, content: str) -> str:
         """Write content to file."""
         try:
