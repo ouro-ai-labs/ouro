@@ -46,6 +46,20 @@ class ToolExecutor:
         tool = self.tools.get(tool_name)
         return tool.readonly if tool else False
 
+    def conflict_keys(self, tool_name: str, arguments: Dict[str, Any]) -> set[str] | None:
+        """Resource keys for one call. See ``BaseTool.conflict_keys``.
+
+        Unknown tool names map to ``None`` so they run alone — preserving the
+        prior fallback behavior.
+        """
+        tool = self.tools.get(tool_name)
+        if tool is None:
+            return None
+        try:
+            return tool.conflict_keys(**arguments)
+        except Exception:
+            return None
+
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
         """Get Anthropic-formatted schemas for all tools."""
         return [tool.to_anthropic_schema() for tool in self.tools.values()]

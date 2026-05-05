@@ -184,12 +184,54 @@ class Agent:
         ctx: RunStatistic,
         tool_calls: list[ToolCall],
     ) -> list[ToolResult]:
-        all_readonly = len(tool_calls) > 1 and all(
-            self.tools.is_tool_readonly(tc.name) for tc in tool_calls
-        )
-        if all_readonly:
-            return await self._exec_parallel(ctx, tool_calls)
-        return await self._exec_sequential(ctx, tool_calls)
+        if not tool_calls:
+            return []
+
+        results: list[ToolResult | None] = [None] * len(tool_calls)
+        for batch in self._build_batches(tool_calls):
+            indexed = [(i, tool_calls[i]) for i in batch]
+            if len(indexed) == 1:
+                i, tc = indexed[0]
+                (single,) = await self._exec_sequential(ctx, [tc])
+                results[i] = single
+            else:
+                batch_calls = [tc for _, tc in indexed]
+                batch_results = await self._exec_parallel(ctx, batch_calls)
+                for (i, _), res in zip(indexed, batch_results):
+                    results[i] = res
+        return [r for r in results if r is not None]
+
+    def _build_batches(self, tool_calls: list[ToolCall]) -> list[list[int]]:
+        """Group tool-call indices into prefix-greedy parallel batches.
+
+        Each call's ``conflict_keys`` describes the resources it touches:
+        ``set()`` joins any batch, ``None`` runs alone, non-empty joins the
+        current batch only when disjoint with the batch's accumulated keys.
+        Order within ``tool_calls`` is preserved across batches.
+        """
+        batches: list[list[int]] = []
+        current: list[int] = []
+        current_keys: set[str] = set()
+
+        def flush() -> None:
+            nonlocal current, current_keys
+            if current:
+                batches.append(current)
+            current = []
+            current_keys = set()
+
+        for i, tc in enumerate(tool_calls):
+            keys = self.tools.conflict_keys(tc.name, tc.arguments)
+            if keys is None:
+                flush()
+                batches.append([i])
+                continue
+            if keys and keys & current_keys:
+                flush()
+            current.append(i)
+            current_keys |= keys
+        flush()
+        return batches
 
     async def _exec_sequential(
         self, ctx: RunStatistic, tool_calls: list[ToolCall]

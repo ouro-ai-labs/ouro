@@ -7,6 +7,7 @@ This tool provides advanced editing features beyond the basic EditTool:
 - Rollback: Can revert changes if editing fails
 """
 
+import os
 import subprocess
 from difflib import SequenceMatcher, unified_diff
 from pathlib import Path
@@ -139,6 +140,12 @@ IMPORTANT:
                 "description": "Show diff preview even when not dry_run (default: true)",
             },
         }
+
+    def conflict_keys(self, **kwargs: Any) -> set[str] | None:
+        file_path = kwargs.get("file_path")
+        if not isinstance(file_path, str) or not file_path:
+            return None
+        return {os.path.abspath(file_path)}
 
     async def execute(
         self,
