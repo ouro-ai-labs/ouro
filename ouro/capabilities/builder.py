@@ -356,12 +356,7 @@ class ComposedAgent:
                 for block in user_msg.content
             ]
 
-        # 6) Stats + flush.
-        import contextlib
-
-        stats = self.memory.get_stats(context=self._context)
-        with contextlib.suppress(Exception):  # pragma: no cover — UI path
-            self._progress.info(_format_memory_stats_line(stats))
+        # 6) Flush memory.
         await self.memory.save_memory(context=self._context)
         return result
 
@@ -572,13 +567,3 @@ class ComposedAgent:
                 }
             )
         return LLMMessage(role="user", content=content_blocks)
-
-
-def _format_memory_stats_line(stats: dict) -> str:
-    if not stats:
-        return ""
-    return (
-        f"memory: {stats.get('message_count', 0)} msgs, "
-        f"{stats.get('estimated_tokens', 0)} tokens "
-        f"(comp×{stats.get('compression_count', 0)})"
-    )
