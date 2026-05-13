@@ -419,6 +419,17 @@ Original messages ({count} messages, ~{tokens} tokens):
             preserve_indices.add(assistant_idx)
             preserve_indices.add(user_idx)
 
+        # Step 2c: Always preserve the most recent non-summary user message.
+        # This is the query that triggered the current Agent.run; the
+        # MEMORY_SHORT_TERM_MIN_SIZE recent-window can push it out when the
+        # agent has done many tool iterations within a single turn, leaving
+        # the post-compaction LLM with a summary + a few stray tool calls
+        # but no idea what the user just asked. Find it by scanning from
+        # the tail.
+        latest_user_idx = self._find_latest_user_query(messages)
+        if latest_user_idx is not None:
+            preserve_indices.add(latest_user_idx)
+
         # Step 3: Preserve the most recent N messages to maintain conversation continuity
         preserve_count = min(Config.MEMORY_SHORT_TERM_MIN_SIZE, len(messages))
         for i in range(len(messages) - preserve_count, len(messages)):
@@ -458,6 +469,26 @@ Original messages ({count} messages, ~{tokens} tokens):
             f"{preserve_count} recent)"
         )
         return preserved, to_compress
+
+    def _find_latest_user_query(self, messages: List[LLMMessage]) -> int | None:
+        """Return the index of the most recent user message that isn't a
+        prior compaction summary, or ``None`` if there isn't one.
+
+        Compaction injects synthetic ``role="user"`` messages prefixed with
+        ``SUMMARY_PREFIX`` to feed prior summaries back into the LLM. Those
+        must NOT be confused with a fresh user query when deciding what to
+        preserve.
+        """
+        for i in range(len(messages) - 1, -1, -1):
+            msg = messages[i]
+            if msg.role != "user":
+                continue
+            content = msg.content
+            text = content if isinstance(content, str) else self._extract_text_content(msg)
+            if text.startswith(self.SUMMARY_PREFIX):
+                continue
+            return i
+        return None
 
     def _find_tool_pairs(self, messages: List[LLMMessage]) -> tuple[List[List[int]], List[int]]:
         """Find tool_use/tool_result pairs in messages.

@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import importlib.metadata
+import os
 import warnings
 
 from rich.console import Console
@@ -148,11 +149,14 @@ def main():
 
     args = parser.parse_args()
 
-    # Initialize runtime directories (create logs dir only in verbose mode)
-    ensure_runtime_dirs(create_logs=args.verbose)
+    # Initialize runtime directories (create logs dir in verbose mode or
+    # when OURO_DEBUG_LLM_HISTORY is set so the agent loop can log message
+    # snapshots to file).
+    debug_history = bool(os.environ.get("OURO_DEBUG_LLM_HISTORY"))
+    ensure_runtime_dirs(create_logs=args.verbose or debug_history)
 
-    # Initialize logging only in verbose mode
-    if args.verbose:
+    # Initialize logging in verbose mode or when LLM-history debugging is on.
+    if args.verbose or debug_history:
         setup_logger()
 
     # Bot mode: start webhook server (before login/logout/task checks)

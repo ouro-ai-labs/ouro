@@ -280,7 +280,8 @@ class TestMessageSeparation:
     """Test message separation logic."""
 
     async def test_separate_messages_basic(self, set_memory_config, mock_llm, simple_messages):
-        """Test basic message separation - recent messages are preserved, others compressed."""
+        """Test basic message separation - latest user query is always preserved
+        (Step 2c invariant), and with MIN_SIZE=0 nothing else is."""
         set_memory_config(
             MEMORY_SHORT_TERM_MIN_SIZE=0
         )  # Don't preserve recent messages for this test
@@ -288,14 +289,21 @@ class TestMessageSeparation:
 
         preserved, to_compress = compressor._separate_messages(simple_messages)
 
-        # With MIN_SIZE=0, simple messages (no system, no protected tools) should all be compressed
-        assert len(to_compress) == len(simple_messages)
-        assert len(preserved) == 0
+        # With MIN_SIZE=0, only the latest non-summary user message is preserved.
+        latest_user_idx = compressor._find_latest_user_query(simple_messages)
+        if latest_user_idx is not None:
+            assert len(preserved) == 1
+            assert preserved[0] is simple_messages[latest_user_idx]
+            assert len(to_compress) == len(simple_messages) - 1
+        else:
+            assert len(preserved) == 0
+            assert len(to_compress) == len(simple_messages)
         # Total should equal original
         assert len(preserved) + len(to_compress) == len(simple_messages)
 
     async def test_separate_preserves_system_messages(self, set_memory_config, mock_llm):
-        """Test that system messages are preserved."""
+        """Test that system messages are preserved (alongside the latest user
+        query, which Step 2c always keeps)."""
         set_memory_config(MEMORY_PRESERVE_SYSTEM_PROMPTS=True, MEMORY_SHORT_TERM_MIN_SIZE=0)
         compressor = WorkingMemoryCompressor(mock_llm)
 
@@ -307,11 +315,12 @@ class TestMessageSeparation:
 
         preserved, to_compress = compressor._separate_messages(messages)
 
-        # System message should be preserved
-        assert len(preserved) == 1
-        assert preserved[0].role == "system"
-        # Other messages should be compressed
-        assert len(to_compress) == 2
+        # System message AND the latest user query are preserved.
+        preserved_roles = sorted(m.role for m in preserved)
+        assert preserved_roles == ["system", "user"]
+        # The assistant reply is the only thing that gets compressed.
+        assert len(to_compress) == 1
+        assert to_compress[0].role == "assistant"
 
     async def test_tool_pair_preservation_rule(
         self, set_memory_config, mock_llm, tool_use_messages
@@ -419,6 +428,103 @@ class TestMessageSeparation:
         for i in range(5):
             assert f"tc_{i}" in preserved_tool_call_ids, f"tc_{i} assistant not preserved"
             assert f"tc_{i}" in preserved_tool_response_ids, f"tc_{i} response not preserved"
+
+    async def test_latest_user_query_preserved_outside_recent_window(
+        self, set_memory_config, mock_llm
+    ):
+        """The user message that triggered the current run must be preserved
+        even when the recent-N window has been pushed past it by many tool
+        iterations within the same turn.
+
+        Regression: a 5/10 reproduction showed that with MIN_SIZE=6, after
+        ~3 tool calls in one turn the new user message fell out of the recent
+        window, got compressed away, and the post-compaction LLM had no idea
+        what the user asked — it kept hallucinating fresh tool calls.
+        """
+        set_memory_config(MEMORY_SHORT_TERM_MIN_SIZE=6, MEMORY_PRESERVE_SYSTEM_PROMPTS=False)
+        compressor = WorkingMemoryCompressor(mock_llm)
+
+        # Build: old chatter (will compress) + new user query + 4 tool pairs
+        # (= 8 trailing messages). With MIN_SIZE=6, only the last 6 land in
+        # the recent window, pushing the new user query OUT.
+        messages: list[LLMMessage] = []
+        for i in range(10):
+            messages.append(LLMMessage(role="user", content=f"old turn {i}"))
+            messages.append(LLMMessage(role="assistant", content=f"old reply {i}"))
+        new_user_idx = len(messages)
+        messages.append(LLMMessage(role="user", content="WHAT THE USER JUST ASKED"))
+        for i in range(4):
+            messages.append(
+                LLMMessage(
+                    role="assistant",
+                    content=None,
+                    tool_calls=[
+                        {
+                            "id": f"new_tc_{i}",
+                            "type": "function",
+                            "function": {"name": "tool", "arguments": "{}"},
+                        }
+                    ],
+                )
+            )
+            messages.append(
+                LLMMessage(
+                    role="tool",
+                    content=f"new result {i}",
+                    tool_call_id=f"new_tc_{i}",
+                    name="tool",
+                )
+            )
+
+        preserved, to_compress = compressor._separate_messages(messages)
+
+        # The latest user query must survive compression.
+        preserved_user_contents = [
+            m.content for m in preserved if m.role == "user" and isinstance(m.content, str)
+        ]
+        assert "WHAT THE USER JUST ASKED" in preserved_user_contents, (
+            f"latest user query was compressed away. preserved user msgs: "
+            f"{preserved_user_contents}"
+        )
+        # And it must NOT appear in the to_compress list.
+        compressed_user_contents = [
+            m.content for m in to_compress if m.role == "user" and isinstance(m.content, str)
+        ]
+        assert "WHAT THE USER JUST ASKED" not in compressed_user_contents
+
+        # Sanity: the index we tracked is in preserved (catches off-by-one).
+        assert messages[new_user_idx] in preserved
+
+    async def test_summary_user_message_does_not_count_as_latest_query(
+        self, set_memory_config, mock_llm
+    ):
+        """If the most recent user message is a prior compaction summary
+        (``SUMMARY_PREFIX``), keep walking backward — that's a synthetic
+        message, not a real user query."""
+        set_memory_config(MEMORY_SHORT_TERM_MIN_SIZE=2, MEMORY_PRESERVE_SYSTEM_PROMPTS=False)
+        compressor = WorkingMemoryCompressor(mock_llm)
+
+        messages = [
+            LLMMessage(role="user", content="real user question"),
+            LLMMessage(role="assistant", content="working on it"),
+            LLMMessage(
+                role="user",
+                content=f"{compressor.SUMMARY_PREFIX}prior summary text here",
+            ),
+            LLMMessage(role="assistant", content="ack"),
+            LLMMessage(role="assistant", content="another reply"),
+        ]
+
+        idx = compressor._find_latest_user_query(messages)
+        assert idx == 0, f"expected to skip the summary at [2] and pick [0], got {idx}"
+
+    async def test_find_latest_user_query_returns_none_when_no_user(self, mock_llm):
+        compressor = WorkingMemoryCompressor(mock_llm)
+        messages = [
+            LLMMessage(role="system", content="sys"),
+            LLMMessage(role="assistant", content="hi"),
+        ]
+        assert compressor._find_latest_user_query(messages) is None
 
 
 class TestTokenEstimation:

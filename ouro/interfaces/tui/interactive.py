@@ -390,6 +390,7 @@ class InteractiveSession:
             output_tokens=stats.get("total_output_tokens", 0),
             context_tokens=stats.get("current_tokens", 0),
             cost=stats.get("total_cost", 0),
+            compression_count=stats.get("compression_count", 0),
             model_name=model_name,
         )
 

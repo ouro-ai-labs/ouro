@@ -8,6 +8,7 @@ memory, BaseTool, verification, or terminal UI — those plug in via
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import Any, Sequence
 
 from ouro.core.llm import LLMMessage, LLMResponse, StopReason, ToolCall, ToolResult
@@ -94,6 +95,8 @@ class Agent:
                 }
                 if self.max_tokens_per_call is not None:
                     call_kwargs["max_tokens"] = self.max_tokens_per_call
+                if os.environ.get("OURO_DEBUG_LLM_HISTORY"):
+                    _log_outgoing_messages(ctx.iteration, outgoing)
                 response = await self.llm.call_async(**call_kwargs)
             ctx.stop_reason_last = response.stop_reason
             ctx.add_usage(getattr(response, "usage", None))
@@ -154,8 +157,11 @@ class Agent:
                 # retry with the same truncated output — a silent
                 # death-loop. Surface the partial text and stop.
                 partial = self.llm.extract_text(response) or ""
+                # max_tokens_per_call may be None (default after #177); use %s
+                # so the warning still formats cleanly when the cap is set by
+                # the provider rather than ouro.
                 logger.warning(
-                    "Agent.run: LLM response truncated at max_tokens=%d on "
+                    "Agent.run: LLM response truncated at max_tokens=%s on "
                     "iteration %d. Returning partial answer (%d chars). "
                     "Raise max_tokens_per_call or shorten the prompt.",
                     self.max_tokens_per_call,
@@ -305,3 +311,33 @@ class Agent:
         if retries:
             return ContinueDecision.retry_with_feedback(*retries)
         return decision
+
+
+def _log_outgoing_messages(iteration: int, messages: list[LLMMessage]) -> None:
+    """Dump the outgoing message list for one LLM call.
+
+    Gated by ``OURO_DEBUG_LLM_HISTORY`` env var; called from the loop right
+    before ``llm.call_async``. Output goes through the standard logger so
+    it lands in ``~/.ouro/logs/`` when ``--verbose`` is set. Each line uses
+    the ``LLM_HISTORY`` prefix so it's grep-friendly.
+    """
+    parts = [f"LLM_HISTORY iter={iteration} count={len(messages)}"]
+    for i, m in enumerate(messages):
+        role = m.role
+        if role == "assistant" and getattr(m, "tool_calls", None):
+            ids = []
+            for tc in m.tool_calls or []:
+                tid = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", "?")
+                ids.append(tid or "?")
+            content = m.content if isinstance(m.content, str) else ""
+            preview = (content or "")[:60].replace("\n", " ")
+            parts.append(f"LLM_HISTORY   [{i:03d}] assistant tool_calls={ids} content={preview!r}")
+        elif role == "tool":
+            tid = getattr(m, "tool_call_id", "?") or "?"
+            content_len = len(m.content or "") if isinstance(m.content, str) else 0
+            parts.append(f"LLM_HISTORY   [{i:03d}] tool tool_call_id={tid} len={content_len}")
+        else:
+            content = m.content if isinstance(m.content, str) else "[non-str]"
+            preview = (content or "")[:80].replace("\n", " ")
+            parts.append(f"LLM_HISTORY   [{i:03d}] {role} preview={preview!r}")
+    logger.info("\n".join(parts))

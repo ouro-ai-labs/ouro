@@ -21,6 +21,7 @@ class StatusBarState:
     output_tokens: int = 0
     context_tokens: int = 0
     cost: float = 0.0
+    compression_count: int = 0
     is_processing: bool = False
     model_name: str = ""
 
@@ -92,6 +93,12 @@ class StatusBar:
             f"[{colors.text_secondary}]Cost:[/{colors.text_secondary}] ${self.state.cost:.4f}"
         )
 
+        # Compression count
+        if self.state.compression_count > 0:
+            items.append(
+                f"[{colors.text_secondary}]Comp:[/{colors.text_secondary}] [{colors.warning}]×{self.state.compression_count}[/{colors.warning}]"
+            )
+
         # Processing indicator
         if self.state.is_processing:
             items.append(f"[{colors.warning}]●[/{colors.warning}]")
@@ -115,6 +122,7 @@ class StatusBar:
         output_tokens: Optional[int] = None,
         context_tokens: Optional[int] = None,
         cost: Optional[float] = None,
+        compression_count: Optional[int] = None,
         is_processing: Optional[bool] = None,
         model_name: Optional[str] = None,
     ) -> None:
@@ -126,6 +134,7 @@ class StatusBar:
             output_tokens: Total output tokens used
             context_tokens: Current context window tokens
             cost: Current cost
+            compression_count: Number of memory compressions performed
             is_processing: Whether currently processing
             model_name: Current model name
         """
@@ -139,6 +148,8 @@ class StatusBar:
             self.state.context_tokens = context_tokens
         if cost is not None:
             self.state.cost = cost
+        if compression_count is not None:
+            self.state.compression_count = compression_count
         if is_processing is not None:
             self.state.is_processing = is_processing
         if model_name is not None:

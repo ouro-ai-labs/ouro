@@ -26,6 +26,14 @@ _LITELLM = None
 class LiteLLMAdapter:
     """LiteLLM adapter supporting 100+ LLM providers."""
 
+    # When the caller doesn't pass max_tokens, we still need to send a value
+    # because some provider protocols (notably anthropic Messages API) require
+    # it and litellm injects 4096 behind our back when we omit it. Pin a
+    # generous default that matches Claude 4.x's max output and exceeds every
+    # other modern model's hard cap, so "no caller-supplied limit" effectively
+    # means "don't truncate" rather than "silently 4096".
+    DEFAULT_MAX_TOKENS = 64000
+
     def __init__(self, model: str, **kwargs):
         """Initialize LiteLLM adapter.
 
@@ -161,9 +169,8 @@ class LiteLLMAdapter:
             "model": self.model,
             "messages": litellm_messages,
             "timeout": self.timeout,
+            "max_tokens": max_tokens if max_tokens is not None else self.DEFAULT_MAX_TOKENS,
         }
-        if max_tokens is not None:
-            call_params["max_tokens"] = max_tokens
 
         # Add API key if provided
         if self.api_key:
