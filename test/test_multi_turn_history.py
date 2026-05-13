@@ -21,7 +21,6 @@ from ouro.capabilities.tools.executor import ToolExecutor
 from ouro.core.llm import LLMMessage, LLMResponse, StopReason, ToolCall
 from ouro.core.loop import Agent, MessageListContext, NullProgressSink
 
-
 # ---------------------------------------------------------------------------
 # Stubs
 # ---------------------------------------------------------------------------
@@ -238,9 +237,7 @@ async def test_no_orphan_tool_call_or_result_at_run_end():
     msgs = ctx.detached.snapshot()
     call_ids = _all_tool_call_ids(msgs)
     result_ids = _all_tool_result_ids(msgs)
-    assert call_ids == result_ids, (
-        f"call/result mismatch: calls={call_ids} results={result_ids}"
-    )
+    assert call_ids == result_ids, f"call/result mismatch: calls={call_ids} results={result_ids}"
     # And no duplicates — same id never appears twice on either side.
     assert len(set(call_ids)) == len(call_ids)
     assert len(set(result_ids)) == len(result_ids)
