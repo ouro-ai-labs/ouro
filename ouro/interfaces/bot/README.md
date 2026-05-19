@@ -18,7 +18,7 @@ LARK_APP_SECRET=your_secret
 Then start:
 
 ```bash
-ouro --bot
+ouro-bot
 ```
 
 ## Architecture

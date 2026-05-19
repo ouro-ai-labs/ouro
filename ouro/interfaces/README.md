@@ -13,7 +13,7 @@ ouro.interfaces
 ├── cli/                     # argparse + dispatch
 │   ├── main.py              # CLI flag parsing + dispatch
 │   ├── factory.py           # create_agent() — wires AgentBuilder
-│   └── entry.py             # `[project.scripts] ouro` shim
+│   └── entry.py             # `[project.scripts] ouro-cli` shim
 ├── tui/                     # interactive REPL
 │   ├── interactive.py       # InteractiveSession (slash commands, status bar)
 │   ├── input_handler.py     # prompt_toolkit input
@@ -27,6 +27,8 @@ ouro.interfaces
 │   ├── slash_autocomplete.py
 │   ├── model_ui.py / oauth_ui.py / reasoning_ui.py / skills_ui.py
 └── bot/                     # webhook server + IM channels
+    ├── main.py              # bot CLI flag parsing + dispatch
+    ├── entry.py             # `[project.scripts] ouro-bot` shim
     ├── server.py            # aiohttp app, route registration, cron loop
     ├── session_router.py    # per-conversation ComposedAgent factory
     ├── message_queue.py     # debounce / coalesce bursty inputs
@@ -40,19 +42,22 @@ ouro.interfaces
 Stable user-facing surface (unchanged across the refactor):
 
 ```bash
-ouro                                         # interactive TUI (default)
-ouro --task "<…>"                            # one-shot
-ouro --task "<…>" --verify                   # one-shot + Ralph outer loop
-ouro --resume latest                         # resume most-recent session
-ouro --resume <session-id-prefix>            # resume by id prefix
-ouro --model openai/gpt-4o                   # pick model for this run
-ouro --reasoning-effort high                 # off | minimal | low | medium | high | xhigh
-ouro --login   /  --logout                   # OAuth (ChatGPT Codex, Copilot)
-ouro --bot                                   # webhook daemon (Lark / Slack / WeChat)
-ouro --version
+ouro-cli                                     # interactive TUI (default)
+ouro-cli --task "<…>"                        # one-shot
+ouro-cli --task "<…>" --verify               # one-shot + Ralph outer loop
+ouro-cli --resume latest                     # resume most-recent session
+ouro-cli --resume <session-id-prefix>        # resume by id prefix
+ouro-cli --model openai/gpt-4o               # pick model for this run
+ouro-cli --reasoning-effort high             # off | minimal | low | medium | high | xhigh
+ouro-cli --login   /  --logout               # OAuth (ChatGPT Codex, Copilot)
+ouro-bot                                     # webhook daemon (Lark / Slack / WeChat)
+ouro-bot --model openai/gpt-4o               # pick model for this bot run
+ouro-cli --version  /  ouro-bot --version
 ```
 
-Internally `ouro` resolves to `ouro.interfaces.cli.entry:main`.
+Internally:
+- `ouro-cli` resolves to `ouro.interfaces.cli.entry:main`.
+- `ouro-bot` resolves to `ouro.interfaces.bot.entry:main`.
 
 `ouro.interfaces.cli.factory.create_agent(model_id=None, sessions_dir=None,
 memory_dir=None)` is the canonical assembly path — both the CLI and the
@@ -77,12 +82,12 @@ implements the `ouro.core.loop.ProgressSink` Protocol and renders via
 `terminal_ui` + `AsyncSpinner`. The interactive shell still prints the
 final returned answer itself; the sink is mainly for incremental
 progress events (thinking, tool calls/results, spinners, completion
-markers). When you pass `--bot` (or call `AgentBuilder` yourself with a
+markers). When you run `ouro-bot` (or call `AgentBuilder` yourself with a
 quieter sink), capabilities' UI calls become no-ops automatically.
 
 ## Bot
 
-`ouro --bot` starts an aiohttp webhook server. Each enabled channel
+`ouro-bot` starts an aiohttp webhook server. Each enabled channel
 (`LARK_*`, `SLACK_*`, `WECHAT_ENABLED` env vars) registers routes; the
 `SessionRouter` maps `{channel}:{conversation_id}` → a per-conversation
 `ComposedAgent` with its own memory.

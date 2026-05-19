@@ -13,7 +13,7 @@ by `import-linter`.
   --login / --logout / --resume / etc.).
 - `cli/factory.py` — builds a `ComposedAgent` for the standard CLI/bot
   via `AgentBuilder`. The TUI sink (`TuiProgressSink`) is wired here.
-- `cli/entry.py` — thin shim registered as `[project.scripts] ouro`.
+- `cli/entry.py` — thin shim registered as `[project.scripts] ouro-cli`.
 - `tui/interactive.py` — `InteractiveSession`, slash commands,
   prompt_toolkit input loop.
 - `tui/{terminal_ui, progress, theme, status_bar, components, …}` — UI
@@ -38,15 +38,17 @@ by `import-linter`.
 
 ## CLI entry
 
-Stable user-facing command:
+Stable user-facing commands:
 
 ```bash
-ouro                                 # interactive
-ouro --task "..."                    # one-shot
-ouro --task "..." --verify           # one-shot + Ralph outer loop
-ouro --bot                           # webhook daemon
-ouro --login | --logout              # OAuth flows
-ouro --resume [latest|<prefix>]      # restore a saved session
+ouro-cli                                 # interactive
+ouro-cli --task "..."                    # one-shot
+ouro-cli --task "..." --verify           # one-shot + Ralph outer loop
+ouro-bot                                 # webhook daemon
+ouro-cli --login | --logout              # OAuth flows
+ouro-cli --resume [latest|<prefix>]      # restore a saved session
 ```
 
-Internally `ouro` resolves to `ouro.interfaces.cli.entry:main`.
+Internally:
+- `ouro-cli` resolves to `ouro.interfaces.cli.entry:main`.
+- `ouro-bot` resolves to `ouro.interfaces.bot.entry:main`.

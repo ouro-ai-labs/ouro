@@ -38,7 +38,7 @@ Go to **Events & Callbacks** -> **Event Configuration** -> Add event:
 |-------|------------|
 | Receive message | `im.message.receive_v1` |
 
-**Note**: The app must be running (`ouro --bot`) when you save event subscriptions, because Lark verifies the WebSocket connection is active.
+**Note**: The app must be running (`ouro-bot`) when you save event subscriptions, because Lark verifies the WebSocket connection is active.
 
 ## 6. Add Permissions
 
@@ -71,7 +71,7 @@ LARK_APP_SECRET=your_app_secret
 Then start:
 
 ```bash
-ouro --bot
+ouro-bot
 ```
 
 You should see:
@@ -105,4 +105,4 @@ The bot app is missing the `im:resource` permission. Go to **Permissions & Scope
 
 ### Event subscription fails with "app has not established long connection"
 
-Make sure `ouro --bot` is running **before** you save the event subscription in the Lark console. Lark needs to verify the WebSocket connection is active.
+Make sure `ouro-bot` is running **before** you save the event subscription in the Lark console. Lark needs to verify the WebSocket connection is active.

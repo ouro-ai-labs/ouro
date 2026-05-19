@@ -44,7 +44,7 @@ def _build_models_yaml(model_name: str, api_key: str, api_base: str | None) -> s
 
     The key under ``models`` is the LiteLLM model ID (e.g.
     ``anthropic/claude-sonnet-4-5-20250929``).  ``default`` must reference
-    the same key so that ``ouro --model <key>`` resolves correctly.
+    the same key so that ``ouro-cli --model <key>`` resolves correctly.
     """
     timeout = os.environ.get("OURO_TIMEOUT", "600")
     lines = [
@@ -95,7 +95,7 @@ class OuroAgent(BaseInstalledAgent):
         # Run ouro in single-task mode and tee output for log collection
         escaped_model = shlex.quote(model_name)
         run_command = (
-            f"ouro --model {escaped_model} --task {escaped_instruction} "
+            f"ouro-cli --model {escaped_model} --task {escaped_instruction} "
             f"2>&1 | tee /logs/agent/ouro-output.txt; "
             # Copy session files to logs dir for debugging (best-effort)
             "cp -r ~/.ouro/sessions /logs/agent/sessions 2>/dev/null || true"

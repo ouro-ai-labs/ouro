@@ -140,12 +140,6 @@ def main():
         default="default",
         help="Run-scoped reasoning level (LiteLLM/OpenAI-style). Use 'default' to omit the parameter, or 'off' as an alias for 'none'.",
     )
-    parser.add_argument(
-        "--bot",
-        action="store_true",
-        default=False,
-        help="Start as a bot server, receiving messages via IM channels (Lark, Slack, etc.)",
-    )
 
     args = parser.parse_args()
 
@@ -158,24 +152,6 @@ def main():
     # Initialize logging in verbose mode or when LLM-history debugging is on.
     if args.verbose or debug_history:
         setup_logger()
-
-    # Bot mode: start webhook server (before login/logout/task checks)
-    if args.bot:
-        terminal_ui.console = Console(quiet=True)
-        # Bot is a long-running daemon — always enable file logging.
-        ensure_runtime_dirs(create_logs=True)
-        setup_logger()
-
-        try:
-            Config.validate()
-        except ValueError as e:
-            terminal_ui.print_error(str(e), title="Configuration Error")
-            return
-
-        from ouro.interfaces.bot.server import run_bot
-
-        asyncio.run(run_bot(model_id=args.model))
-        return
 
     if args.login and args.logout:
         terminal_ui.print_error("Use only one of --login or --logout.", title="Invalid Arguments")

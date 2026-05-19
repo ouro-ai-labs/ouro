@@ -22,7 +22,7 @@ Ouro ships with a unified agent core and two deployment modes:
 |---|---|---|
 | **What** | Interactive REPL + one-shot task execution | Persistent IM assistant (Lark, Slack) |
 | **Install** | `uv tool install ouro-ai` | `uv tool install 'ouro-ai[bot]'` |
-| **Run** | `ouro` | `ouro --bot` |
+| **Run** | `ouro-cli` | `ouro-bot` |
 | **Guide** | [CLI Guide](docs/cli-guide.md) | [Bot Guide](docs/bot-guide.md) |
 
 ## Quick Start
@@ -30,7 +30,8 @@ Ouro ships with a unified agent core and two deployment modes:
 Prerequisites: Python 3.12+ and one of [`uv`](https://docs.astral.sh/uv/) (recommended) or [`pipx`](https://pipx.pypa.io/).
 
 ```bash
-# Recommended: installs ouro in an isolated environment and exposes a global `ouro` command
+# Recommended: installs ouro in an isolated environment and exposes global
+# `ouro-cli` and `ouro-bot` commands
 uv tool install ouro-ai
 
 # Alternative
@@ -40,7 +41,7 @@ pipx install ouro-ai
 uv tool upgrade ouro-ai      # or: pipx upgrade ouro-ai
 ```
 
-> Plain `pip install ouro-ai` also works but is **not recommended** — it mixes ouro's dependencies into your active Python environment. Use `uv tool` / `pipx` so the `ouro` binary is on `$PATH` without needing to activate a venv.
+> Plain `pip install ouro-ai` also works but is **not recommended** — it mixes ouro's dependencies into your active Python environment. Use `uv tool` / `pipx` so the `ouro-cli` / `ouro-bot` binaries are on `$PATH` without needing to activate a venv.
 
 On first run, `~/.ouro/models.yaml` is created. Add your API key:
 
@@ -56,13 +57,13 @@ Then run:
 
 ```bash
 # Interactive mode
-ouro
+ouro-cli
 
 # Single task
-ouro --task "Calculate 123 * 456"
+ouro-cli --task "Calculate 123 * 456"
 
 # Bot mode (requires ouro-ai[bot])
-ouro --bot
+ouro-bot
 ```
 
 See [LiteLLM Providers](https://docs.litellm.ai/docs/providers) for the full provider list.

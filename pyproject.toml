@@ -74,7 +74,8 @@ Repository = "https://github.com/ouro-ai-labs/ouro"
 Issues = "https://github.com/ouro-ai-labs/ouro/issues"
 
 [project.scripts]
-ouro = "ouro.interfaces.cli.entry:main"
+ouro-cli = "ouro.interfaces.cli.entry:main"
+ouro-bot = "ouro.interfaces.bot.entry:main"
 
 [tool.setuptools]
 packages = [
