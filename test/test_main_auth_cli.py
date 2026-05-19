@@ -16,7 +16,7 @@ def _setup_common(monkeypatch, argv: list[str]):
     calls = {"error": [], "info": [], "success": [], "warning": []}
     console = _DummyConsole()
 
-    monkeypatch.setattr(sys, "argv", ["ouro", *argv])
+    monkeypatch.setattr(sys, "argv", ["ouro-cli", *argv])
     monkeypatch.setattr(ouro_main, "ensure_runtime_dirs", lambda create_logs=False: None)
     monkeypatch.setattr(ouro_main, "setup_logger", lambda: None)
 

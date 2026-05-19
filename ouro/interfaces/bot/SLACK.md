@@ -63,7 +63,7 @@ SLACK_APP_TOKEN=xapp-your-app-token
 Then start:
 
 ```bash
-ouro --bot
+ouro-bot
 ```
 
 You should see:

@@ -18,7 +18,7 @@ WECHAT_ENABLED=true
 ## 2. Start the Bot
 
 ```bash
-ouro --bot
+ouro-bot
 ```
 
 On first launch, a **QR code** will be displayed in the terminal. Scan it with the WeChat app on your phone to authenticate. Credentials are cached at `~/.weixin-bot/credentials.json` so you won't need to scan again unless the session expires.
@@ -46,6 +46,6 @@ Once authenticated, anyone who sends a message to the bot's WeChat account will 
 | Issue | Solution |
 |-------|----------|
 | QR code not showing | Make sure your terminal supports the QR display. Try a wider terminal window. |
-| Session expired | Restart the bot (`ouro --bot`) and scan the QR code again. |
+| Session expired | Restart the bot (`ouro-bot`) and scan the QR code again. |
 | `weixin-bot-sdk not installed` | Reinstall with the `[bot]` extra: `uv tool install --force 'ouro-ai[bot]'` (or `pipx install --force 'ouro-ai[bot]'`). |
 | Messages not received | Check that the WeChat account is logged in and the bot thread is running (check logs). |

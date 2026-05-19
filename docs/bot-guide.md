@@ -53,7 +53,7 @@ SLACK_APP_TOKEN=xapp-xxx
 ```
 
 ```bash
-ouro --bot
+ouro-bot
 ```
 
 ## Session Persistence
