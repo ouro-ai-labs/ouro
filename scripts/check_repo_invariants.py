@@ -9,6 +9,20 @@ from pathlib import Path
 
 RFC_FILENAME_RE = re.compile(r"^[^/]+\.md$")
 
+# Top-level package roots whose subpackages must be declared in
+# ``[tool.setuptools] packages``. Anything else (tests, scripts, docs)
+# is excluded — only shipped code is checked.
+SHIPPED_PACKAGE_ROOTS = ("ouro", "ouro_harbor")
+
+# Capture the ``packages = [...]`` array under ``[tool.setuptools]``.
+# A lightweight regex avoids a tomllib import (whose stdlib status the
+# isort/ruff configs don't yet recognize) for a dev-only check.
+_SETUPTOOLS_PACKAGES_RE = re.compile(
+    r"\[tool\.setuptools\][^\[]*?packages\s*=\s*\[(?P<body>[^\]]*)\]",
+    re.DOTALL,
+)
+_PACKAGE_NAME_RE = re.compile(r'"([\w.]+)"')
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
@@ -85,11 +99,45 @@ def _check_agents_symlinks(root: Path) -> list[str]:
     return errors
 
 
+def _check_packages_declared(root: Path) -> list[str]:
+    """Every ``__init__.py`` under shipped roots must be listed in
+    ``[tool.setuptools] packages``. PyPI installs use an explicit list
+    (see ouro/CLAUDE.md gotchas) — a missing subpackage ships a broken
+    wheel that crashes on first import.
+    """
+    pyproject_text = (root / "pyproject.toml").read_text()
+    match = _SETUPTOOLS_PACKAGES_RE.search(pyproject_text)
+    declared: set[str] = set(_PACKAGE_NAME_RE.findall(match.group("body"))) if match else set()
+
+    discovered: set[str] = set()
+    for top in SHIPPED_PACKAGE_ROOTS:
+        top_dir = root / top
+        if not top_dir.exists():
+            continue
+        for init in top_dir.rglob("__init__.py"):
+            rel = init.parent.relative_to(root)
+            discovered.add(str(rel).replace(os.sep, "."))
+
+    missing = sorted(discovered - declared)
+    extra = sorted(declared - discovered)
+
+    return [
+        f"Package '{pkg}' is in source but missing from [tool.setuptools] packages "
+        f"in pyproject.toml — PyPI wheel will not include it."
+        for pkg in missing
+    ] + [
+        f"Package '{pkg}' is declared in pyproject.toml but has no "
+        f"__init__.py in the source tree."
+        for pkg in extra
+    ]
+
+
 def main() -> int:
     root = _repo_root()
     errors: list[str] = []
     errors.extend(_check_rfc_numbering(root))
     errors.extend(_check_agents_symlinks(root))
+    errors.extend(_check_packages_declared(root))
 
     if errors:
         print("Repo invariants check failed:\n", file=sys.stderr)
