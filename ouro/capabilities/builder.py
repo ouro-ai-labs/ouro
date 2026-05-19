@@ -217,6 +217,7 @@ class AgentBuilder:
             hooks=hooks,
             max_iterations=self.max_iterations,
             progress=self.progress,
+            usage_callback=(memory.token_tracker.record_usage if memory is not None else None),
         )
 
         return ComposedAgent(

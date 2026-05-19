@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 from ouro.core.llm import LLMMessage, LLMResponse, StopReason, ToolCall, ToolResult
 from ouro.core.llm.reasoning import normalize_reasoning_effort
@@ -41,6 +41,7 @@ class Agent:
         max_iterations: int = 1000,
         max_tokens_per_call: int | None = None,
         progress: ProgressSink | None = None,
+        usage_callback: Callable[[dict[str, int]], None] | None = None,
     ) -> None:
         self.llm = llm
         self.tools = tools
@@ -49,6 +50,7 @@ class Agent:
         self.max_tokens_per_call = max_tokens_per_call
         self.progress: ProgressSink = progress or NullProgressSink()
         self._reasoning_effort: str | None = None
+        self._usage_callback = usage_callback
 
     def set_reasoning_effort(self, value: str | None) -> None:
         self._reasoning_effort = normalize_reasoning_effort(value)
@@ -68,7 +70,7 @@ class Agent:
         # for unit tests and one-shot uses.
         if context is None:
             context = MessageListContext()
-        ctx = RunStatistic(task=task, progress=self.progress)
+        ctx = RunStatistic(task=task, progress=self.progress, usage_callback=self._usage_callback)
         messages = context.detached
         await self._fanout_async("on_run_start", ctx, messages)
 
