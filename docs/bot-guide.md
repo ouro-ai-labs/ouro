@@ -6,9 +6,14 @@ Bot data is isolated under `~/.ouro/bot/` (sessions, memory, skills) so it never
 
 ## Installation
 
+Prerequisites: Python 3.12+ and one of [`uv`](https://docs.astral.sh/uv/) or [`pipx`](https://pipx.pypa.io/).
+
 ```bash
-pip install ouro-ai[bot]
+uv tool install 'ouro-ai[bot]'      # recommended
+# or: pipx install 'ouro-ai[bot]'
 ```
+
+The `[bot]` extra pulls in `aiohttp`, `lark-oapi`, `slack-sdk`, and `weixin-bot-sdk`. Upgrade later with `uv tool upgrade ouro-ai` (or `pipx upgrade ouro-ai`).
 
 ## Configure Models
 

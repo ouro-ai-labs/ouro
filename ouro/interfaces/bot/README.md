@@ -5,7 +5,7 @@ Bot mode turns ouro into a persistent IM assistant. Each chat conversation maps 
 ## Quick Start
 
 ```bash
-pip install ouro-ai[bot]
+uv tool install 'ouro-ai[bot]'      # or: pipx install 'ouro-ai[bot]'
 ```
 
 Add credentials to `~/.ouro/config` (see [LARK.md](LARK.md) / [SLACK.md](SLACK.md)):

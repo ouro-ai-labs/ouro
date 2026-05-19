@@ -5,7 +5,7 @@ This guide walks you through connecting ouro to Lark as an IM bot.
 ## Prerequisites
 
 - A [Lark Open Platform](https://open.feishu.cn/app) account (enterprise admin or developer)
-- `pip install ouro-ai[bot]`
+- `uv tool install 'ouro-ai[bot]'` (or `pipx install 'ouro-ai[bot]'`)
 
 ## 1. Create a Lark App
 

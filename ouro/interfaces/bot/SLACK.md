@@ -5,7 +5,7 @@ This guide walks you through connecting ouro to Slack as an IM bot via Socket Mo
 ## Prerequisites
 
 - A [Slack workspace](https://slack.com/) where you can install apps
-- `pip install ouro-ai[bot]`
+- `uv tool install 'ouro-ai[bot]'` (or `pipx install 'ouro-ai[bot]'`)
 
 ## 1. Create a Slack App
 

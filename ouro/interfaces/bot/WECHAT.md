@@ -5,7 +5,7 @@ This guide walks you through connecting ouro to WeChat as an IM bot via the [wei
 ## Prerequisites
 
 - A personal WeChat account (used for the bot)
-- `pip install ouro-ai[bot]`
+- `uv tool install 'ouro-ai[bot]'` (or `pipx install 'ouro-ai[bot]'`)
 
 ## 1. Enable WeChat Channel
 
@@ -47,5 +47,5 @@ Once authenticated, anyone who sends a message to the bot's WeChat account will 
 |-------|----------|
 | QR code not showing | Make sure your terminal supports the QR display. Try a wider terminal window. |
 | Session expired | Restart the bot (`ouro --bot`) and scan the QR code again. |
-| `weixin-bot-sdk not installed` | Run `pip install weixin-bot-sdk` or `pip install ouro-ai[bot]`. |
+| `weixin-bot-sdk not installed` | Reinstall with the `[bot]` extra: `uv tool install --force 'ouro-ai[bot]'` (or `pipx install --force 'ouro-ai[bot]'`). |
 | Messages not received | Check that the WeChat account is logged in and the bot thread is running (check logs). |

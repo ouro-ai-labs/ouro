@@ -21,17 +21,26 @@ Ouro ships with a unified agent core and two deployment modes:
 | | **CLI Mode** | **Bot Mode** |
 |---|---|---|
 | **What** | Interactive REPL + one-shot task execution | Persistent IM assistant (Lark, Slack) |
-| **Install** | `pip install ouro-ai` | `pip install ouro-ai[bot]` |
+| **Install** | `uv tool install ouro-ai` | `uv tool install 'ouro-ai[bot]'` |
 | **Run** | `ouro` | `ouro --bot` |
 | **Guide** | [CLI Guide](docs/cli-guide.md) | [Bot Guide](docs/bot-guide.md) |
 
 ## Quick Start
 
-Prerequisites: Python 3.12+.
+Prerequisites: Python 3.12+ and one of [`uv`](https://docs.astral.sh/uv/) (recommended) or [`pipx`](https://pipx.pypa.io/).
 
 ```bash
-pip install ouro-ai
+# Recommended: installs ouro in an isolated environment and exposes a global `ouro` command
+uv tool install ouro-ai
+
+# Alternative
+pipx install ouro-ai
+
+# Upgrading later
+uv tool upgrade ouro-ai      # or: pipx upgrade ouro-ai
 ```
+
+> Plain `pip install ouro-ai` also works but is **not recommended** — it mixes ouro's dependencies into your active Python environment. Use `uv tool` / `pipx` so the `ouro` binary is on `$PATH` without needing to activate a venv.
 
 On first run, `~/.ouro/models.yaml` is created. Add your API key:
 
@@ -112,13 +121,17 @@ README — start with the umbrella overview, then drill in:
 
 Contributions are welcome! Please open an [issue](https://github.com/ouro-ai-labs/ouro/issues) or submit a pull request.
 
-For development setup, see the [Quick Start](#quick-start) section (install from source):
+For development setup (install from source):
 
 ```bash
 git clone https://github.com/ouro-ai-labs/ouro.git
 cd ouro
-./scripts/bootstrap.sh   # requires uv
+./scripts/bootstrap.sh         # creates .venv and installs editable + dev deps
+source .venv/bin/activate
+./scripts/dev.sh check         # precommit + typecheck + tests
 ```
+
+End-users should prefer `uv tool install ouro-ai` (see [Quick Start](#quick-start)); the source checkout is only needed when contributing.
 
 ## License
 
