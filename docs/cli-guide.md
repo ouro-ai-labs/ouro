@@ -4,11 +4,14 @@ Ouro's CLI mode gives you a coding agent right in your terminal — interactive 
 
 ## Installation
 
-Prerequisites: Python 3.12+.
+Prerequisites: Python 3.12+ and one of [`uv`](https://docs.astral.sh/uv/) or [`pipx`](https://pipx.pypa.io/).
 
 ```bash
-pip install ouro-ai
+uv tool install ouro-ai      # recommended
+# or: pipx install ouro-ai
 ```
+
+Both install ouro in an isolated environment and put the `ouro` binary on `$PATH` — no venv activation needed. Upgrade later with `uv tool upgrade ouro-ai` (or `pipx upgrade ouro-ai`).
 
 Or install from source (for development):
 
@@ -16,6 +19,7 @@ Or install from source (for development):
 git clone https://github.com/ouro-ai-labs/ouro.git
 cd ouro
 ./scripts/bootstrap.sh   # requires uv
+source .venv/bin/activate
 ```
 
 ## Configure Models
