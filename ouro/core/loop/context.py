@@ -16,7 +16,7 @@ the context itself.
 
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Callable, Iterable
 
 from ouro.core.llm import LLMMessage
 from ouro.core.loop.message_list import MessageList
@@ -26,12 +26,19 @@ from ouro.core.loop.protocols import ProgressSink
 class RunStatistic:
     """Mutable run state. Exposed to hooks via the LoopContext Protocol view."""
 
-    def __init__(self, task: str, progress: ProgressSink) -> None:
+    def __init__(
+        self,
+        task: str,
+        progress: ProgressSink,
+        *,
+        usage_callback: Callable[[dict[str, int]], None] | None = None,
+    ) -> None:
         self.task = task
         self.iteration = 0
         self.usage_total: dict[str, int] = {}
         self.stop_reason_last: str | None = None
         self.progress = progress
+        self._usage_callback = usage_callback
 
     def add_usage(self, usage: dict[str, int] | None) -> None:
         if not usage:
@@ -39,6 +46,8 @@ class RunStatistic:
         for k, v in usage.items():
             if isinstance(v, int):
                 self.usage_total[k] = self.usage_total.get(k, 0) + v
+        if self._usage_callback is not None:
+            self._usage_callback(usage)
 
 
 class MessageListContext:
