@@ -28,6 +28,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Import base class at module level to satisfy linters and avoid E402.
+# The circular import is safe because BaseLongTermMemory is defined in
+# ``__init__.py`` before this module is imported.
+from ouro.capabilities.memory.long_term import BaseLongTermMemory  # noqa: E402
+
 # ---------------------------------------------------------------------------
 # Lazy import
 # ---------------------------------------------------------------------------
@@ -114,7 +119,7 @@ environment details), it is automatically stored for future sessions.
 </long_term_memory>"""
 
 
-class Mem0LongTermMemory:
+class Mem0LongTermMemory(BaseLongTermMemory):
     """Long-term memory facade backed by mem0 vector search.
 
     This is a drop-in replacement for ``LongTermMemoryManager`` in

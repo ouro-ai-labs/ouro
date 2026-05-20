@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from ouro.core.llm import LiteLLMAdapter
 
-    from .long_term import LongTermMemoryManager
+    from .long_term import BaseLongTermMemory
 
 
 class MemoryManager:
@@ -73,7 +73,7 @@ class MemoryManager:
         self.token_tracker = TokenTracker()
         self._compaction = CompactionManager(llm)
 
-        self._long_term: LongTermMemoryManager | None = None
+        self._long_term: BaseLongTermMemory | None = None
         if Config.LONG_TERM_MEMORY_ENABLED:
             from .long_term import LongTermMemoryManager
 
@@ -172,7 +172,7 @@ class MemoryManager:
     # ------------------------------------------------------------------
 
     @property
-    def long_term(self) -> LongTermMemoryManager | None:
+    def long_term(self) -> BaseLongTermMemory | None:
         """Access the long-term memory manager (None if disabled)."""
         return self._long_term
 
