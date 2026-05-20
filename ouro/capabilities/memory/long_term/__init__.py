@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, List, Optional, Tuple
 from ouro.config import Config
 
 from .consolidator import LongTermMemoryConsolidator
+from .mem0_adapter import Mem0LongTermMemory
 from .store import MemoryStore
 
 if TYPE_CHECKING:
@@ -25,7 +26,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["LongTermMemoryManager"]
+__all__ = ["LongTermMemoryManager", "Mem0LongTermMemory"]
 
 _INSTRUCTION_TEMPLATE = """\
 <long_term_memory>
