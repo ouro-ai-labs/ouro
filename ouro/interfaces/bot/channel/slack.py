@@ -99,9 +99,7 @@ class SlackChannel:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    async def _on_request(
-        self, client: AsyncBaseSocketModeClient, req: SocketModeRequest
-    ) -> None:
+    async def _on_request(self, client: AsyncBaseSocketModeClient, req: SocketModeRequest) -> None:
         """Handle a Socket Mode request from Slack."""
         # Always ack immediately to prevent retries.
         await client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
