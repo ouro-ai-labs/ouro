@@ -13,11 +13,12 @@ Storage layout::
 
 import logging
 from datetime import date
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, List, Optional, Tuple
 
 from ouro.config import Config
 
 from .consolidator import LongTermMemoryConsolidator
+from .mem0_adapter import Mem0LongTermMemory
 from .store import MemoryStore
 
 if TYPE_CHECKING:
@@ -25,7 +26,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["LongTermMemoryManager"]
+__all__ = ["LongTermMemoryManager", "Mem0LongTermMemory"]
 
 _INSTRUCTION_TEMPLATE = """\
 <long_term_memory>
@@ -136,6 +137,18 @@ class LongTermMemoryManager:
             formatted_dailies=formatted_dailies,
             today_file=today_file,
         )
+
+    async def add_memories_from_conversation(
+        self,
+        messages: list[Any],
+        session_id: str,
+    ) -> None:
+        """No-op: file-based LTM does not ingest raw conversation messages.
+
+        Conversation summaries are written to daily files via the
+        memory-update protocol instead.
+        """
+        return
 
     @property
     def memory_dir(self) -> str:
