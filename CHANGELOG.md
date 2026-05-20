@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-05-20
+
+### Added
+
+- **mem0 integration**: optional vector-memory backend via mem0. Enable
+  by installing the `mem0` extra (`pip install ouro-ai[mem0]`) and
+  configuring it in `~/.ouro/config`. A new `BaseLongTermMemory` ABC
+  unifies the contract across the in-tree memory store and mem0.
+
+### Fixed
+
+- **Loop death loops**: detect and break self-reinforcing tool-call
+  loops where compaction summaries re-encode repeated tool calls as
+  "patterns" and feed them back into the model (#185).
+- **Token tracker**: wire actual LLM usage into `TokenTracker` so the
+  status bar reflects real token counts instead of stale/zero values (#183).
+
+### Docs
+
+- Updated README and `docs/memory-management.md` to cover the mem0
+  backend and configuration (#186).
+
+## [0.4.1] - 2026-05-08
+
+### Fixed
+
+- **Packaging**: include `ouro.capabilities.compaction` in the wheel
+  and add an invariant check so missing subpackages fail the build
+  rather than silently breaking PyPI installs (#182).
+
 ## [0.4.0] - 2026-04-27
 
 ### Changed
