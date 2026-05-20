@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import logging
 from collections import OrderedDict
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from slack_sdk.socket_mode.aiohttp import SocketModeClient as AsyncSocketModeClient
+from slack_sdk.socket_mode.async_client import AsyncBaseSocketModeClient
 from slack_sdk.socket_mode.request import SocketModeRequest
 from slack_sdk.socket_mode.response import SocketModeResponse
 from slack_sdk.web.async_client import AsyncWebClient
@@ -98,7 +99,9 @@ class SlackChannel:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    async def _on_request(self, client: AsyncSocketModeClient, req: SocketModeRequest) -> None:
+    async def _on_request(
+        self, client: AsyncBaseSocketModeClient, req: SocketModeRequest
+    ) -> None:
         """Handle a Socket Mode request from Slack."""
         # Always ack immediately to prevent retries.
         await client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
@@ -218,7 +221,7 @@ class SlackChannel:
     ) -> bool:
         """Upload and send a file to a Slack channel/DM."""
         try:
-            kwargs: dict[str, object] = {"channel": conversation_id}
+            kwargs: dict[str, Any] = {"channel": conversation_id}
             if file_path is not None:
                 kwargs["file"] = file_path
                 kwargs["filename"] = filename or file_path.rsplit("/", 1)[-1]

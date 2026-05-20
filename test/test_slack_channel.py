@@ -73,10 +73,14 @@ def _mock_slack():
     mock_response_cls = MagicMock()
     mock_response_mod.SocketModeResponse = mock_response_cls
 
+    mock_async_client_mod = MagicMock()
+    mock_async_client_mod.AsyncBaseSocketModeClient = MagicMock()
+
     modules = {
         "slack_sdk": MagicMock(),
         "slack_sdk.socket_mode": MagicMock(),
         "slack_sdk.socket_mode.aiohttp": MagicMock(SocketModeClient=mock_socket_client_cls),
+        "slack_sdk.socket_mode.async_client": mock_async_client_mod,
         "slack_sdk.socket_mode.request": mock_request_mod,
         "slack_sdk.socket_mode.response": mock_response_mod,
         "slack_sdk.web": MagicMock(),
