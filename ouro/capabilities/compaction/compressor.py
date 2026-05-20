@@ -31,9 +31,13 @@ class WorkingMemoryCompressor:
     COMPRESSION_PROMPT = """You are a memory compression system. Summarize the following conversation messages while preserving:
 1. Key decisions and outcomes
 2. Important facts, data, and findings
-3. Tool usage patterns and results
+3. Useful tool results that informed progress
 4. User intent and goals
 5. Critical context needed for future interactions
+
+IMPORTANT: If the conversation contains repeated identical tool calls whose results did not
+advance the task, do NOT describe them as a pattern to follow. Instead, flag them clearly as
+wasted iterations and instruct the future assistant NOT to repeat those calls.
 
 Original messages ({count} messages, ~{tokens} tokens):
 
@@ -47,9 +51,14 @@ Original messages ({count} messages, ~{tokens} tokens):
         "Summarize the conversation above while preserving:\n"
         "1. Key decisions and outcomes\n"
         "2. Important facts, data, and findings\n"
-        "3. Tool usage patterns and results\n"
+        "3. Useful tool results that informed progress\n"
         "4. User intent and goals\n"
         "5. Critical context needed for future interactions\n"
+        "\n"
+        "IMPORTANT: If the conversation contains repeated identical tool calls whose results "
+        "did not advance the task, do NOT describe them as a pattern to follow. Instead, flag "
+        "them clearly as wasted iterations and instruct the future assistant NOT to repeat "
+        "those calls.\n"
         "\n"
         "Target length: {target_tokens} tokens. Be concise but include concrete details."
     )
