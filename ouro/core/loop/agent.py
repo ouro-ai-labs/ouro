@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Literal, NamedTuple, Sequence
 
 from ouro.core.llm import LLMMessage, LLMResponse, StopReason, ToolCall, ToolResult
 from ouro.core.llm.reasoning import normalize_reasoning_effort
@@ -153,78 +153,20 @@ class Agent:
                 # below sit in the correct chronological order.
                 messages.append(response.to_message())
 
-                # Repeated-tool-call circuit breaker. Compaction summaries
-                # can re-inject pathological tool-call patterns as if they
-                # were task state, so when the model emits the same
-                # (name, arguments) iteration N times in a row we either
-                # synthesize a "stop repeating" tool_result (soft) or
-                # terminate the run (hard).
-                iter_sig = _tool_call_iter_signature(tool_calls)
-                if last_iter_sig is not None and iter_sig == last_iter_sig:
-                    repeat_count += 1
-                else:
-                    last_iter_sig = iter_sig
-                    repeat_count = 1
-
-                if (
-                    self.repeat_tool_call_threshold > 0
-                    and repeat_count >= self.repeat_tool_call_max
-                ):
-                    for tc in tool_calls:
-                        messages.append(
-                            LLMMessage(
-                                role="tool",
-                                content=(
-                                    f"[ouro] Same tool_call(s) repeated {repeat_count} "
-                                    "times consecutively with no progress. Terminating "
-                                    "to prevent runaway loop."
-                                ),
-                                tool_call_id=tc.id,
-                                name=tc.name,
-                            )
-                        )
-                    logger.warning(
-                        "Agent.run: hard-stopping after %d consecutive identical "
-                        "tool_call iterations on iteration %d (names=%s)",
-                        repeat_count,
-                        ctx.iteration,
-                        [tc.name for tc in tool_calls],
-                    )
-                    final_answer = (
-                        "[ouro] Halted: the model repeated the same tool call "
-                        f"{repeat_count} times without progress "
-                        f"({[tc.name for tc in tool_calls]}). Please rephrase your "
-                        "request or restart the session."
-                    )
+                guard = self._apply_repeated_tool_call_guard(
+                    tool_calls=tool_calls,
+                    messages=messages,
+                    last_iter_sig=last_iter_sig,
+                    repeat_count=repeat_count,
+                    iteration=ctx.iteration,
+                )
+                last_iter_sig = guard.last_iter_sig
+                repeat_count = guard.repeat_count
+                if guard.action == "halted":
+                    final_answer = guard.final_answer or ""
                     self.progress.unfinished_answer(final_answer)
                     return final_answer
-
-                if (
-                    self.repeat_tool_call_threshold > 0
-                    and repeat_count >= self.repeat_tool_call_threshold
-                ):
-                    feedback = (
-                        f"[ouro] This exact tool_call has now been issued {repeat_count} "
-                        "times consecutively. The result has not changed. Stop repeating: "
-                        "either choose a different action, ask the user for clarification, "
-                        "or finish the task."
-                    )
-                    for tc in tool_calls:
-                        messages.append(
-                            LLMMessage(
-                                role="tool",
-                                content=feedback,
-                                tool_call_id=tc.id,
-                                name=tc.name,
-                            )
-                        )
-                    logger.warning(
-                        "Agent.run: intercepted %d-times-repeated tool_call(s) on "
-                        "iteration %d (names=%s)",
-                        repeat_count,
-                        ctx.iteration,
-                        [tc.name for tc in tool_calls],
-                    )
+                if guard.action == "intercepted":
                     continue
 
                 tool_results = await self._dispatch_tools(ctx, tool_calls)
@@ -274,6 +216,90 @@ class Agent:
 
         logger.warning("Agent.run reached max_iterations=%d without STOP", self.max_iterations)
         return final_answer
+
+    def _apply_repeated_tool_call_guard(
+        self,
+        *,
+        tool_calls: list[ToolCall],
+        messages: MessageList,
+        last_iter_sig: tuple[tuple[str, str], ...] | None,
+        repeat_count: int,
+        iteration: int,
+    ) -> _RepeatGuardOutcome:
+        """Track consecutive identical tool_call iterations and intercept loops.
+
+        Compaction summaries can re-inject pathological tool-call patterns as
+        if they were task state, so when the model emits the same
+        ``(name, arguments)`` iteration N times in a row we either synthesize
+        a "stop repeating" tool_result (soft intercept) or terminate the run
+        (hard stop).  This method updates ``messages`` in place with the
+        synthesized tool_results when intercepting; the caller routes on
+        ``outcome.action``.
+        """
+        iter_sig = _tool_call_iter_signature(tool_calls)
+        if last_iter_sig is not None and iter_sig == last_iter_sig:
+            new_repeat_count = repeat_count + 1
+        else:
+            new_repeat_count = 1
+
+        if self.repeat_tool_call_threshold <= 0:
+            return _RepeatGuardOutcome("dispatch", iter_sig, new_repeat_count, None)
+
+        if new_repeat_count >= self.repeat_tool_call_max:
+            for tc in tool_calls:
+                messages.append(
+                    LLMMessage(
+                        role="tool",
+                        content=(
+                            f"[ouro] Same tool_call(s) repeated {new_repeat_count} "
+                            "times consecutively with no progress. Terminating "
+                            "to prevent runaway loop."
+                        ),
+                        tool_call_id=tc.id,
+                        name=tc.name,
+                    )
+                )
+            logger.warning(
+                "Agent.run: hard-stopping after %d consecutive identical "
+                "tool_call iterations on iteration %d (names=%s)",
+                new_repeat_count,
+                iteration,
+                [tc.name for tc in tool_calls],
+            )
+            final_answer = (
+                "[ouro] Halted: the model repeated the same tool call "
+                f"{new_repeat_count} times without progress "
+                f"({[tc.name for tc in tool_calls]}). Please rephrase your "
+                "request or restart the session."
+            )
+            return _RepeatGuardOutcome("halted", iter_sig, new_repeat_count, final_answer)
+
+        if new_repeat_count >= self.repeat_tool_call_threshold:
+            feedback = (
+                f"[ouro] This exact tool_call has now been issued {new_repeat_count} "
+                "times consecutively. The result has not changed. Stop repeating: "
+                "either choose a different action, ask the user for clarification, "
+                "or finish the task."
+            )
+            for tc in tool_calls:
+                messages.append(
+                    LLMMessage(
+                        role="tool",
+                        content=feedback,
+                        tool_call_id=tc.id,
+                        name=tc.name,
+                    )
+                )
+            logger.warning(
+                "Agent.run: intercepted %d-times-repeated tool_call(s) on "
+                "iteration %d (names=%s)",
+                new_repeat_count,
+                iteration,
+                [tc.name for tc in tool_calls],
+            )
+            return _RepeatGuardOutcome("intercepted", iter_sig, new_repeat_count, None)
+
+        return _RepeatGuardOutcome("dispatch", iter_sig, new_repeat_count, None)
 
     async def _dispatch_tools(
         self,
@@ -401,6 +427,21 @@ class Agent:
         if retries:
             return ContinueDecision.retry_with_feedback(*retries)
         return decision
+
+
+class _RepeatGuardOutcome(NamedTuple):
+    """Result of one iteration's repeated-tool-call check.
+
+    ``action`` routes the caller:
+    - ``"dispatch"``: not a repeat (or breaker disabled); run the tools normally.
+    - ``"intercepted"``: synthesized tool_results already appended; ``continue``.
+    - ``"halted"``: synthesized tool_results already appended; return ``final_answer``.
+    """
+
+    action: Literal["dispatch", "intercepted", "halted"]
+    last_iter_sig: tuple[tuple[str, str], ...]
+    repeat_count: int
+    final_answer: str | None
 
 
 def _tool_call_iter_signature(
