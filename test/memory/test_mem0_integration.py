@@ -12,7 +12,6 @@ from ouro.config import Config
 from ouro.core.llm.message_types import LLMMessage
 from ouro.core.loop import MessageListContext
 
-
 # ---------------------------------------------------------------------------
 # Fake mem0 implementation
 # ---------------------------------------------------------------------------
@@ -46,10 +45,13 @@ class FakeMem0Memory:
         GENERIC_QUERIES = {"session conversation", "recent activities preferences decisions"}
         results = []
         for mem in self._memories:
-            if filters and filters.get("user_id"):
-                if mem.get("user_id") != filters["user_id"]:
-                    continue
-            if query == "*" or query.lower() in GENERIC_QUERIES or query.lower() in mem["memory"].lower():
+            if filters and filters.get("user_id") and mem.get("user_id") != filters["user_id"]:
+                continue
+            if (
+                query == "*"
+                or query.lower() in GENERIC_QUERIES
+                or query.lower() in mem["memory"].lower()
+            ):
                 results.append(mem)
         return {"results": results[:limit]}
 

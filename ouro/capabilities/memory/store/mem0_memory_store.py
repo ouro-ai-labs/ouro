@@ -19,11 +19,10 @@ import asyncio
 import logging
 import os
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ouro.capabilities.memory.serialization import (
     deserialize_message,
-    serialize_message,
 )
 from ouro.capabilities.memory.store.memory_store import MemoryStore
 from ouro.core.llm.message_types import LLMMessage
@@ -56,13 +55,12 @@ def _get_mem0() -> Any:
 # ---------------------------------------------------------------------------
 
 
-def _build_config() -> Dict[str, Any]:
+def _build_config() -> dict[str, Any]:
     """Build mem0 config dict from ouro Config / environment."""
-    from ouro.config import Config
 
-    llm_config: Dict[str, Any] = {"provider": "openai", "config": {}}
-    embedder_config: Dict[str, Any] = {"provider": "openai", "config": {}}
-    vector_store_config: Dict[str, Any] = {
+    llm_config: dict[str, Any] = {"provider": "openai", "config": {}}
+    embedder_config: dict[str, Any] = {"provider": "openai", "config": {}}
+    vector_store_config: dict[str, Any] = {
         "provider": "qdrant",
         "config": {"path": "/tmp/qdrant"},
     }
@@ -110,9 +108,9 @@ def _build_config() -> Dict[str, Any]:
     }
 
 
-def _messages_to_text(messages: List[LLMMessage]) -> str:
+def _messages_to_text(messages: list[LLMMessage]) -> str:
     """Flatten a list of messages into a single text blob for mem0."""
-    parts: List[str] = []
+    parts: list[str] = []
     for msg in messages:
         role = msg.role
         content = msg.content
@@ -120,10 +118,11 @@ def _messages_to_text(messages: List[LLMMessage]) -> str:
             parts.append(f"[{role}] {content}")
         elif isinstance(content, list):
             # Multimodal — keep text blocks only
-            texts: List[str] = []
-            for block in content:
-                if isinstance(block, dict) and block.get("type") == "text":
-                    texts.append(block.get("text", ""))
+            texts = [
+                block.get("text", "")
+                for block in content
+                if isinstance(block, dict) and block.get("type") == "text"
+            ]
             if texts:
                 parts.append(f"[{role}] {' '.join(texts)}")
     return "\n".join(parts)
@@ -155,7 +154,7 @@ class Mem0MemoryStore(MemoryStore):
 
     # -- MemoryStore interface --------------------------------------------
 
-    async def create_session(self, metadata: Optional[Dict[str, Any]] = None) -> str:
+    async def create_session(self, metadata: dict[str, Any] | None = None) -> str:
         import uuid
 
         session_id = str(uuid.uuid4())
@@ -182,8 +181,8 @@ class Mem0MemoryStore(MemoryStore):
     async def save_memory(
         self,
         session_id: str,
-        system_messages: List[LLMMessage],
-        messages: List[LLMMessage],
+        system_messages: list[LLMMessage],
+        messages: list[LLMMessage],
     ) -> None:
         """Persist the full conversation snapshot to mem0.
 
@@ -210,7 +209,7 @@ class Mem0MemoryStore(MemoryStore):
             )
         logger.debug(f"Saved mem0 memory for session {session_id}: {len(all_msgs)} messages")
 
-    async def load_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+    async def load_session(self, session_id: str) -> dict[str, Any] | None:
         """Load the latest conversation snapshot for *session_id* from mem0.
 
         Returns:
@@ -256,7 +255,7 @@ class Mem0MemoryStore(MemoryStore):
             },
         }
 
-    async def list_sessions(self, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+    async def list_sessions(self, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
         """List distinct session IDs known to mem0.
 
         mem0 doesn't expose a native "list users" API, so we perform a
@@ -272,7 +271,7 @@ class Mem0MemoryStore(MemoryStore):
         items = results.get("results", []) if results else []
 
         # Aggregate by user_id -> latest memory
-        sessions: Dict[str, Dict[str, Any]] = {}
+        sessions: dict[str, dict[str, Any]] = {}
         for item in items:
             uid = item.get("user_id") or item.get("metadata", {}).get("session_id")
             if not uid:
@@ -327,7 +326,7 @@ class Mem0MemoryStore(MemoryStore):
         logger.info(f"Deleted mem0 memories for session {session_id}")
         return True
 
-    async def get_session_stats(self, session_id: str) -> Optional[Dict[str, Any]]:
+    async def get_session_stats(self, session_id: str) -> dict[str, Any] | None:
         results = await asyncio.to_thread(
             self._m.search,
             query="*",
@@ -348,11 +347,11 @@ class Mem0MemoryStore(MemoryStore):
             "total_message_tokens": meta.get("tokens", 0),
         }
 
-    async def find_latest_session(self) -> Optional[str]:
+    async def find_latest_session(self) -> str | None:
         sessions = await self.list_sessions(limit=1)
         return sessions[0]["id"] if sessions else None
 
-    async def find_session_by_prefix(self, prefix: str) -> Optional[str]:
+    async def find_session_by_prefix(self, prefix: str) -> str | None:
         sessions = await self.list_sessions(limit=1000)
         matches = [s["id"] for s in sessions if s["id"].startswith(prefix)]
         if len(matches) == 1:
@@ -366,9 +365,9 @@ class Mem0MemoryStore(MemoryStore):
     async def search(
         self,
         query: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         limit: int = 5,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Semantic search across memories.
 
         Args:
@@ -388,7 +387,9 @@ class Mem0MemoryStore(MemoryStore):
         )
         return results.get("results", []) if results else []
 
-    async def add_fact(self, text: str, session_id: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def add_fact(
+        self, text: str, session_id: str, metadata: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """Add an arbitrary fact/memory entry.
 
         This is useful for long-term memory consolidation: extract facts

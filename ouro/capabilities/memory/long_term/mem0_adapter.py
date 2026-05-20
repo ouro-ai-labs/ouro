@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import date
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 from ouro.config import Config
 
@@ -54,7 +54,7 @@ def _get_mem0() -> Any:
 # ---------------------------------------------------------------------------
 
 
-def _build_mem0_config() -> Dict[str, Any]:
+def _build_mem0_config() -> dict[str, Any]:
     """Build mem0 config dict from environment."""
     import os
 
@@ -72,15 +72,15 @@ def _build_mem0_config() -> Dict[str, Any]:
     vs_provider = os.environ.get("MEM0_VECTOR_STORE_PROVIDER", "qdrant")
     vs_path = os.environ.get("MEM0_VECTOR_STORE_PATH", "/tmp/qdrant")
 
-    llm_config = {
+    llm_config: dict[str, Any] = {
         "provider": llm_provider,
         "config": {"model": llm_model, "temperature": 0.1},
     }
-    embedder_config = {
+    embedder_config: dict[str, Any] = {
         "provider": embedder_provider,
         "config": {"model": embedder_model},
     }
-    vector_store_config = {
+    vector_store_config: dict[str, Any] = {
         "provider": vs_provider,
         "config": {"path": vs_path},
     }
@@ -122,7 +122,7 @@ class Mem0LongTermMemory:
     past memories and ``add`` to persist new facts.
     """
 
-    def __init__(self, llm: "LiteLLMAdapter", user_id: Optional[str] = None) -> None:
+    def __init__(self, llm: LiteLLMAdapter, user_id: str | None = None) -> None:
         self.llm = llm
         self.user_id = user_id or "default_user"
         mem0 = _get_mem0()
@@ -133,7 +133,7 @@ class Mem0LongTermMemory:
     # Public API (mirrors LongTermMemoryManager)
     # ------------------------------------------------------------------
 
-    async def load_and_format(self) -> Optional[str]:
+    async def load_and_format(self) -> str | None:
         """Search mem0 for recent / relevant memories and format them.
 
         Returns:
@@ -153,7 +153,7 @@ class Mem0LongTermMemory:
 
     async def add_memories_from_conversation(
         self,
-        messages: List[Any],
+        messages: list[Any],
         session_id: str,
     ) -> None:
         """Extract and store durable facts from a conversation.
@@ -185,7 +185,7 @@ class Mem0LongTermMemory:
         except Exception:
             logger.warning("Failed to add memories to mem0", exc_info=True)
 
-    async def search(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+    async def search(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
         """Semantic search across long-term memories.
 
         Args:
@@ -211,7 +211,7 @@ class Mem0LongTermMemory:
     # Helpers
     # ------------------------------------------------------------------
 
-    async def _fetch_memories(self) -> List[Dict[str, Any]]:
+    async def _fetch_memories(self) -> list[dict[str, Any]]:
         """Fetch the most recent / relevant memories for the user."""
         # Strategy: search with a broad query to get recent memories.
         # mem0 returns results ordered by relevance; we also sort by date.
@@ -230,7 +230,7 @@ class Mem0LongTermMemory:
         return items
 
     @staticmethod
-    def _format_memories(memories: List[Dict[str, Any]]) -> str:
+    def _format_memories(memories: list[dict[str, Any]]) -> str:
         """Format mem0 results into a readable markdown list."""
         if not memories:
             return "(no memories yet)"
@@ -244,9 +244,9 @@ class Mem0LongTermMemory:
         return "\n".join(lines) if lines else "(no memories yet)"
 
     @staticmethod
-    def _messages_to_text(messages: List[Any]) -> str:
+    def _messages_to_text(messages: list[Any]) -> str:
         """Flatten messages to a text blob for mem0 ingestion."""
-        parts: List[str] = []
+        parts: list[str] = []
         for msg in messages:
             role = getattr(msg, "role", "unknown")
             content = getattr(msg, "content", "")

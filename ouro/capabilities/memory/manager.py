@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from ouro.core.llm import LiteLLMAdapter
 
-    from .long_term import LongTermMemoryManager, Mem0LongTermMemory
+    from .long_term import LongTermMemoryManager
 
 
 class MemoryManager:
