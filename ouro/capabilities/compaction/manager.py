@@ -38,7 +38,7 @@ def _extract_ltm_block(text: str) -> str:
 
 
 if TYPE_CHECKING:
-    from ouro.capabilities.memory.long_term import LongTermMemoryManager
+    from ouro.capabilities.memory.long_term import BaseLongTermMemory
     from ouro.core.llm import LiteLLMAdapter
 
 
@@ -55,7 +55,7 @@ class CompactionManager:
     def __init__(
         self,
         llm: LiteLLMAdapter,
-        long_term: LongTermMemoryManager | None = None,
+        long_term: BaseLongTermMemory | None = None,
     ) -> None:
         self.llm = llm
         self.compressor = WorkingMemoryCompressor(llm)
@@ -153,7 +153,7 @@ class CompactionManager:
 
         # Read today's daily file so the LLM knows what's already saved
         existing_memories = ""
-        if self._long_term is not None:
+        if self._long_term is not None and hasattr(self._long_term, "store"):
             try:
                 existing_memories = await self._long_term.store.load_daily(date.today())
             except Exception:
@@ -334,7 +334,7 @@ class CompactionManager:
         """Set a callback to provide current todo context for compression."""
         self._todo_context_provider = provider
 
-    def set_long_term(self, long_term: LongTermMemoryManager | None) -> None:
+    def set_long_term(self, long_term: BaseLongTermMemory | None) -> None:
         """Set the long-term memory manager."""
         self._long_term = long_term
 
@@ -386,6 +386,8 @@ class CompactionManager:
             return
 
         ltm = self._long_term
+        if not hasattr(ltm, "store"):
+            return
 
         async def _save() -> None:
             try:

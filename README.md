@@ -21,7 +21,7 @@ Ouro ships with a unified agent core and two deployment modes:
 | | **CLI Mode** | **Bot Mode** |
 |---|---|---|
 | **What** | Interactive REPL + one-shot task execution | Persistent IM assistant (Lark, Slack) |
-| **Install** | `uv tool install ouro-ai` | `uv tool install 'ouro-ai[bot]'` |
+| **Install** | `uv tool install ouro-ai` | `uv tool install ouro-ai` |
 | **Run** | `ouro-cli` | `ouro-bot` |
 | **Guide** | [CLI Guide](docs/cli-guide.md) | [Bot Guide](docs/bot-guide.md) |
 
@@ -62,7 +62,7 @@ ouro-cli
 # Single task
 ouro-cli --task "Calculate 123 * 456"
 
-# Bot mode (requires ouro-ai[bot])
+# Bot mode
 ouro-bot
 ```
 
@@ -74,7 +74,7 @@ See [LiteLLM Providers](https://docs.litellm.ai/docs/providers) for the full pro
 - **Unified agent loop**: Think-Act-Observe cycle — planning, sub-agents, and tool use all happen in one loop
 - **Self-verification**: Ralph Loop verifies the agent's answer against the original task and re-enters if incomplete (`--verify`)
 - **Parallel execution**: Concurrent readonly tool calls in a single turn, plus `multi_task` for spawning parallel sub-agents with dependency ordering
-- **Memory system**: LLM-driven compression, long-term memory, and YAML session persistence resumable across restarts
+- **Memory system**: LLM-driven compression, long-term memory (file-based or mem0 vector search), and YAML session persistence resumable across restarts
 - **Proactive mechanisms**: Heartbeat self-checks + cron-scheduled tasks, with results broadcast to active IM sessions
 - **Personality**: Customizable soul file (`~/.ouro/bot/soul.md`) defines bot identity and tone
 - **Skills**: Extensible skill registry — dynamically loaded per session

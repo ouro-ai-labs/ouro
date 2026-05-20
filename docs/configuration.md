@@ -101,6 +101,36 @@ Settings live in `~/.ouro/config` (KEY=VALUE format, auto-created with defaults)
 | `MEMORY_SHORT_TERM_MIN_SIZE` | `6` | Minimum messages to always preserve during compression |
 | `MEMORY_COMPRESSION_RATIO` | `0.3` | Target compression ratio (0.3 = 30% of original) |
 
+### Long-Term Memory
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `LONG_TERM_MEMORY_ENABLED` | `false` | Enable file-based long-term memory (stores durable facts in `~/.ouro/memory/`) |
+| `LONG_TERM_MEMORY_CONSOLIDATION_THRESHOLD` | `1000` | Character count that triggers memory consolidation |
+| `LONG_TERM_MEMORY_DAILY_WINDOW` | `2` | Number of recent daily files to include in context |
+| `LONG_TERM_MEMORY_DAILY_RETENTION` | `30` | Days to keep daily memory files before pruning |
+
+### Mem0 Vector Memory
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `MEM0_ENABLED` | `false` | Enable mem0 vector-memory backend (replaces file-based LTM) |
+| `MEM0_USER_ID` | `default_user` | User identifier for mem0 memory isolation |
+
+**Environment overrides for mem0** (optional):
+
+| Env var | Default | Notes |
+|---------|---------|-------|
+| `MEM0_CONFIG_FILE` | — | Path to a custom mem0 YAML config file |
+| `MEM0_LLM_PROVIDER` | `openai` | LLM provider for mem0 fact extraction |
+| `MEM0_LLM_MODEL` | `gpt-4o-mini` | Model for mem0 fact extraction |
+| `MEM0_EMBEDDER_PROVIDER` | `openai` | Embedding provider |
+| `MEM0_EMBEDDER_MODEL` | `text-embedding-3-small` | Embedding model |
+| `MEM0_VECTOR_STORE_PROVIDER` | `qdrant` | Vector store backend (`qdrant` recommended) |
+| `MEM0_VECTOR_STORE_PATH` | `/tmp/qdrant` | Local path for Qdrant data |
+
+When `MEM0_ENABLED=true`, sessions are stored in the mem0 vector store instead of YAML files, and cross-session memories are retrieved via semantic search rather than file reads.
+
 ### Retry
 
 | Setting | Default | Description |

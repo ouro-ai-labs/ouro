@@ -10,6 +10,10 @@ Components:
 - **WorkingMemoryCompressor** -- LLM-driven summarization of older messages
 - **TokenTracker** -- token counting and cost tracking across providers
 
+Two persistence backends are available:
+- **YAML file store** (default) -- sessions saved as YAML files in `~/.ouro/sessions/`
+- **mem0 vector store** -- sessions and long-term memories stored via mem0's vector search (enable with `MEM0_ENABLED=true`)
+
 ## Configuration
 
 All settings go in `~/.ouro/config`:
@@ -20,6 +24,9 @@ All settings go in `~/.ouro/config`:
 | `MEMORY_COMPRESSION_THRESHOLD` | `60000` | Token count that triggers compression |
 | `MEMORY_SHORT_TERM_MIN_SIZE` | `6` | Minimum messages always preserved during compression |
 | `MEMORY_COMPRESSION_RATIO` | `0.3` | Target compression ratio (0.3 = compress to 30%) |
+| `LONG_TERM_MEMORY_ENABLED` | `false` | Enable file-based long-term memory |
+| `MEM0_ENABLED` | `false` | Enable mem0 vector-memory backend (replaces file-based LTM) |
+| `MEM0_USER_ID` | `default_user` | User identifier for mem0 isolation |
 
 ## Compression Strategies
 
@@ -166,6 +173,32 @@ python tools/session_manager.py delete <id>                 # Delete session
 - Index file (`.index.yaml`) is auto-rebuilt if missing
 - Session files are human-readable and can be manually edited
 - Uses `aiofiles` for async I/O
+
+## Mem0 Vector Memory
+
+Ouro supports [mem0](https://github.com/mem0ai/mem0) as an alternative memory backend. When enabled, it replaces both the YAML session store and the file-based long-term memory with mem0's vector search.
+
+### Setup
+
+1. Ensure you have an OpenAI API key (or configure another provider via env vars).
+2. Add to `~/.ouro/config`:
+
+```
+MEM0_ENABLED=true
+MEM0_USER_ID=alice
+```
+
+3. Optional environment overrides (see [Configuration](configuration.md) for the full list).
+
+### How it works
+
+- **Sessions**: `Mem0MemoryStore` creates a session entry in mem0 on first save.
+- **Long-term memory**: `Mem0LongTermMemory` searches mem0 for relevant past memories at session start and adds new facts from conversations at session end.
+- **Semantic search**: Cross-session recall uses vector similarity instead of file reads.
+
+### Switching back to file-based storage
+
+Set `MEM0_ENABLED=false` (or remove the line) to revert to YAML sessions and file-based LTM. Existing mem0 data is preserved but not accessed.
 
 ## Token Tracking and Costs
 

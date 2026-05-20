@@ -12,13 +12,13 @@ Storage layout::
 """
 
 import logging
+from abc import ABC, abstractmethod
 from datetime import date
 from typing import TYPE_CHECKING, Any, List, Optional, Tuple
 
 from ouro.config import Config
 
 from .consolidator import LongTermMemoryConsolidator
-from .mem0_adapter import Mem0LongTermMemory
 from .store import MemoryStore
 
 if TYPE_CHECKING:
@@ -27,6 +27,26 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 __all__ = ["LongTermMemoryManager", "Mem0LongTermMemory"]
+
+
+class BaseLongTermMemory(ABC):
+    """Abstract base for long-term memory backends."""
+
+    @abstractmethod
+    async def load_and_format(self) -> Optional[str]:
+        """Load memories and return a formatted system-prompt section."""
+
+    @abstractmethod
+    async def add_memories_from_conversation(
+        self,
+        messages: list[Any],
+        session_id: str,
+    ) -> None:
+        """Extract and store durable facts from a conversation."""
+
+
+# Re-export for downstream use
+from .mem0_adapter import Mem0LongTermMemory  # noqa: E402
 
 _INSTRUCTION_TEMPLATE = """\
 <long_term_memory>
@@ -61,7 +81,7 @@ RULES:
 </long_term_memory>"""
 
 
-class LongTermMemoryManager:
+class LongTermMemoryManager(BaseLongTermMemory):
     """Facade for the long-term memory subsystem.
 
     Responsibilities:
