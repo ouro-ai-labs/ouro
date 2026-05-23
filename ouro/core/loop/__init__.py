@@ -10,6 +10,8 @@ Public surface:
   — protocols capabilities/interfaces implement to plug in.
 - `ContinueDecision`, `ContinueKind` — return types used by
   ``on_iteration_end`` (STOP / RETRY / CONTINUE voting).
+- `Rule`, `RuleOutcome`, `RuleViolation`, `RepeatedToolCallRule` —
+  deterministic pre-dispatch guards over proposed tool calls.
 """
 
 from .agent import Agent
@@ -24,6 +26,7 @@ from .protocols import (
     ProgressSink,
     ToolRegistry,
 )
+from .rules import RepeatedToolCallRule, Rule, RuleOutcome, RuleViolation
 
 __all__ = [
     "Agent",
@@ -37,4 +40,8 @@ __all__ = [
     "NullProgressSink",
     "ProgressSink",
     "ToolRegistry",
+    "Rule",
+    "RuleOutcome",
+    "RuleViolation",
+    "RepeatedToolCallRule",
 ]

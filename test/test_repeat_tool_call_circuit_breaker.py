@@ -13,7 +13,7 @@ from ouro.capabilities.tools.base import BaseTool
 from ouro.capabilities.tools.executor import ToolExecutor
 from ouro.core.llm import LLMResponse, StopReason, ToolCall
 from ouro.core.loop import Agent, NullProgressSink
-from ouro.core.loop.agent import _tool_call_iter_signature
+from ouro.core.loop.rules import _tool_call_iter_signature
 
 
 class _NoopTool(BaseTool):

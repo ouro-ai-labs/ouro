@@ -20,6 +20,9 @@ Never imports `ouro.capabilities` or `ouro.interfaces`.
 - `loop/protocols.py` — structural Protocols capabilities implement:
   `Hook`, `ToolRegistry`, `ProgressSink`, `LoopContext`. Plus the
   `ContinueDecision` return type used by `on_iteration_end`.
+- `loop/rules.py` — `Rule` protocol + `RuleOutcome` / `RuleViolation`
+  and the generic `RepeatedToolCallRule`. Rules are deterministic
+  pre-dispatch guards; see "Rules" below.
 - `llm/` — `LLMMessage`, `LLMResponse`, `ToolCall`, `ToolResult`,
   `LiteLLMAdapter`, `ModelManager`, content/compat/reasoning helpers,
   OAuth (chatgpt, copilot).
@@ -59,3 +62,24 @@ added on demand — keep dead extension points out.
    are fine).
 4. Update `ouro/core/README.md` and `ouro/CLAUDE.md` if the
    contract for hook composition changes.
+
+## Rules (deterministic pre-dispatch guards)
+
+`Rule` (`loop/rules.py`) is a separate extension point from `Hook`: a
+deterministic check the loop runs over the model's proposed tool calls
+*before* dispatch. A rule blocks individual calls (the loop substitutes
+its feedback message as that call's `tool_result`) or halts the run —
+trading a probabilistic LLM mistake for a deterministic guarantee. See
+`rfc/loop-rules.md`.
+
+- Contract: `on_run_start()` (reset per-run state), `check(ctx,
+  tool_calls) -> RuleOutcome` (verdict; no LLM/I/O), `observe(ctx,
+  executed)` (post-dispatch state update from real results).
+- The loop aggregates all rules in `Agent._apply_rules`, appends one
+  `tool_result` per call (synthetic for blocked, real for dispatched,
+  in the model's original order), then halts if any rule asked to.
+- Core rules stay tool-agnostic (only `ToolCall`/`ToolResult`).
+  `RepeatedToolCallRule` ships on by default (governed by the
+  `repeat_tool_call_*` kwargs). Tool-aware rules (e.g. read-before-write)
+  belong in `ouro.capabilities` and are injected via the Agent `rules=`
+  arg / `AgentBuilder`.
