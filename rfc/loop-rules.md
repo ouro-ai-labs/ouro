@@ -7,12 +7,12 @@
 ## Summary
 
 Generalize the hard-coded repeated-tool-call guard in the core agent loop into
-a pluggable **Rule** abstraction: a small set of deterministic, formal checks
-that run over the model's proposed tool calls *before* dispatch and block
-individual calls — substituting the rule's feedback as that call's synthetic
-`tool_result` so the model self-corrects. A rule never stops the loop; it only
-replaces results. Rules trade a probabilistic LLM mistake for a deterministic
-guarantee.
+a pluggable **Rule** abstraction: deterministic, per-tool-call checks the loop
+runs around each call. A rule can **block** a call before it runs (its text
+becomes the call's `tool_result`, and the call is skipped) or **rewrite** a
+dispatched call's result afterward. A rule never stops the loop; it only blocks
+or rewrites individual results. Rules trade a probabilistic LLM mistake for a
+deterministic guarantee.
 
 ## Problem
 
@@ -25,27 +25,26 @@ threaded through the loop as local variables.
 
 We want more checks of the same *kind*. Concrete near-term example: **only
 allow the agent to modify a file it has previously read**. If the model issues
-`write_file` / `edit` on a path it never `read_file`'d, return a deterministic
-error ("read the file first") instead of silently overwriting. This is exactly
-the repeated-call pattern — inspect proposed tool calls, decide deterministically,
-feed the verdict back as a `tool_result` so the model self-corrects — but it
-needs per-call granularity and per-run state that the current bespoke guard
-can't host.
+`write_file` / `edit` on a path it never `read_file`'d, block the call with a
+deterministic error ("read the file first") instead of silently overwriting —
+crucially, *before* the write runs. That rule needs to block one call before
+dispatch (`before_toolcall`) and to learn which files were actually read from
+real results (`after_toolcall`) — neither of which the bespoke guard can host.
 
 Adding each new check as another private method + more threaded locals does not
 scale and conflates distinct concerns inside one loop branch.
 
 ## Goals
 
-- A first-class `Rule` abstraction in `ouro.core.loop`: deterministic checks
-  evaluated before tool dispatch.
-- Per-tool-call granularity: a rule can block one call in a batch while letting
-  siblings dispatch.
-- Per-run rule state with a reset hook, and a post-dispatch `observe` hook so
-  stateful rules (e.g. "files I've read") can update from real results.
+- A first-class `Rule` abstraction in `ouro.core.loop`: deterministic,
+  per-tool-call checks around dispatch.
+- Block-before-dispatch (`before_toolcall`) so a side-effecting call (write /
+  edit / delete) can be stopped before it runs — not merely reported after.
+- Result rewrite / state capture after dispatch (`after_toolcall`).
+- Per-call granularity: act on one call in a batch while siblings dispatch.
 - Migrate the existing repeated-tool-call guard onto this abstraction. Rules
-  only replace `tool_result`s — they never stop the run, so the old hard-stop
-  is dropped (see Proposed Behavior); soft warnings are unchanged.
+  only block or rewrite `tool_result`s — they never stop the run, so the old
+  hard-stop is dropped (see Proposed Behavior); soft warnings are unchanged.
 - Keep `ouro.core` tool-agnostic: the generic repeated-call rule lives in core;
   tool-aware rules (read-before-write) live in `ouro.capabilities`.
 
@@ -61,19 +60,20 @@ scale and conflates distinct concerns inside one loop branch.
 ## Proposed Behavior (User-Facing)
 
 One intentional behavior change: the repeated-tool-call breaker's **hard stop is
-removed**. A rule's only power is to replace tool_results, so when the model
-repeats an identical batch past `repeat_tool_call_threshold` it keeps getting a
-"stop repeating" warning every turn (soft intercept, unchanged) but the run is
-no longer terminated at a second threshold. Rationale: the warning is expected
-to redirect the model; `Agent.max_iterations` remains the runaway backstop, and
-stopping the loop is the loop's concern, not a rule's. The
-`repeat_tool_call_max` constructor kwarg is therefore removed;
-`repeat_tool_call_threshold` is preserved (`<= 0` still disables the check).
+removed**. A rule's only power is to block or rewrite a call's result, so when
+the model repeats an identical call on consecutive turns past
+`repeat_tool_call_threshold` the call keeps getting blocked with a "stop
+repeating" warning every turn (soft intercept) but the run is no longer
+terminated at a second threshold. Rationale: the warning is expected to redirect
+the model; `Agent.max_iterations` remains the runaway backstop, and stopping the
+loop is the loop's concern, not a rule's. The `repeat_tool_call_max` constructor
+kwarg is therefore removed; `repeat_tool_call_threshold` is preserved (`<= 0`
+still disables the check).
 
 - CLI / UX changes: none.
 - Config changes: `repeat_tool_call_max` kwarg removed (no external callers).
-- Output / logging changes: soft-intercept warning unchanged; no more hard-stop
-  warning or "[ouro] Halted…" final answer.
+- Output / logging changes: soft-intercept warning unchanged in spirit (now
+  per-call); no more hard-stop warning or "[ouro] Halted…" final answer.
 
 ## Invariants (Must Not Regress)
 
@@ -90,54 +90,52 @@ stopping the loop is the loop's concern, not a rule's. The
 
 ## Design Sketch (Minimal)
 
-New module `ouro/core/loop/rules.py`:
+New module `ouro/core/loop/rules.py`. A rule is two **optional**, per-tool-call
+hooks; it implements whichever it needs (the loop duck-types via `getattr`):
 
 ```python
-@dataclass(frozen=True)
-class RuleViolation:
-    tool_call_id: str
-    message: str            # becomes the synthetic tool_result content
-
-@dataclass(frozen=True)
-class RuleOutcome:
-    violations: tuple[RuleViolation, ...] = ()   # calls to block; no halt power
-
 @runtime_checkable
 class Rule(Protocol):
     name: str
-    def on_run_start(self) -> None: ...                       # reset per-run state
-    def check(self, ctx: LoopContext,
-              tool_calls: list[ToolCall]) -> RuleOutcome: ...  # pre-dispatch verdict
-    def observe(self, ctx: LoopContext,
-                executed: list[tuple[ToolCall, ToolResult]]) -> None: ...  # post-dispatch
+    # Before dispatch: return text to BLOCK the call (it is skipped and the
+    # text becomes its tool_result), or None to let it run.
+    def before_toolcall(self, ctx: LoopContext, tool_call: ToolCall) -> str | None: ...
+    # After a dispatched call returns: return text to REPLACE its result, or
+    # None to leave it. Also the place to record state from real results.
+    def after_toolcall(self, ctx: LoopContext, tool_call: ToolCall,
+                       tool_result: ToolResult) -> str | None: ...
 ```
 
-`RepeatedToolCallRule(threshold)` (core, generic) ports the soft-intercept half
-of the old guard: holds `last_iter_sig` / `repeat_count`; `check` returns all
-calls as violations once the count reaches `threshold` (the model is warned and
-the calls are not dispatched). It has no hard stop.
+No `RuleOutcome` / `RuleViolation` types and no `on_run_start`: rules return a
+plain `str | None`, and per-run state self-resets where needed (see below).
+
+`RepeatedToolCallRule(threshold)` (core, generic) implements only
+`before_toolcall`: it tracks a per-`(name, arguments)` consecutive-iteration
+count and, once a call recurs `threshold` times, blocks it with a "stop
+repeating" message. State self-resets each run because `ctx.iteration` restarts
+at 1 (stale counts are dropped) — no lifecycle reset method required. No hard
+stop.
 
 Loop integration (replaces the inline guard in the `TOOL_CALLS` branch):
 
-1. `on_run_start`: call `rule.on_run_start()` for each rule (alongside hook
-   fanout).
-2. After persisting the assistant tool-call message, run every rule's `check`
-   and aggregate: union violations by `tool_call_id` (concatenate messages from
-   multiple rules that block the same call) into a `blocked: dict[id, str]`.
-3. Dispatch only the non-blocked calls. Build `contents` = blocked feedback
-   merged with dispatched results, then append one `tool_result` per call in the
-   model's original order. If every call was blocked, dispatch nothing and just
-   `continue` to the next turn.
-4. `observe` all rules with the executed `(ToolCall, ToolResult)` pairs.
+1. After persisting the assistant tool-call message, run every rule's
+   `before_toolcall` for each call; collect a `blocked: dict[id, str]` (messages
+   from multiple rules blocking the same call are joined).
+2. Dispatch only the non-blocked calls. For each dispatched call, run every
+   rule's `after_toolcall` to (optionally) rewrite its result.
+3. Append one `tool_result` per call in the model's original order — blocked
+   text for blocked calls, (possibly rewritten) output for dispatched ones. If
+   every call was blocked, dispatch nothing and `continue`.
 
 `Agent.__init__` gains `rules: Sequence[Rule] = ()`; the `RepeatedToolCallRule`
 (from `repeat_tool_call_threshold`) is always prepended, then caller rules.
 
 Tool-aware rules (follow-up): `ReadBeforeWriteRule` in
 `ouro/capabilities/rules/`, knowing the `read_file` / `write_file` / `edit`
-tool names and their `file_path` arg; tracks read paths in `observe`, blocks
-writes to unread paths in `check`. Injected by `AgentBuilder`. This respects the
-`interfaces → capabilities → core` import direction.
+tool names and their `file_path` arg; records read paths in `after_toolcall`,
+blocks writes to unread paths in `before_toolcall`. Injected by `AgentBuilder`.
+This respects the `interfaces → capabilities → core` import direction, and is
+the motivating proof that `before_toolcall` must run *before* dispatch.
 
 ## Alternatives Considered
 
@@ -148,23 +146,29 @@ writes to unread paths in `check`. Injected by `AgentBuilder`. This respects the
   and the intent legible ("rule = formal check").
 - **Leave the guard inline, add rules alongside.** Rejected: two parallel
   mechanisms doing the same thing in the same loop branch.
-- **Whole-iteration verdict only (no per-call granularity).** Rejected: the
-  read-before-write use case must block one call while dispatching siblings.
+- **A single post-dispatch `observe`/`after_toolcall` (no before-hook).**
+  Rejected: it runs after the call executed, so it cannot stop a side-effecting
+  call (write/edit/delete) from happening — it can only rewrite what the model
+  is told. Blocking such calls is the whole point of read-before-write, so a
+  pre-dispatch `before_toolcall` is required.
+- **`RuleOutcome`/`RuleViolation` value types + batch `check`.** Dropped in favor
+  of per-call methods returning `str | None`: simpler, and the per-call shape
+  matches how rules actually reason (about one call at a time).
 
 ## Test Plan
 
 - Unit tests (new `test/test_loop_rules.py`):
-  - A toy `Rule` blocks one call in a 2-call batch → blocked call gets the
-    synthetic message, sibling dispatches, loop continues.
+  - `before_toolcall` blocks one call in a 2-call batch → blocked call gets the
+    rule's text, sibling dispatches, loop continues.
+  - `after_toolcall` rewrites a dispatched call's result (tool still runs).
   - A fully-blocked iteration still emits one tool_result per call and the run
     continues (no halt) until the model itself stops.
-  - `on_run_start` resets state across two `run()` calls.
-  - `observe` receives only the dispatched `(ToolCall, ToolResult)` pairs.
-  - Multiple rules blocking the same call → feedback joined deterministically.
-- Migrated coverage: `test/test_repeat_tool_call_circuit_breaker.py` updated to
-  drive `RepeatedToolCallRule` (signature normalization, intercept at threshold,
-  reset on changed args, disabled at `<= 0`, and sustained repeats keep being
-  intercepted without halting).
+  - `after_toolcall` sees only dispatched calls, not blocked ones.
+  - Multiple rules blocking the same call → text joined deterministically.
+- Migrated coverage: `test/test_repeat_tool_call_circuit_breaker.py` drives
+  `RepeatedToolCallRule` (per-call signature normalization, intercept at
+  threshold, reset on changed args, disabled at `<= 0`, sustained repeats keep
+  being intercepted without halting).
 - Targeted: `./scripts/dev.sh test -q test/test_loop_rules.py
   test/test_repeat_tool_call_circuit_breaker.py test/test_parallel_tools.py
   test/test_ralph_loop.py`.
@@ -178,8 +182,8 @@ writes to unread paths in `check`. Injected by `AgentBuilder`. This respects the
   external callers (only `Agent` itself and its tests).
 - Behavior change: the repeated-call hard stop is gone (see Proposed Behavior).
 - Migration steps: none for callers. Internally, `_apply_repeated_tool_call_guard`
-  and `_RepeatGuardOutcome` are removed; `_tool_call_iter_signature` moves into
-  `rules.py`.
+  and `_RepeatGuardOutcome` are removed; the per-call `_tool_call_signature`
+  helper lives in `rules.py`.
 
 ## Risks & Mitigations
 

@@ -57,10 +57,11 @@ class Agent:
         # Warn the model after `repeat_tool_call_threshold` consecutive identical
         # tool-call iterations; <= 0 disables the check. See RepeatedToolCallRule.
         self.repeat_tool_call_threshold = repeat_tool_call_threshold
-        # Deterministic pre-dispatch guards. The repeated-tool-call breaker is
+        # Deterministic per-tool-call rules. The repeated-tool-call breaker is
         # always present (governed by the kwarg above); any caller-supplied
-        # rules run after it. Rules replace tool_results; they never stop the
-        # loop (max_iterations is the runaway backstop). See `rules.py`.
+        # rules run after it. A rule blocks a call before dispatch or rewrites
+        # its result after; it never stops the loop (max_iterations is the
+        # runaway backstop). See `rules.py`.
         self.rules: list[Rule] = [RepeatedToolCallRule(repeat_tool_call_threshold)]
         self.rules.extend(rules)
 
@@ -88,9 +89,6 @@ class Agent:
         ctx = RunStatistic(task=task, progress=self.progress, usage_callback=self._usage_callback)
         messages = context.detached
         await self._fanout_async("on_run_start", ctx, messages)
-        # Reset per-run rule state (e.g. the repeated-tool-call counter).
-        for rule in self.rules:
-            rule.on_run_start()
 
         tool_schemas = self.tools.get_tool_schemas()
         final_answer: str = ""
@@ -158,20 +156,19 @@ class Agent:
                 # below sit in the correct chronological order.
                 messages.append(response.to_message())
 
-                # Run deterministic rules over the proposed calls. A blocked
-                # call is not dispatched; the rule's feedback becomes its
-                # tool_result so the model self-corrects next turn.
-                blocked = self._apply_rules(ctx, tool_calls)
-
-                # Dispatch only the calls no rule blocked, then write one
-                # tool_result per call in the model's original order (synthetic
-                # feedback for blocked calls, real output for dispatched ones)
-                # so each tool_call gets exactly one tool_result.
+                # Per-tool-call rules. `before_toolcall` may block a call (its
+                # text becomes the result and the call is skipped); the rest
+                # dispatch, then `after_toolcall` may rewrite each real result.
+                blocked = self._rules_before(ctx, tool_calls)
                 remaining = [tc for tc in tool_calls if tc.id not in blocked]
-                executed: list[tuple[ToolCall, ToolResult]] = []
+
+                contents: dict[str, str] = dict(blocked)
                 if remaining:
-                    executed = list(zip(remaining, await self._dispatch_tools(ctx, remaining)))
-                contents = {**blocked, **{tc.id: tr.content for tc, tr in executed}}
+                    results = await self._dispatch_tools(ctx, remaining)
+                    for tc, tr in zip(remaining, results):
+                        contents[tc.id] = self._rules_after(ctx, tc, tr)
+
+                # One tool_result per call, in the model's original order.
                 for tc in tool_calls:
                     messages.append(
                         LLMMessage(
@@ -181,9 +178,6 @@ class Agent:
                             name=tc.name,
                         )
                     )
-
-                for rule in self.rules:
-                    rule.observe(ctx, executed)
                 continue
 
             if response.stop_reason == StopReason.LENGTH:
@@ -222,23 +216,44 @@ class Agent:
         logger.warning("Agent.run reached max_iterations=%d without STOP", self.max_iterations)
         return final_answer
 
-    def _apply_rules(
+    def _rules_before(
         self,
         ctx: LoopContext,
         tool_calls: list[ToolCall],
     ) -> dict[str, str]:
-        """Evaluate every rule over the proposed calls and aggregate verdicts.
+        """Run every rule's ``before_toolcall`` over each proposed call.
 
-        Returns ``blocked``: a map from ``tool_call_id`` to the feedback to
-        surface in place of dispatching it (messages from multiple rules that
-        block the same call are joined). Calls not in the map dispatch normally.
-        Rules do not mutate ``messages`` — the caller owns that.
+        Returns ``blocked``: a map from ``tool_call_id`` to the text to surface
+        in place of dispatching it (messages from multiple rules that block the
+        same call are joined). Calls absent from the map dispatch normally.
         """
-        violations: dict[str, list[str]] = {}
+        blocked: dict[str, list[str]] = {}
+        for tc in tool_calls:
+            for rule in self.rules:
+                fn = getattr(rule, "before_toolcall", None)
+                if fn is None:
+                    continue
+                msg = fn(ctx, tc)
+                if msg is not None:
+                    blocked.setdefault(tc.id, []).append(msg)
+        return {tid: "\n".join(msgs) for tid, msgs in blocked.items()}
+
+    def _rules_after(self, ctx: LoopContext, tool_call: ToolCall, result: ToolResult) -> str:
+        """Run every rule's ``after_toolcall`` over a dispatched call's result.
+
+        Each rule may rewrite the content (later rules see earlier rewrites) or
+        return ``None`` to leave it unchanged. Returns the final result text.
+        """
+        content = result.content
         for rule in self.rules:
-            for v in rule.check(ctx, tool_calls).violations:
-                violations.setdefault(v.tool_call_id, []).append(v.message)
-        return {tid: "\n".join(msgs) for tid, msgs in violations.items()}
+            fn = getattr(rule, "after_toolcall", None)
+            if fn is None:
+                continue
+            current = ToolResult(tool_call_id=tool_call.id, content=content, name=tool_call.name)
+            replacement = fn(ctx, tool_call, current)
+            if replacement is not None:
+                content = replacement
+        return content
 
     async def _dispatch_tools(
         self,

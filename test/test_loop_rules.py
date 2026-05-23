@@ -1,9 +1,9 @@
-"""Tests for the pluggable loop Rule abstraction (ouro.core.loop.rules).
+"""Tests for the per-tool-call Rule abstraction (ouro.core.loop.rules).
 
-Covers the generic seam — per-call blocking, halting, per-run reset, and the
-post-dispatch ``observe`` hook — independent of the repeated-tool-call rule
-(which keeps its dedicated regression suite in
-``test_repeat_tool_call_circuit_breaker.py``).
+Covers the generic seam — ``before_toolcall`` blocking a call before dispatch,
+``after_toolcall`` rewriting a dispatched call's result, both being optional,
+and per-call granularity — independent of the repeated-tool-call rule (which
+keeps its dedicated suite in ``test_repeat_tool_call_circuit_breaker.py``).
 """
 
 from __future__ import annotations
@@ -13,8 +13,7 @@ import pytest
 from ouro.capabilities.tools.base import BaseTool
 from ouro.capabilities.tools.executor import ToolExecutor
 from ouro.core.llm import LLMResponse, StopReason, ToolCall, ToolResult
-from ouro.core.loop import Agent, NullProgressSink
-from ouro.core.loop.rules import RuleOutcome, RuleViolation
+from ouro.core.loop import Agent, MessageListContext, NullProgressSink
 
 
 class _NoopTool(BaseTool):
@@ -70,32 +69,26 @@ def _tool_calls_response(*calls: tuple[str, str, dict]) -> LLMResponse:
 
 
 class _BlockToolRule:
-    """Blocks any call to a named tool with fixed feedback; never halts."""
+    """before-only rule: blocks any call to a named tool, records the rest."""
 
     name = "block-tool"
 
     def __init__(self, tool_name: str, message: str) -> None:
         self._tool_name = tool_name
         self._message = message
-        self.run_starts = 0
-        self.observed: list[tuple[str, str]] = []
+        self.seen_after: list[tuple[str, str]] = []
 
-    def on_run_start(self) -> None:
-        self.run_starts += 1
+    def before_toolcall(self, ctx, tool_call: ToolCall) -> str | None:
+        return self._message if tool_call.name == self._tool_name else None
 
-    def check(self, ctx, tool_calls: list[ToolCall]) -> RuleOutcome:
-        violations = tuple(
-            RuleViolation(tc.id, self._message) for tc in tool_calls if tc.name == self._tool_name
-        )
-        return RuleOutcome(violations=violations)
-
-    def observe(self, ctx, executed: list[tuple[ToolCall, ToolResult]]) -> None:
-        self.observed.extend((tc.name, tr.content) for tc, tr in executed)
+    def after_toolcall(self, ctx, tool_call: ToolCall, tool_result: ToolResult) -> str | None:
+        # Record dispatched results (blocked calls never reach here); leave them.
+        self.seen_after.append((tool_call.name, tool_result.content))
+        return None
 
 
 @pytest.mark.asyncio
-async def test_rule_blocks_one_call_and_dispatches_sibling():
-    """A per-call violation blocks just that call; the sibling still runs."""
+async def test_before_blocks_one_call_and_dispatches_sibling():
     read_tool = _NoopTool("read_file")
     write_tool = _NoopTool("write_file")
     llm = _ScriptedLLM(
@@ -118,17 +111,17 @@ async def test_rule_blocks_one_call_and_dispatches_sibling():
     answer = await agent.run("test")
 
     assert answer == "ok"
-    assert write_tool.invocations == 0  # blocked
-    assert read_tool.invocations == 1  # dispatched
-    # observe only sees the dispatched call, not the blocked one.
-    assert rule.observed == [("read_file", "read_file-result")]
+    assert write_tool.invocations == 0  # blocked before dispatch
+    assert read_tool.invocations == 1  # sibling dispatched
+    # after_toolcall only sees the dispatched call, not the blocked one.
+    assert rule.seen_after == [("read_file", "read_file-result")]
 
 
 @pytest.mark.asyncio
 async def test_blocked_call_feedback_reaches_history_in_order():
-    """Blocked call gets a synthetic tool_result; ordering follows tool_calls."""
     read_tool = _NoopTool("read_file")
     write_tool = _NoopTool("write_file")
+    ctx = MessageListContext()
     llm = _ScriptedLLM(
         [
             _tool_calls_response(
@@ -144,11 +137,7 @@ async def test_blocked_call_feedback_reaches_history_in_order():
         progress=NullProgressSink(),
         rules=[_BlockToolRule("write_file", "[test] blocked")],
     )
-    ctx = None  # use default transient context
 
-    from ouro.core.loop import MessageListContext
-
-    ctx = MessageListContext()
     await agent.run("test", context=ctx)
 
     tool_msgs = [m for m in ctx.detached.snapshot() if m.role == "tool"]
@@ -157,27 +146,54 @@ async def test_blocked_call_feedback_reaches_history_in_order():
     assert tool_msgs[1].content == "read_file-result"
 
 
-class _BlockAllRule:
-    """Blocks every proposed call — proves a fully-blocked iteration still
-    yields one tool_result per call and the loop continues (never halts)."""
+class _RewriteRule:
+    """after-only rule: rewrites a named tool's result text."""
 
+    name = "rewrite"
+
+    def __init__(self, tool_name: str, replacement: str) -> None:
+        self._tool_name = tool_name
+        self._replacement = replacement
+
+    def after_toolcall(self, ctx, tool_call: ToolCall, tool_result: ToolResult) -> str | None:
+        return self._replacement if tool_call.name == self._tool_name else None
+
+
+@pytest.mark.asyncio
+async def test_after_rewrites_dispatched_result():
+    """after_toolcall replaces a real result; the tool still runs."""
+    read_tool = _NoopTool("read_file")
+    ctx = MessageListContext()
+    llm = _ScriptedLLM(
+        [
+            _tool_calls_response(("c1", "read_file", {"file_path": "/x"})),
+            LLMResponse(content="ok", stop_reason=StopReason.STOP),
+        ]
+    )
+    agent = Agent(
+        llm=llm,
+        tools=ToolExecutor([read_tool]),
+        progress=NullProgressSink(),
+        rules=[_RewriteRule("read_file", "[test] rewritten")],
+    )
+
+    await agent.run("test", context=ctx)
+
+    assert read_tool.invocations == 1  # rewrite happens after real dispatch
+    tool_msgs = [m for m in ctx.detached.snapshot() if m.role == "tool"]
+    assert tool_msgs[0].content == "[test] rewritten"
+
+
+class _BlockAllRule:
     name = "block-all"
 
-    def on_run_start(self) -> None:
-        pass
-
-    def check(self, ctx, tool_calls: list[ToolCall]) -> RuleOutcome:
-        return RuleOutcome(tuple(RuleViolation(tc.id, "[test] blocked") for tc in tool_calls))
-
-    def observe(self, ctx, executed) -> None:
-        pass
+    def before_toolcall(self, ctx, tool_call: ToolCall) -> str | None:
+        return "[test] blocked"
 
 
 @pytest.mark.asyncio
 async def test_fully_blocked_iteration_continues_without_dispatch():
     read_tool = _NoopTool("read_file")
-    from ouro.core.loop import MessageListContext
-
     ctx = MessageListContext()
     llm = _ScriptedLLM(
         [
@@ -194,8 +210,8 @@ async def test_fully_blocked_iteration_continues_without_dispatch():
 
     answer = await agent.run("test", context=ctx)
 
-    # The rule blocks the only call, but the run continues to the next turn
-    # (no halt) and ends when the model itself stops.
+    # The only call is blocked, but the run continues (no halt) and ends when
+    # the model itself stops.
     assert answer == "ok"
     assert read_tool.invocations == 0
     tool_msgs = [m for m in ctx.detached.snapshot() if m.role == "tool"]
@@ -204,27 +220,8 @@ async def test_fully_blocked_iteration_continues_without_dispatch():
 
 
 @pytest.mark.asyncio
-async def test_on_run_start_resets_between_runs():
-    """Rule lifecycle reset fires once per Agent.run()."""
-    tool = _NoopTool("read_file")
-    rule = _BlockToolRule("write_file", "[test] x")
-
-    def _fresh_llm():
-        return _ScriptedLLM([LLMResponse(content="ok", stop_reason=StopReason.STOP)])
-
-    agent = Agent(llm=_fresh_llm(), tools=ToolExecutor([tool]), rules=[rule])
-    await agent.run("first")
-    agent.llm = _fresh_llm()
-    await agent.run("second")
-
-    assert rule.run_starts == 2
-
-
-@pytest.mark.asyncio
 async def test_multiple_rules_blocking_same_call_join_feedback():
     write_tool = _NoopTool("write_file")
-    from ouro.core.loop import MessageListContext
-
     ctx = MessageListContext()
     llm = _ScriptedLLM(
         [

@@ -63,26 +63,29 @@ added on demand — keep dead extension points out.
 4. Update `ouro/core/README.md` and `ouro/CLAUDE.md` if the
    contract for hook composition changes.
 
-## Rules (deterministic pre-dispatch guards)
+## Rules (deterministic per-tool-call checks)
 
 `Rule` (`loop/rules.py`) is a separate extension point from `Hook`: a
-deterministic check the loop runs over the model's proposed tool calls
-*before* dispatch. A rule blocks individual calls — the loop substitutes
-its feedback message as that call's `tool_result` so the model
-self-corrects next turn — trading a probabilistic LLM mistake for a
-deterministic guarantee. A rule **only replaces results; it never stops
-the loop** (runaway protection is the loop's job via `max_iterations`).
-See `rfc/loop-rules.md`.
+deterministic check the loop runs *around each individual tool call*. A
+rule **only blocks or rewrites a call's result; it never stops the loop**
+(runaway protection is the loop's job via `max_iterations`). See
+`rfc/loop-rules.md`.
 
-- Contract: `on_run_start()` (reset per-run state), `check(ctx,
-  tool_calls) -> RuleOutcome` (which calls to block; no LLM/I/O),
-  `observe(ctx, executed)` (post-dispatch state update from real results).
-- The loop aggregates all rules in `Agent._apply_rules` (union of blocked
-  ids), dispatches only unblocked calls, then appends one `tool_result`
-  per call in the model's original order (synthetic for blocked, real for
-  dispatched).
+- Contract — two optional methods, the loop duck-types via `getattr`:
+  - `before_toolcall(ctx, tool_call) -> str | None`: runs before dispatch;
+    return text to **block** the call (it is skipped and the text becomes
+    its `tool_result`), or `None` to let it run. This is the only way to
+    stop a side-effecting call (write/edit/delete) from happening.
+  - `after_toolcall(ctx, tool_call, tool_result) -> str | None`: runs after
+    a dispatched call; return text to **replace** its result, `None` to
+    leave it. Also the place to record state from real results.
+- No LLM/I/O in either; both are per-tool-call. The loop runs all
+  `before_toolcall`s (`Agent._rules_before`), dispatches only unblocked
+  calls, runs `after_toolcall`s (`Agent._rules_after`), then appends one
+  `tool_result` per call in the model's original order.
 - Core rules stay tool-agnostic (only `ToolCall`/`ToolResult`).
   `RepeatedToolCallRule` ships on by default (governed by
-  `repeat_tool_call_threshold`; warns on repeats, never halts). Tool-aware
-  rules (e.g. read-before-write) belong in `ouro.capabilities` and are
-  injected via the Agent `rules=` arg / `AgentBuilder`.
+  `repeat_tool_call_threshold`; warns on repeats via `before_toolcall`,
+  never halts; self-resets per run via `ctx.iteration`). Tool-aware rules
+  (e.g. read-before-write) belong in `ouro.capabilities` and are injected
+  via the Agent `rules=` arg / `AgentBuilder`.

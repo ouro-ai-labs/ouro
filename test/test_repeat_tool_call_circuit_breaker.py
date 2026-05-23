@@ -13,7 +13,7 @@ from ouro.capabilities.tools.base import BaseTool
 from ouro.capabilities.tools.executor import ToolExecutor
 from ouro.core.llm import LLMResponse, StopReason, ToolCall
 from ouro.core.loop import Agent, NullProgressSink
-from ouro.core.loop.rules import _tool_call_iter_signature
+from ouro.core.loop.rules import _tool_call_signature
 
 
 class _NoopTool(BaseTool):
@@ -71,20 +71,20 @@ def _tool_call_response(call_id: str, name: str, args: dict) -> LLMResponse:
 
 
 # ---------------------------------------------------------------------------
-# _tool_call_iter_signature
+# _tool_call_signature (per-call fingerprint)
 # ---------------------------------------------------------------------------
 
 
 def test_signature_normalizes_argument_key_order():
     a = ToolCall(id="1", name="read_file", arguments={"file_path": "/x", "offset": 0})
     b = ToolCall(id="2", name="read_file", arguments={"offset": 0, "file_path": "/x"})
-    assert _tool_call_iter_signature([a]) == _tool_call_iter_signature([b])
+    assert _tool_call_signature(a) == _tool_call_signature(b)
 
 
 def test_signature_differs_when_arguments_differ():
     a = ToolCall(id="1", name="read_file", arguments={"file_path": "/x"})
     b = ToolCall(id="2", name="read_file", arguments={"file_path": "/y"})
-    assert _tool_call_iter_signature([a]) != _tool_call_iter_signature([b])
+    assert _tool_call_signature(a) != _tool_call_signature(b)
 
 
 def test_signature_handles_non_json_safe_arguments():
@@ -94,7 +94,7 @@ def test_signature_handles_non_json_safe_arguments():
             return "<weird>"
 
     tc = ToolCall(id="1", name="x", arguments={"v": Weird()})
-    assert _tool_call_iter_signature([tc])  # smoke test: doesn't raise
+    assert _tool_call_signature(tc)  # smoke test: doesn't raise
 
 
 # ---------------------------------------------------------------------------
