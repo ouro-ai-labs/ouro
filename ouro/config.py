@@ -20,10 +20,6 @@ MAX_ITERATIONS=1000
 
 # Ralph Loop (outer verification loop — re-checks task completion)
 # RALPH_LOOP_MAX_ITERATIONS=3
-
-# Conversation recall — keyword search over historical messages via SQLite FTS5.
-# No embedder required. Enables the `conversation_search` tool.
-# LTM_CONVERSATION_SEARCH_ENABLED=false
 """
 
 
@@ -98,11 +94,6 @@ class Config:
     MEMORY_SHORT_TERM_MIN_SIZE = int(_cfg.get("MEMORY_SHORT_TERM_MIN_SIZE", "6"))
     MEMORY_COMPRESSION_RATIO = float(_cfg.get("MEMORY_COMPRESSION_RATIO", "0.3"))
     MEMORY_PRESERVE_SYSTEM_PROMPTS = True
-
-    # Conversation recall (SQLite FTS5 over past messages — no embedder needed)
-    LTM_CONVERSATION_SEARCH_ENABLED = (
-        _cfg.get("LTM_CONVERSATION_SEARCH_ENABLED", "false").lower() == "true"
-    )
 
     # Logging Configuration
     # Note: Logging is now controlled via --verbose flag

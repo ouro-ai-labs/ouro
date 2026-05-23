@@ -87,9 +87,8 @@ def create_agent(
         GrepTool(),
         SmartEditTool(),
         ShellTool(),
+        ConversationSearchTool(memory_dir=memory_dir),
     ]
-    if Config.LTM_CONVERSATION_SEARCH_ENABLED:
-        tools.append(ConversationSearchTool(memory_dir=memory_dir))
 
     builder = (
         AgentBuilder()

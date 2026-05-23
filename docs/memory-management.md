@@ -25,9 +25,8 @@ All settings go in `~/.ouro/config`:
 | `MEMORY_COMPRESSION_THRESHOLD` | `60000` | Token count that triggers compression |
 | `MEMORY_SHORT_TERM_MIN_SIZE` | `6` | Minimum messages always preserved during compression |
 | `MEMORY_COMPRESSION_RATIO` | `0.3` | Target compression ratio (0.3 = compress to 30%) |
-| `LTM_CONVERSATION_SEARCH_ENABLED` | `false` | Enable the `conversation_search` tool (FTS5 index) |
 
-Memory blocks are always on (no flag).
+Memory blocks and conversation recall (FTS5) are always on — no flag.
 
 ## Compression Strategies
 

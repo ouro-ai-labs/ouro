@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed (BREAKING)
 
+- **`LTM_CONVERSATION_SEARCH_ENABLED` flag removed**. The
+  `conversation_search` tool + FTS5 index (introduced in PR #188 as opt-in)
+  are now always on, matching memory blocks. Both layers are peers of the
+  same long-term memory feature; gating one but not the other was an
+  asymmetry. Setting the flag has no effect after this PR.
 - **`LongTermMemoryManager` replaced by `MemoryBlockManager`**. The old
   `memory.md` + daily file (`YYYY-MM-DD.md`) + LLM consolidator system is
   removed. Existing `~/.ouro/memory/memory.md` and daily files remain on

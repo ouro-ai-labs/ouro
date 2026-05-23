@@ -104,14 +104,11 @@ Settings live in `~/.ouro/config` (KEY=VALUE format, auto-created with defaults)
 ### Long-Term Memory
 
 Long-term memory uses **named markdown blocks** at
-`~/.ouro/memory/blocks/{user,project,scratch}.md`, always on (no flag). The
-agent edits them via the `memory_block_edit` tool. See
+`~/.ouro/memory/blocks/{user,project,scratch}.md` (edited via
+`memory_block_edit`) plus a **SQLite FTS5 index** over historical messages
+(queried via `conversation_search`). Both are always on — no flags. See
 [memory-management.md](memory-management.md#long-term-memory-memory-blocks)
 for details.
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `LTM_CONVERSATION_SEARCH_ENABLED` | `false` | Adds the `conversation_search` tool (FTS5 keyword search over past messages) |
 
 ### Retry
 

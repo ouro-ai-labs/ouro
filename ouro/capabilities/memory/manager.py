@@ -24,7 +24,6 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from ouro.capabilities.compaction import CompactionManager
-from ouro.config import Config
 from ouro.core.loop import MessageListContext
 from ouro.core.loop.protocols import NullProgressSink, ProgressSink
 
@@ -209,19 +208,14 @@ class MemoryManager:
             messages=messages,
         )
         # Reindex FTS recall — best-effort, never blocks the save path.
-        if Config.LTM_CONVERSATION_SEARCH_ENABLED:
-            try:
-                index = self._get_recall_index()
-                if index is not None:
-                    await index.reindex_session(self.session_id, messages)
-            except Exception:
-                logger.warning("Failed to reindex recall FTS", exc_info=True)
+        try:
+            await self._get_recall_index().reindex_session(self.session_id, messages)
+        except Exception:
+            logger.warning("Failed to reindex recall FTS", exc_info=True)
         logger.info(f"Saved memory state for session {self.session_id}")
 
     def _get_recall_index(self) -> Any:
-        """Lazy-instantiate the FTS recall index. Returns None when disabled."""
-        if not Config.LTM_CONVERSATION_SEARCH_ENABLED:
-            return None
+        """Lazy-instantiate the FTS recall index."""
         if self._recall_index is None:
             from ouro.capabilities.memory.recall import RecallIndex
             from ouro.core.runtime import get_memory_dir
@@ -232,7 +226,7 @@ class MemoryManager:
 
     @property
     def recall_index(self) -> Any:
-        """Public accessor for the recall index (or None when disabled)."""
+        """Public accessor for the recall index."""
         return self._get_recall_index()
 
     def get_stats(self, *, context: MessageListContext) -> dict[str, Any]:
