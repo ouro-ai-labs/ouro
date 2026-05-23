@@ -66,6 +66,11 @@ class MemoryManager:
         self.token_tracker = TokenTracker()
         self._compaction = CompactionManager(llm)
 
+        # Conversation recall (FTS5 over historical messages — no embedder).
+        # Created lazily on first save_memory; only when feature is enabled.
+        self._recall_index: Any = None
+        self._recall_memory_dir = memory_dir
+
         self._long_term: BaseLongTermMemory | None = None
         if Config.LONG_TERM_MEMORY_ENABLED:
             from .long_term import LongTermMemoryManager
@@ -207,7 +212,32 @@ class MemoryManager:
             system_messages=sys_msgs,
             messages=messages,
         )
+        # Reindex FTS recall — best-effort, never blocks the save path.
+        if Config.LTM_CONVERSATION_SEARCH_ENABLED:
+            try:
+                index = self._get_recall_index()
+                if index is not None:
+                    await index.reindex_session(self.session_id, messages)
+            except Exception:
+                logger.warning("Failed to reindex recall FTS", exc_info=True)
         logger.info(f"Saved memory state for session {self.session_id}")
+
+    def _get_recall_index(self) -> Any:
+        """Lazy-instantiate the FTS recall index. Returns None when disabled."""
+        if not Config.LTM_CONVERSATION_SEARCH_ENABLED:
+            return None
+        if self._recall_index is None:
+            from ouro.capabilities.memory.recall import RecallIndex
+            from ouro.core.runtime import get_memory_dir
+
+            memory_dir = self._recall_memory_dir or get_memory_dir()
+            self._recall_index = RecallIndex(memory_dir)
+        return self._recall_index
+
+    @property
+    def recall_index(self) -> Any:
+        """Public accessor for the recall index (or None when disabled)."""
+        return self._get_recall_index()
 
     def get_stats(self, *, context: MessageListContext) -> dict[str, Any]:
         """Return token usage + cost stats for the current run.
