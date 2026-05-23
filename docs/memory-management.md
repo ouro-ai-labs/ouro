@@ -9,8 +9,11 @@ Components:
 - **ShortTermMemory** -- sliding window of recent messages (uncompressed)
 - **WorkingMemoryCompressor** -- LLM-driven summarization of older messages
 - **TokenTracker** -- token counting and cost tracking across providers
+- **MemoryBlockManager** -- named, size-bounded markdown blocks for cross-session memory
+- **RecallIndex** -- SQLite FTS5 index over historical messages for keyword recall
 
-Sessions are persisted as YAML files in `~/.ouro/sessions/`.
+Sessions are persisted as YAML files in `~/.ouro/sessions/`. Long-term memory
+lives in `~/.ouro/memory/blocks/{user,project,scratch}.md`.
 
 ## Configuration
 
@@ -22,7 +25,8 @@ All settings go in `~/.ouro/config`:
 | `MEMORY_COMPRESSION_THRESHOLD` | `60000` | Token count that triggers compression |
 | `MEMORY_SHORT_TERM_MIN_SIZE` | `6` | Minimum messages always preserved during compression |
 | `MEMORY_COMPRESSION_RATIO` | `0.3` | Target compression ratio (0.3 = compress to 30%) |
-| `LONG_TERM_MEMORY_ENABLED` | `false` | Enable file-based long-term memory |
+
+Memory blocks and conversation recall (FTS5) are always on — no flag.
 
 ## Compression Strategies
 
@@ -169,6 +173,41 @@ python tools/session_manager.py delete <id>                 # Delete session
 - Index file (`.index.yaml`) is auto-rebuilt if missing
 - Session files are human-readable and can be manually edited
 - Uses `aiofiles` for async I/O
+
+## Long-Term Memory (Memory Blocks)
+
+ouro maintains three named markdown blocks in `~/.ouro/memory/blocks/` that
+are loaded into every system prompt:
+
+| Block | Default budget | Purpose | Overflow behavior |
+|-------|----------------|---------|-------------------|
+| `user.md` | 2000 tokens | User identity, preferences, role | Strict (rejected) |
+| `project.md` | 4000 tokens | Project facts, conventions, env | Strict (rejected) |
+| `scratch.md` | 16000 tokens | Recent decisions, WIP context | Lenient (FIFO truncate) |
+
+The agent edits these via the `memory_block_edit` tool:
+
+```python
+# Replace the whole block
+memory_block_edit(block="user", operation="replace", content="name: alice\nprefers rust")
+
+# Targeted edit
+memory_block_edit(block="user", operation="replace", old="rust", content="RUST")
+
+# Append (use scratch for in-flight notes)
+memory_block_edit(block="scratch", operation="append",
+                  content="Decided to drop mem0 — see PR #189")
+
+# Read the current contents
+memory_block_edit(block="project", operation="read")
+```
+
+Strict blocks reject overflow with an actionable error message, prompting
+the LLM to trim before retrying. The scratch block is lenient: it auto-evicts
+oldest paragraphs so opportunistic appends never fail.
+
+The TUI also exposes `/memory` to inspect blocks and `/memory clear` to
+reset them.
 
 ## Token Tracking and Costs
 

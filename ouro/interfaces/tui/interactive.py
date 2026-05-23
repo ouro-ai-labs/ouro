@@ -329,54 +329,43 @@ class InteractiveSession:
         self._update_status_bar()
 
     async def _show_memory(self, args: str | None = None) -> None:
-        """Show or clear long-term memory."""
+        """Show or clear long-term memory blocks."""
         ltm = self.agent.memory.long_term
-        if ltm is None:
-            terminal_ui.print_warning(
-                "Long-term memory is disabled. "
-                "Set LONG_TERM_MEMORY_ENABLED=true in ~/.ouro/config"
-            )
-            return
 
         if args == "clear":
-            terminal_ui.print_warning("This will clear all long-term memories (durable + daily).")
+            terminal_ui.print_warning(
+                "This will clear all memory blocks (user + project + scratch)."
+            )
             confirm = await self.input_handler.prompt_async("Type 'yes' to confirm: ")
             if confirm.strip().lower() == "yes":
-                await ltm.store.save("")
-                # Clear daily files in the window
-                for dt, _ in await ltm.store.load_recent_dailies(
-                    Config.LONG_TERM_MEMORY_DAILY_WINDOW
-                ):
-                    await ltm.store.save_daily(dt, "")
-                terminal_ui.print_success("Long-term memory cleared (durable + daily).")
+                import contextlib
+
+                for name in list(ltm.block_budgets.keys()):
+                    with contextlib.suppress(Exception):
+                        await ltm.replace(name, "", "")
+                terminal_ui.print_success("Memory blocks cleared.")
             else:
                 terminal_ui.print_info("Cancelled.")
             return
 
         colors = Theme.get_colors()
-
-        # Show durable memories
-        content = await ltm.store.load()
-        if content.strip():
-            terminal_ui.print_info(f"Durable memories — {ltm.memory_dir}/memory.md")
+        any_content = False
+        for name, budget in sorted(ltm.block_budgets.items()):
+            body = (await ltm.read(name)).strip()
             terminal_ui.console.print()
-            terminal_ui.console.print(Markdown(content))
-        else:
-            terminal_ui.print_info(f"Durable memories are empty. ({ltm.memory_dir}/memory.md)")
-
-        # Show recent daily notes
-        dailies = await ltm.store.load_recent_dailies(Config.LONG_TERM_MEMORY_DAILY_WINDOW)
-        if dailies:
+            terminal_ui.print_info(
+                f"--- {name} --- (budget {budget} tokens) — {ltm.memory_dir}/blocks/{name}.md"
+            )
+            if body:
+                any_content = True
+                terminal_ui.console.print(Markdown(body))
+            else:
+                terminal_ui.console.print(f"[{colors.text_muted}](empty)[/{colors.text_muted}]")
+        if not any_content:
             terminal_ui.console.print()
-            terminal_ui.print_info("Recent daily notes:")
-            for dt, daily_content in dailies:
-                terminal_ui.console.print(
-                    f"\n[{colors.text_muted}]--- {dt.isoformat()} ---[/{colors.text_muted}]"
-                )
-                terminal_ui.console.print(Markdown(daily_content))
-        elif not content.strip():
-            terminal_ui.console.print()
-            terminal_ui.print_info("No recent daily notes.")
+            terminal_ui.print_info(
+                "All memory blocks are empty. The agent will populate them as it learns."
+            )
 
         terminal_ui.console.print()
 

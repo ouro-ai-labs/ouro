@@ -5,8 +5,9 @@ The conversation list itself lives on the loop's
 owns the parts that belong to the *capability* layer:
 
 - ``YamlFileMemoryStore`` — session save/load on disk.
-- ``LongTermMemoryManager`` (when enabled) — cross-session memory
-  surfaced in the system prompt.
+- ``MemoryBlockManager`` — named, size-bounded markdown blocks for
+  cross-session memory; always on. Replaces the old
+  ``LongTermMemoryManager`` (memory.md + daily files).
 - ``CompactionManager`` — compaction policy + LLM-driven compressor;
   exposed via ``self.compaction`` for ``CompactionHook`` to pick up.
 - ``TokenTracker`` — cumulative input/output/cache token + cost
@@ -23,18 +24,16 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from ouro.capabilities.compaction import CompactionManager
-from ouro.config import Config
 from ouro.core.loop import MessageListContext
 from ouro.core.loop.protocols import NullProgressSink, ProgressSink
 
+from .blocks import MemoryBlockManager
 from .token_tracker import TokenTracker
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ouro.core.llm import LiteLLMAdapter
-
-    from .long_term import BaseLongTermMemory
 
 
 class MemoryManager:
@@ -71,12 +70,8 @@ class MemoryManager:
         self._recall_index: Any = None
         self._recall_memory_dir = memory_dir
 
-        self._long_term: BaseLongTermMemory | None = None
-        if Config.LONG_TERM_MEMORY_ENABLED:
-            from .long_term import LongTermMemoryManager
-
-            self._long_term = LongTermMemoryManager(llm, memory_dir=memory_dir)
-            self._compaction.set_long_term(self._long_term)
+        # Memory blocks — always on; replaces the old memory.md + daily files.
+        self._long_term: MemoryBlockManager = MemoryBlockManager(llm, memory_dir=memory_dir)
 
     # ------------------------------------------------------------------
     # Session loading / lookup
@@ -164,8 +159,8 @@ class MemoryManager:
     # ------------------------------------------------------------------
 
     @property
-    def long_term(self) -> BaseLongTermMemory | None:
-        """Access the long-term memory manager (None if disabled)."""
+    def long_term(self) -> MemoryBlockManager:
+        """Access the long-term memory manager (always available; never None)."""
         return self._long_term
 
     @property
@@ -213,19 +208,14 @@ class MemoryManager:
             messages=messages,
         )
         # Reindex FTS recall — best-effort, never blocks the save path.
-        if Config.LTM_CONVERSATION_SEARCH_ENABLED:
-            try:
-                index = self._get_recall_index()
-                if index is not None:
-                    await index.reindex_session(self.session_id, messages)
-            except Exception:
-                logger.warning("Failed to reindex recall FTS", exc_info=True)
+        try:
+            await self._get_recall_index().reindex_session(self.session_id, messages)
+        except Exception:
+            logger.warning("Failed to reindex recall FTS", exc_info=True)
         logger.info(f"Saved memory state for session {self.session_id}")
 
     def _get_recall_index(self) -> Any:
-        """Lazy-instantiate the FTS recall index. Returns None when disabled."""
-        if not Config.LTM_CONVERSATION_SEARCH_ENABLED:
-            return None
+        """Lazy-instantiate the FTS recall index."""
         if self._recall_index is None:
             from ouro.capabilities.memory.recall import RecallIndex
             from ouro.core.runtime import get_memory_dir
@@ -236,7 +226,7 @@ class MemoryManager:
 
     @property
     def recall_index(self) -> Any:
-        """Public accessor for the recall index (or None when disabled)."""
+        """Public accessor for the recall index."""
         return self._get_recall_index()
 
     def get_stats(self, *, context: MessageListContext) -> dict[str, Any]:
@@ -267,7 +257,7 @@ class MemoryManager:
             # Legacy alias retained for terminal_ui / bot stats display.
             "short_term_count": msg_count,
             "total_cost": self.token_tracker.get_total_cost(self.llm.model),
-            "ltm_enabled": self._long_term is not None,
+            "ltm_enabled": True,
         }
 
     async def compress(

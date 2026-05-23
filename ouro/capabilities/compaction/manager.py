@@ -8,7 +8,6 @@ tracking, while compaction lives in its own capability package.
 from __future__ import annotations
 
 import logging
-import re
 from typing import TYPE_CHECKING, Callable
 
 from ouro.config import Config
@@ -20,25 +19,8 @@ from .types import CompressedMemory, CompressionStrategy
 
 logger = logging.getLogger(__name__)
 
-_LTM_BLOCK_RE = re.compile(
-    r"<long_term_memories>\s*(.*?)\s*</long_term_memories>",
-    re.DOTALL,
-)
-
-
-def _strip_ltm_block(text: str) -> str:
-    """Remove ``<long_term_memories>...</long_term_memories>`` from *text*."""
-    return _LTM_BLOCK_RE.sub("", text).strip()
-
-
-def _extract_ltm_block(text: str) -> str:
-    """Return the content inside ``<long_term_memories>`` or empty string."""
-    m = _LTM_BLOCK_RE.search(text)
-    return m.group(1).strip() if m else ""
-
 
 if TYPE_CHECKING:
-    from ouro.capabilities.memory.long_term import BaseLongTermMemory
     from ouro.core.llm import LiteLLMAdapter
 
 
@@ -52,14 +34,9 @@ class CompactionManager:
     on lists passed in by callers (e.g. ``MemoryManager``).
     """
 
-    def __init__(
-        self,
-        llm: LiteLLMAdapter,
-        long_term: BaseLongTermMemory | None = None,
-    ) -> None:
+    def __init__(self, llm: LiteLLMAdapter) -> None:
         self.llm = llm
         self.compressor = WorkingMemoryCompressor(llm)
-        self._long_term = long_term
 
         # State tracking (mirrors what MemoryManager used to own)
         self.was_compressed_last_iteration = False
@@ -134,10 +111,6 @@ class CompactionManager:
         does NOT include the conversation messages (they are already in the LLM
         context), so the LLM call reuses the cached prefix.
 
-        When long-term memory is enabled, the prompt also asks the LLM to
-        extract durable memories in a ``<long_term_memories>`` XML block,
-        and includes already-saved daily memories to avoid duplicates.
-
         Args:
             messages: Messages being compressed.
             current_tokens: Current token count (used to calculate target).
@@ -145,27 +118,15 @@ class CompactionManager:
         Returns:
             LLMMessage with role="user" containing the compaction instruction.
         """
-        from datetime import date
-
         strategy = self._select_strategy(messages)
         target_tokens = self._calculate_target_tokens(current_tokens)
         todo_context = self._todo_context_provider() if self._todo_context_provider else None
-
-        # Read today's daily file so the LLM knows what's already saved
-        existing_memories = ""
-        if self._long_term is not None and hasattr(self._long_term, "store"):
-            try:
-                existing_memories = await self._long_term.store.load_daily(date.today())
-            except Exception:
-                logger.debug("Failed to read today's daily file for compaction", exc_info=True)
 
         prompt_text = self.compressor.build_compaction_prompt(
             messages,
             strategy,
             target_tokens,
             todo_context,
-            ltm_enabled=self._long_term is not None,
-            existing_memories=existing_memories,
         )
         return LLMMessage(role="user", content=prompt_text)
 
@@ -190,9 +151,6 @@ class CompactionManager:
     ) -> list[LLMMessage]:
         """Apply the LLM's summary to compress a message list.
 
-        When long-term memory is enabled, this also extracts and persists
-        any ``<long_term_memories>`` block from the summary.
-
         Args:
             summary_text: The LLM-generated summary text.
             messages: The message list to compress.
@@ -211,13 +169,6 @@ class CompactionManager:
         logger.info(
             f"🗜️  Applying compression to {len(messages)} messages using {strategy} strategy"
         )
-
-        # Extract and persist long-term memories before stripping from summary
-        if self._long_term is not None:
-            self._extract_and_save_ltm(summary_text)
-
-        # Strip the <long_term_memories> block from the summary
-        summary_text = _strip_ltm_block(summary_text)
 
         # Inject todo context into summary
         if todo_context and "[Current Tasks]" not in summary_text:
@@ -334,10 +285,6 @@ class CompactionManager:
         """Set a callback to provide current todo context for compression."""
         self._todo_context_provider = provider
 
-    def set_long_term(self, long_term: BaseLongTermMemory | None) -> None:
-        """Set the long-term memory manager."""
-        self._long_term = long_term
-
     def _select_strategy(self, messages: list[LLMMessage]) -> str:
         """Auto-select compression strategy based on message characteristics."""
         has_tool_calls = any(self._message_has_tool_calls(msg) for msg in messages)
@@ -375,35 +322,6 @@ class CompactionManager:
             non_system_preserved = [m for m in preserved if m.role != "system"]
             return [summary_message] + non_system_preserved
         return [summary_message]
-
-    def _extract_and_save_ltm(self, summary_text: str) -> None:
-        """Extract ``<long_term_memories>`` from *summary_text* and append to today's daily file."""
-        import asyncio
-        from datetime import date
-
-        new_memories = _extract_ltm_block(summary_text)
-        if not new_memories or self._long_term is None:
-            return
-
-        ltm = self._long_term
-        if not hasattr(ltm, "store"):
-            return
-
-        async def _save() -> None:
-            try:
-                await ltm.store.append_daily(date.today(), new_memories + "\n")
-                logger.info(
-                    "Saved %d chars of long-term memories to daily file",
-                    len(new_memories),
-                )
-            except Exception:
-                logger.warning("Failed to save long-term memories during compaction", exc_info=True)
-
-        try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(_save())
-        except RuntimeError:
-            logger.debug("No running event loop; skipping LTM save")
 
     def reset(self) -> None:
         """Reset compaction state."""

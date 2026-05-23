@@ -855,9 +855,7 @@ async def run_bot(model_id: str | None = None) -> None:
     from ouro.interfaces.bot.soul import load_soul
     from ouro.interfaces.cli.factory import create_agent
 
-    # Bot mode: enable long-term memory by default so conversations persist
-    Config.LONG_TERM_MEMORY_ENABLED = True
-
+    # Memory blocks are always on (no flag); cross-session persistence is automatic.
     # Ensure bot-specific directories exist
     ensure_bot_dirs()
     bot_sessions_dir = get_bot_sessions_dir()
