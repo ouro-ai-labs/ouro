@@ -157,44 +157,50 @@ async def test_blocked_call_feedback_reaches_history_in_order():
     assert tool_msgs[1].content == "read_file-result"
 
 
-class _HaltRule:
-    name = "halt"
+class _BlockAllRule:
+    """Blocks every proposed call — proves a fully-blocked iteration still
+    yields one tool_result per call and the loop continues (never halts)."""
+
+    name = "block-all"
 
     def on_run_start(self) -> None:
         pass
 
     def check(self, ctx, tool_calls: list[ToolCall]) -> RuleOutcome:
-        return RuleOutcome(
-            violations=tuple(RuleViolation(tc.id, "[test] stop") for tc in tool_calls),
-            halt=True,
-            halt_message="[test] halted by rule",
-        )
+        return RuleOutcome(tuple(RuleViolation(tc.id, "[test] blocked") for tc in tool_calls))
 
     def observe(self, ctx, executed) -> None:
         pass
 
 
 @pytest.mark.asyncio
-async def test_halting_rule_returns_halt_message_and_emits_results():
+async def test_fully_blocked_iteration_continues_without_dispatch():
     read_tool = _NoopTool("read_file")
-    llm = _ScriptedLLM([_tool_calls_response(("c1", "read_file", {"file_path": "/x"}))])
     from ouro.core.loop import MessageListContext
 
     ctx = MessageListContext()
+    llm = _ScriptedLLM(
+        [
+            _tool_calls_response(("c1", "read_file", {"file_path": "/x"})),
+            LLMResponse(content="ok", stop_reason=StopReason.STOP),
+        ]
+    )
     agent = Agent(
         llm=llm,
         tools=ToolExecutor([read_tool]),
         progress=NullProgressSink(),
-        rules=[_HaltRule()],
+        rules=[_BlockAllRule()],
     )
 
     answer = await agent.run("test", context=ctx)
 
-    assert answer == "[test] halted by rule"
-    assert read_tool.invocations == 0  # halted before dispatch
-    # The single tool_call still gets a tool_result (API requirement).
+    # The rule blocks the only call, but the run continues to the next turn
+    # (no halt) and ends when the model itself stops.
+    assert answer == "ok"
+    assert read_tool.invocations == 0
     tool_msgs = [m for m in ctx.detached.snapshot() if m.role == "tool"]
     assert [m.tool_call_id for m in tool_msgs] == ["c1"]
+    assert tool_msgs[0].content == "[test] blocked"
 
 
 @pytest.mark.asyncio

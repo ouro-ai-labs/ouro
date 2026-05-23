@@ -44,7 +44,6 @@ class Agent:
         progress: ProgressSink | None = None,
         usage_callback: Callable[[dict[str, int]], None] | None = None,
         repeat_tool_call_threshold: int = 3,
-        repeat_tool_call_max: int = 5,
         rules: Sequence[Rule] = (),
     ) -> None:
         self.llm = llm
@@ -55,17 +54,14 @@ class Agent:
         self.progress: ProgressSink = progress or NullProgressSink()
         self._reasoning_effort: str | None = None
         self._usage_callback = usage_callback
-        # Soft intercept at `repeat_tool_call_threshold` consecutive identical
-        # tool-call iterations; hard terminate at `repeat_tool_call_max`.
-        # Setting threshold <= 0 disables the circuit breaker entirely.
+        # Warn the model after `repeat_tool_call_threshold` consecutive identical
+        # tool-call iterations; <= 0 disables the check. See RepeatedToolCallRule.
         self.repeat_tool_call_threshold = repeat_tool_call_threshold
-        self.repeat_tool_call_max = repeat_tool_call_max
         # Deterministic pre-dispatch guards. The repeated-tool-call breaker is
-        # always present (governed by the kwargs above; threshold <= 0 makes it
-        # a no-op); any caller-supplied rules run after it. See `rules.py`.
-        self.rules: list[Rule] = [
-            RepeatedToolCallRule(repeat_tool_call_threshold, repeat_tool_call_max)
-        ]
+        # always present (governed by the kwarg above); any caller-supplied
+        # rules run after it. Rules replace tool_results; they never stop the
+        # loop (max_iterations is the runaway backstop). See `rules.py`.
+        self.rules: list[Rule] = [RepeatedToolCallRule(repeat_tool_call_threshold)]
         self.rules.extend(rules)
 
     def set_reasoning_effort(self, value: str | None) -> None:
@@ -162,44 +158,25 @@ class Agent:
                 # below sit in the correct chronological order.
                 messages.append(response.to_message())
 
-                # Run deterministic rules over the proposed calls. Blocked
-                # calls get a synthetic tool_result (the rule's feedback) in
-                # place of dispatch; a halting rule ends the run.
-                blocked, halt, halt_message = self._apply_rules(ctx, tool_calls)
-                if halt:
-                    for tc in tool_calls:
-                        content = blocked.get(tc.id) or halt_message or "[ouro] Halted by rule."
-                        messages.append(
-                            LLMMessage(
-                                role="tool",
-                                content=content,
-                                tool_call_id=tc.id,
-                                name=tc.name,
-                            )
-                        )
-                    final_answer = halt_message or ""
-                    self.progress.unfinished_answer(final_answer)
-                    return final_answer
+                # Run deterministic rules over the proposed calls. A blocked
+                # call is not dispatched; the rule's feedback becomes its
+                # tool_result so the model self-corrects next turn.
+                blocked = self._apply_rules(ctx, tool_calls)
 
-                # Dispatch only the calls no rule blocked, then append every
-                # call's result in the model's original order (synthetic for
-                # blocked calls, real for dispatched ones) so each tool_call
-                # gets exactly one tool_result.
+                # Dispatch only the calls no rule blocked, then write one
+                # tool_result per call in the model's original order (synthetic
+                # feedback for blocked calls, real output for dispatched ones)
+                # so each tool_call gets exactly one tool_result.
                 remaining = [tc for tc in tool_calls if tc.id not in blocked]
-                results_by_id: dict[str, str] = {}
                 executed: list[tuple[ToolCall, ToolResult]] = []
                 if remaining:
-                    tool_results = await self._dispatch_tools(ctx, remaining)
-                    for tc, tr in zip(remaining, tool_results):
-                        results_by_id[tc.id] = tr.content
-                        executed.append((tc, tr))
-
+                    executed = list(zip(remaining, await self._dispatch_tools(ctx, remaining)))
+                contents = {**blocked, **{tc.id: tr.content for tc, tr in executed}}
                 for tc in tool_calls:
-                    content = blocked[tc.id] if tc.id in blocked else results_by_id.get(tc.id, "")
                     messages.append(
                         LLMMessage(
                             role="tool",
-                            content=content,
+                            content=contents[tc.id],
                             tool_call_id=tc.id,
                             name=tc.name,
                         )
@@ -249,28 +226,19 @@ class Agent:
         self,
         ctx: LoopContext,
         tool_calls: list[ToolCall],
-    ) -> tuple[dict[str, str], bool, str | None]:
+    ) -> dict[str, str]:
         """Evaluate every rule over the proposed calls and aggregate verdicts.
 
-        Returns ``(blocked, halt, halt_message)`` where ``blocked`` maps a
-        ``tool_call_id`` to the feedback to surface in place of dispatching it
-        (messages from multiple rules are joined). ``halt`` is true if any rule
-        asked to terminate the run; ``halt_message`` is the first such rule's
-        final answer. Rules do not mutate ``messages`` — the caller owns that.
+        Returns ``blocked``: a map from ``tool_call_id`` to the feedback to
+        surface in place of dispatching it (messages from multiple rules that
+        block the same call are joined). Calls not in the map dispatch normally.
+        Rules do not mutate ``messages`` — the caller owns that.
         """
         violations: dict[str, list[str]] = {}
-        halt = False
-        halt_message: str | None = None
         for rule in self.rules:
-            outcome = rule.check(ctx, tool_calls)
-            for v in outcome.violations:
+            for v in rule.check(ctx, tool_calls).violations:
                 violations.setdefault(v.tool_call_id, []).append(v.message)
-            if outcome.halt:
-                halt = True
-                if halt_message is None:
-                    halt_message = outcome.halt_message
-        blocked = {tid: "\n".join(msgs) for tid, msgs in violations.items()}
-        return blocked, halt, halt_message
+        return {tid: "\n".join(msgs) for tid, msgs in violations.items()}
 
     async def _dispatch_tools(
         self,
