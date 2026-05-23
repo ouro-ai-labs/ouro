@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from ouro.capabilities import AgentBuilder, ComposedAgent
 from ouro.capabilities.tools.builtins.advanced_file_ops import GlobTool, GrepTool
+from ouro.capabilities.tools.builtins.conversation_search import ConversationSearchTool
 from ouro.capabilities.tools.builtins.file_ops import FileReadTool, FileWriteTool
 from ouro.capabilities.tools.builtins.multi_task import MultiTaskTool
 from ouro.capabilities.tools.builtins.shell import ShellTool
@@ -76,24 +77,26 @@ def create_agent(
         timeout=current_profile.timeout,
     )
 
+    tools = [
+        FileReadTool(),
+        FileWriteTool(),
+        WebSearchTool(),
+        WebFetchTool(),
+        GlobTool(),
+        GrepTool(),
+        SmartEditTool(),
+        ShellTool(),
+    ]
+    if Config.LTM_CONVERSATION_SEARCH_ENABLED:
+        tools.append(ConversationSearchTool(memory_dir=memory_dir))
+
     builder = (
         AgentBuilder()
         .with_llm(llm, model_manager=model_manager)
         .with_max_iterations(Config.MAX_ITERATIONS)
         .with_progress_sink(TuiProgressSink())
         .with_memory(sessions_dir=sessions_dir, memory_dir=memory_dir)
-        .with_tools(
-            [
-                FileReadTool(),
-                FileWriteTool(),
-                WebSearchTool(),
-                WebFetchTool(),
-                GlobTool(),
-                GrepTool(),
-                SmartEditTool(),
-                ShellTool(),
-            ]
-        )
+        .with_tools(tools)
     )
 
     agent = builder.build()
