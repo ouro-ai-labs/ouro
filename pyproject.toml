@@ -94,7 +94,7 @@ packages = [
     "ouro.capabilities.compaction",
     "ouro.capabilities.context",
     "ouro.capabilities.memory",
-    "ouro.capabilities.memory.long_term",
+    "ouro.capabilities.memory.blocks",
     "ouro.capabilities.memory.recall",
     "ouro.capabilities.memory.store",
     "ouro.capabilities.prompts",

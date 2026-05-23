@@ -16,7 +16,7 @@ from ouro.capabilities.compaction import (
 )
 from ouro.capabilities.context.env import format_context_prompt
 from ouro.capabilities.memory import (
-    LongTermMemoryManager,
+    MemoryBlockManager,
     MemoryManager,
     TokenTracker,
 )
@@ -42,7 +42,7 @@ __all__ = [
     # Memory
     "MemoryManager",
     "TokenTracker",
-    "LongTermMemoryManager",
+    "MemoryBlockManager",
     # Compaction
     "CompactionManager",
     "CompactionHook",

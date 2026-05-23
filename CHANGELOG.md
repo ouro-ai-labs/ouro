@@ -7,7 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Removed (BREAKING)
+### Added
+
+- **Memory blocks**: named, size-bounded markdown blocks under
+  `~/.ouro/memory/blocks/{user,project,scratch}.md` always loaded into the
+  system prompt. The agent edits them via a new `memory_block_edit` tool
+  (`read` / `replace` / `append` operations). Strict blocks (`user`,
+  `project`) reject overflow with an actionable error; `scratch` is lenient
+  with FIFO truncation. Inspired by Letta/MemGPT's core memory.
+
+### Changed (BREAKING)
+
+- **`LongTermMemoryManager` replaced by `MemoryBlockManager`**. The old
+  `memory.md` + daily file (`YYYY-MM-DD.md`) + LLM consolidator system is
+  removed. Existing `~/.ouro/memory/memory.md` and daily files remain on
+  disk but are **no longer read**; users who want to keep their data can
+  manually copy it into a block. `LONG_TERM_MEMORY_ENABLED`,
+  `LONG_TERM_MEMORY_CONSOLIDATION_THRESHOLD`, `LONG_TERM_MEMORY_DAILY_WINDOW`,
+  and `LONG_TERM_MEMORY_DAILY_RETENTION` config keys are gone (setting them
+  has no effect). The `LongTermMemoryManager` public class is replaced by
+  `MemoryBlockManager` in `ouro.capabilities`.
+- **Compaction no longer auto-extracts long-term memories**. The
+  `<long_term_memories>` XML block was removed from compaction prompts;
+  memory is now agent-driven via `memory_block_edit` instead of
+  opportunistically dumped during compaction. The conversation itself is
+  still searchable via `conversation_search` (FTS5).
+
+### Removed (BREAKING — from PR #189)
 
 - **mem0 backend removed**. `MEM0_ENABLED`, `MEM0_USER_ID`, and all
   `MEM0_*` env overrides are gone; setting them has no effect. The

@@ -1,15 +1,15 @@
 """Memory management system for ouro framework.
 
-This module provides long-term memory persistence, session management,
-and cross-session memory consolidation.
+Provides session persistence, working-memory compaction, conversation
+recall (SQLite FTS), and long-term memory blocks.
 """
 
-from .long_term import LongTermMemoryManager
+from .blocks import MemoryBlockManager
 from .manager import MemoryManager
 from .token_tracker import TokenTracker
 
 __all__ = [
-    "LongTermMemoryManager",
+    "MemoryBlockManager",
     "MemoryManager",
     "TokenTracker",
 ]

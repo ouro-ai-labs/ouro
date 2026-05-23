@@ -103,12 +103,15 @@ Settings live in `~/.ouro/config` (KEY=VALUE format, auto-created with defaults)
 
 ### Long-Term Memory
 
+Long-term memory uses **named markdown blocks** at
+`~/.ouro/memory/blocks/{user,project,scratch}.md`, always on (no flag). The
+agent edits them via the `memory_block_edit` tool. See
+[memory-management.md](memory-management.md#long-term-memory-memory-blocks)
+for details.
+
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `LONG_TERM_MEMORY_ENABLED` | `false` | Enable file-based long-term memory (stores durable facts in `~/.ouro/memory/`) |
-| `LONG_TERM_MEMORY_CONSOLIDATION_THRESHOLD` | `1000` | Character count that triggers memory consolidation |
-| `LONG_TERM_MEMORY_DAILY_WINDOW` | `2` | Number of recent daily files to include in context |
-| `LONG_TERM_MEMORY_DAILY_RETENTION` | `30` | Days to keep daily memory files before pruning |
+| `LTM_CONVERSATION_SEARCH_ENABLED` | `false` | Adds the `conversation_search` tool (FTS5 keyword search over past messages) |
 
 ### Retry
 

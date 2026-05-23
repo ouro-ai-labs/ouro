@@ -13,6 +13,7 @@ from ouro.capabilities import AgentBuilder, ComposedAgent
 from ouro.capabilities.tools.builtins.advanced_file_ops import GlobTool, GrepTool
 from ouro.capabilities.tools.builtins.conversation_search import ConversationSearchTool
 from ouro.capabilities.tools.builtins.file_ops import FileReadTool, FileWriteTool
+from ouro.capabilities.tools.builtins.memory_block_edit import MemoryBlockEditTool
 from ouro.capabilities.tools.builtins.multi_task import MultiTaskTool
 from ouro.capabilities.tools.builtins.shell import ShellTool
 from ouro.capabilities.tools.builtins.smart_edit import SmartEditTool
@@ -105,5 +106,14 @@ def create_agent(
     # the construction-time circular dependency.
     multi = MultiTaskTool(agent)
     agent.tool_executor.add_tool(multi)
+
+    # MemoryBlockEditTool needs the MemoryBlockManager owned by MemoryManager;
+    # add post-build for the same reason.
+    if agent.memory is not None:
+        from ouro.capabilities.memory.blocks import MemoryBlockManager
+
+        ltm = agent.memory.long_term
+        if isinstance(ltm, MemoryBlockManager):
+            agent.tool_executor.add_tool(MemoryBlockEditTool(ltm))
 
     return agent
