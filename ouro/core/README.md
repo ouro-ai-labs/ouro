@@ -11,7 +11,8 @@ ouro.core
 │   ├── agent.py             # the Agent class
 │   ├── context.py           # MessageListContext (system + detached) + RunStatistic
 │   ├── message_list.py      # mutable wrapper backing MessageListContext.detached
-│   └── protocols.py         # Hook, ToolRegistry, ProgressSink, LoopContext
+│   ├── protocols.py         # Hook, ToolRegistry, ProgressSink, LoopContext
+│   └── rules.py             # Rule protocol + RepeatedToolCallRule (per-tool-call checks)
 ├── llm/                     # LiteLLM client + message types
 │   ├── litellm_adapter.py   # LiteLLMAdapter
 │   ├── message_types.py     # LLMMessage, LLMResponse, ToolCall, ToolResult

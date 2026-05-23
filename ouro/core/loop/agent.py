@@ -8,9 +8,8 @@ memory, BaseTool, verification, or terminal UI — those plug in via
 from __future__ import annotations
 
 import asyncio
-import json
 import os
-from typing import Any, Callable, Literal, NamedTuple, Sequence
+from typing import Any, Callable, Sequence
 
 from ouro.core.llm import LLMMessage, LLMResponse, StopReason, ToolCall, ToolResult
 from ouro.core.llm.reasoning import normalize_reasoning_effort
@@ -27,6 +26,7 @@ from .protocols import (
     ProgressSink,
     ToolRegistry,
 )
+from .rules import RepeatedToolCallRule, Rule
 
 logger = get_logger(__name__)
 
@@ -44,7 +44,7 @@ class Agent:
         progress: ProgressSink | None = None,
         usage_callback: Callable[[dict[str, int]], None] | None = None,
         repeat_tool_call_threshold: int = 3,
-        repeat_tool_call_max: int = 5,
+        rules: Sequence[Rule] = (),
     ) -> None:
         self.llm = llm
         self.tools = tools
@@ -54,17 +54,25 @@ class Agent:
         self.progress: ProgressSink = progress or NullProgressSink()
         self._reasoning_effort: str | None = None
         self._usage_callback = usage_callback
-        # Soft intercept at `repeat_tool_call_threshold` consecutive identical
-        # tool-call iterations; hard terminate at `repeat_tool_call_max`.
-        # Setting threshold <= 0 disables the circuit breaker entirely.
+        # Warn the model after `repeat_tool_call_threshold` consecutive identical
+        # tool-call iterations; <= 0 disables the check. See RepeatedToolCallRule.
         self.repeat_tool_call_threshold = repeat_tool_call_threshold
-        self.repeat_tool_call_max = repeat_tool_call_max
+        # Deterministic per-tool-call rules. The repeated-tool-call breaker is
+        # always present (governed by the kwarg above); any caller-supplied
+        # rules run after it. A rule blocks a call before dispatch or rewrites
+        # its result after; it never stops the loop (max_iterations is the
+        # runaway backstop). See `rules.py`.
+        self.rules: list[Rule] = [RepeatedToolCallRule(repeat_tool_call_threshold)]
+        self.rules.extend(rules)
 
     def set_reasoning_effort(self, value: str | None) -> None:
         self._reasoning_effort = normalize_reasoning_effort(value)
 
     def add_hook(self, hook: Hook) -> None:
         self.hooks.append(hook)
+
+    def add_rule(self, rule: Rule) -> None:
+        self.rules.append(rule)
 
     async def run(
         self,
@@ -84,11 +92,6 @@ class Agent:
 
         tool_schemas = self.tools.get_tool_schemas()
         final_answer: str = ""
-        # Per-run state for the repeated-tool-call circuit breaker. Tracks the
-        # last iteration's tool-call signature and how many iterations in a
-        # row have emitted the same signature. See `_tool_call_iter_signature`.
-        last_iter_sig: tuple[tuple[str, str], ...] | None = None
-        repeat_count: int = 0
         for ctx.iteration in range(1, self.max_iterations + 1):
             # Hooks may mutate ``context`` in place here (e.g.
             # ``CompactionHook`` compresses ``context.detached``).
@@ -153,28 +156,24 @@ class Agent:
                 # below sit in the correct chronological order.
                 messages.append(response.to_message())
 
-                guard = self._apply_repeated_tool_call_guard(
-                    tool_calls=tool_calls,
-                    messages=messages,
-                    last_iter_sig=last_iter_sig,
-                    repeat_count=repeat_count,
-                    iteration=ctx.iteration,
-                )
-                last_iter_sig = guard.last_iter_sig
-                repeat_count = guard.repeat_count
-                if guard.action == "halted":
-                    final_answer = guard.final_answer or ""
-                    self.progress.unfinished_answer(final_answer)
-                    return final_answer
-                if guard.action == "intercepted":
-                    continue
+                # Per-tool-call rules. `before_toolcall` may block a call (its
+                # text becomes the result and the call is skipped); the rest
+                # dispatch, then `after_toolcall` may rewrite each real result.
+                blocked = self._rules_before(ctx, tool_calls)
+                remaining = [tc for tc in tool_calls if tc.id not in blocked]
 
-                tool_results = await self._dispatch_tools(ctx, tool_calls)
-                for tc, tr in zip(tool_calls, tool_results):
+                contents: dict[str, str] = dict(blocked)
+                if remaining:
+                    results = await self._dispatch_tools(ctx, remaining)
+                    for tc, tr in zip(remaining, results):
+                        contents[tc.id] = self._rules_after(ctx, tc, tr)
+
+                # One tool_result per call, in the model's original order.
+                for tc in tool_calls:
                     messages.append(
                         LLMMessage(
                             role="tool",
-                            content=tr.content,
+                            content=contents[tc.id],
                             tool_call_id=tc.id,
                             name=tc.name,
                         )
@@ -217,89 +216,44 @@ class Agent:
         logger.warning("Agent.run reached max_iterations=%d without STOP", self.max_iterations)
         return final_answer
 
-    def _apply_repeated_tool_call_guard(
+    def _rules_before(
         self,
-        *,
+        ctx: LoopContext,
         tool_calls: list[ToolCall],
-        messages: MessageList,
-        last_iter_sig: tuple[tuple[str, str], ...] | None,
-        repeat_count: int,
-        iteration: int,
-    ) -> _RepeatGuardOutcome:
-        """Track consecutive identical tool_call iterations and intercept loops.
+    ) -> dict[str, str]:
+        """Run every rule's ``before_toolcall`` over each proposed call.
 
-        Compaction summaries can re-inject pathological tool-call patterns as
-        if they were task state, so when the model emits the same
-        ``(name, arguments)`` iteration N times in a row we either synthesize
-        a "stop repeating" tool_result (soft intercept) or terminate the run
-        (hard stop).  This method updates ``messages`` in place with the
-        synthesized tool_results when intercepting; the caller routes on
-        ``outcome.action``.
+        Returns ``blocked``: a map from ``tool_call_id`` to the text to surface
+        in place of dispatching it (messages from multiple rules that block the
+        same call are joined). Calls absent from the map dispatch normally.
         """
-        iter_sig = _tool_call_iter_signature(tool_calls)
-        if last_iter_sig is not None and iter_sig == last_iter_sig:
-            new_repeat_count = repeat_count + 1
-        else:
-            new_repeat_count = 1
+        blocked: dict[str, list[str]] = {}
+        for tc in tool_calls:
+            for rule in self.rules:
+                fn = getattr(rule, "before_toolcall", None)
+                if fn is None:
+                    continue
+                msg = fn(ctx, tc)
+                if msg is not None:
+                    blocked.setdefault(tc.id, []).append(msg)
+        return {tid: "\n".join(msgs) for tid, msgs in blocked.items()}
 
-        if self.repeat_tool_call_threshold <= 0:
-            return _RepeatGuardOutcome("dispatch", iter_sig, new_repeat_count, None)
+    def _rules_after(self, ctx: LoopContext, tool_call: ToolCall, result: ToolResult) -> str:
+        """Run every rule's ``after_toolcall`` over a dispatched call's result.
 
-        if new_repeat_count >= self.repeat_tool_call_max:
-            for tc in tool_calls:
-                messages.append(
-                    LLMMessage(
-                        role="tool",
-                        content=(
-                            f"[ouro] Same tool_call(s) repeated {new_repeat_count} "
-                            "times consecutively with no progress. Terminating "
-                            "to prevent runaway loop."
-                        ),
-                        tool_call_id=tc.id,
-                        name=tc.name,
-                    )
-                )
-            logger.warning(
-                "Agent.run: hard-stopping after %d consecutive identical "
-                "tool_call iterations on iteration %d (names=%s)",
-                new_repeat_count,
-                iteration,
-                [tc.name for tc in tool_calls],
-            )
-            final_answer = (
-                "[ouro] Halted: the model repeated the same tool call "
-                f"{new_repeat_count} times without progress "
-                f"({[tc.name for tc in tool_calls]}). Please rephrase your "
-                "request or restart the session."
-            )
-            return _RepeatGuardOutcome("halted", iter_sig, new_repeat_count, final_answer)
-
-        if new_repeat_count >= self.repeat_tool_call_threshold:
-            feedback = (
-                f"[ouro] This exact tool_call has now been issued {new_repeat_count} "
-                "times consecutively. The result has not changed. Stop repeating: "
-                "either choose a different action, ask the user for clarification, "
-                "or finish the task."
-            )
-            for tc in tool_calls:
-                messages.append(
-                    LLMMessage(
-                        role="tool",
-                        content=feedback,
-                        tool_call_id=tc.id,
-                        name=tc.name,
-                    )
-                )
-            logger.warning(
-                "Agent.run: intercepted %d-times-repeated tool_call(s) on "
-                "iteration %d (names=%s)",
-                new_repeat_count,
-                iteration,
-                [tc.name for tc in tool_calls],
-            )
-            return _RepeatGuardOutcome("intercepted", iter_sig, new_repeat_count, None)
-
-        return _RepeatGuardOutcome("dispatch", iter_sig, new_repeat_count, None)
+        Each rule may rewrite the content (later rules see earlier rewrites) or
+        return ``None`` to leave it unchanged. Returns the final result text.
+        """
+        content = result.content
+        for rule in self.rules:
+            fn = getattr(rule, "after_toolcall", None)
+            if fn is None:
+                continue
+            current = ToolResult(tool_call_id=tool_call.id, content=content, name=tool_call.name)
+            replacement = fn(ctx, tool_call, current)
+            if replacement is not None:
+                content = replacement
+        return content
 
     async def _dispatch_tools(
         self,
@@ -427,42 +381,6 @@ class Agent:
         if retries:
             return ContinueDecision.retry_with_feedback(*retries)
         return decision
-
-
-class _RepeatGuardOutcome(NamedTuple):
-    """Result of one iteration's repeated-tool-call check.
-
-    ``action`` routes the caller:
-    - ``"dispatch"``: not a repeat (or breaker disabled); run the tools normally.
-    - ``"intercepted"``: synthesized tool_results already appended; ``continue``.
-    - ``"halted"``: synthesized tool_results already appended; return ``final_answer``.
-    """
-
-    action: Literal["dispatch", "intercepted", "halted"]
-    last_iter_sig: tuple[tuple[str, str], ...]
-    repeat_count: int
-    final_answer: str | None
-
-
-def _tool_call_iter_signature(
-    tool_calls: list[ToolCall],
-) -> tuple[tuple[str, str], ...]:
-    """Build a deterministic fingerprint for one iteration's tool_calls.
-
-    Used by the repeated-tool-call circuit breaker to detect when the model
-    is emitting the exact same (name, arguments) batch iteration after
-    iteration. Arguments are serialized with ``sort_keys=True`` so key order
-    is normalized; non-JSON-safe values fall back to ``str(...)`` so the
-    helper never raises on exotic argument types.
-    """
-    sigs: list[tuple[str, str]] = []
-    for tc in tool_calls:
-        try:
-            args_repr = json.dumps(tc.arguments, sort_keys=True, default=str)
-        except (TypeError, ValueError):
-            args_repr = repr(tc.arguments)
-        sigs.append((tc.name, args_repr))
-    return tuple(sigs)
 
 
 def _log_outgoing_messages(iteration: int, messages: list[LLMMessage]) -> None:

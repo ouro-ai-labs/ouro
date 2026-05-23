@@ -13,7 +13,7 @@ from ouro.capabilities.tools.base import BaseTool
 from ouro.capabilities.tools.executor import ToolExecutor
 from ouro.core.llm import LLMResponse, StopReason, ToolCall
 from ouro.core.loop import Agent, NullProgressSink
-from ouro.core.loop.agent import _tool_call_iter_signature
+from ouro.core.loop.rules import _tool_call_signature
 
 
 class _NoopTool(BaseTool):
@@ -71,20 +71,20 @@ def _tool_call_response(call_id: str, name: str, args: dict) -> LLMResponse:
 
 
 # ---------------------------------------------------------------------------
-# _tool_call_iter_signature
+# _tool_call_signature (per-call fingerprint)
 # ---------------------------------------------------------------------------
 
 
 def test_signature_normalizes_argument_key_order():
     a = ToolCall(id="1", name="read_file", arguments={"file_path": "/x", "offset": 0})
     b = ToolCall(id="2", name="read_file", arguments={"offset": 0, "file_path": "/x"})
-    assert _tool_call_iter_signature([a]) == _tool_call_iter_signature([b])
+    assert _tool_call_signature(a) == _tool_call_signature(b)
 
 
 def test_signature_differs_when_arguments_differ():
     a = ToolCall(id="1", name="read_file", arguments={"file_path": "/x"})
     b = ToolCall(id="2", name="read_file", arguments={"file_path": "/y"})
-    assert _tool_call_iter_signature([a]) != _tool_call_iter_signature([b])
+    assert _tool_call_signature(a) != _tool_call_signature(b)
 
 
 def test_signature_handles_non_json_safe_arguments():
@@ -94,7 +94,7 @@ def test_signature_handles_non_json_safe_arguments():
             return "<weird>"
 
     tc = ToolCall(id="1", name="x", arguments={"v": Weird()})
-    assert _tool_call_iter_signature([tc])  # smoke test: doesn't raise
+    assert _tool_call_signature(tc)  # smoke test: doesn't raise
 
 
 # ---------------------------------------------------------------------------
@@ -128,11 +128,15 @@ async def test_third_identical_call_is_intercepted_with_synthetic_feedback():
 
 
 @pytest.mark.asyncio
-async def test_fifth_identical_call_hard_stops_run():
-    """At max=5, the run terminates with an explanatory final answer."""
+async def test_sustained_repeats_keep_being_intercepted_without_halting():
+    """The breaker warns every repeat past threshold but never stops the loop."""
     args = {"file_path": "/m.py", "offset": 0, "limit": 100}
     tool = _NoopTool("read_file")
-    llm = _ScriptedLLM([_tool_call_response(f"c{i}", "read_file", args) for i in range(1, 7)])
+    # 5 identical repeats, then the model finally relents and stops.
+    llm = _ScriptedLLM(
+        [_tool_call_response(f"c{i}", "read_file", args) for i in range(1, 6)]
+        + [LLMResponse(content="ok", stop_reason=StopReason.STOP)]
+    )
     agent = Agent(
         llm=llm,
         tools=ToolExecutor([tool]),
@@ -140,12 +144,12 @@ async def test_fifth_identical_call_hard_stops_run():
         progress=NullProgressSink(),
     )
     answer = await agent.run("test")
-    assert "Halted" in answer
-    assert "read_file" in answer
-    # 1st & 2nd dispatched; 3rd & 4th intercepted; 5th hard-stops.
+    # Run is not halted by the rule — it ends when the model itself stops.
+    assert answer == "ok"
+    # 1st & 2nd dispatched; 3rd..5th intercepted (replaced, not dispatched).
     assert tool.invocations == 2
-    # LLM was called 5 times before the breaker fired.
-    assert llm.calls == 5
+    # Every repeat still triggered an LLM turn; the rule never short-circuits.
+    assert llm.calls == 6
 
 
 @pytest.mark.asyncio

@@ -36,3 +36,4 @@ Tip: keep this list up to date when adding an RFC.
 - [loop-owned-message-list.md](loop-owned-message-list.md) — Loop Owned Message List
 - [reasoning-controls.md](reasoning-controls.md) — Reasoning Controls
 - [token-counting-accuracy.md](token-counting-accuracy.md) — Token Counting Accuracy
+- [loop-rules.md](loop-rules.md) — Loop Rules (Deterministic Pre-Dispatch Guards)
