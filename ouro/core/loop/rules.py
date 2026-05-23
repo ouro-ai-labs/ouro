@@ -19,9 +19,10 @@ Two optional hooks — a rule implements whichever it needs:
   return ``None`` to leave it unchanged. Use it to rewrite output and/or to
   record state from real results (e.g. which files were read).
 
-Both are per-tool-call and deterministic (no LLM/I/O). A rule never stops the
-loop; it only blocks or rewrites individual results. Runaway protection is the
-loop's own concern (``max_iterations``).
+Both are per-tool-call and should be cheap and side-effect-free: no LLM calls
+and no heavy or blocking I/O (a quick local check such as ``os.path.exists`` is
+fine). A rule never stops the loop; it only blocks or rewrites individual
+results. Runaway protection is the loop's own concern (``max_iterations``).
 
 ``ouro.core`` rules stay tool-agnostic — they see only ``ToolCall`` /
 ``ToolResult``. Tool-aware rules (e.g. "only modify files you've read") live in

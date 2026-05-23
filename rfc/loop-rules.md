@@ -130,12 +130,14 @@ Loop integration (replaces the inline guard in the `TOOL_CALLS` branch):
 `Agent.__init__` gains `rules: Sequence[Rule] = ()`; the `RepeatedToolCallRule`
 (from `repeat_tool_call_threshold`) is always prepended, then caller rules.
 
-Tool-aware rules (follow-up): `ReadBeforeWriteRule` in
-`ouro/capabilities/rules/`, knowing the `read_file` / `write_file` / `edit`
-tool names and their `file_path` arg; records read paths in `after_toolcall`,
-blocks writes to unread paths in `before_toolcall`. Injected by `AgentBuilder`.
-This respects the `interfaces → capabilities → core` import direction, and is
-the motivating proof that `before_toolcall` must run *before* dispatch.
+Tool-aware rules: `ReadBeforeWriteRule` in `ouro/capabilities/rules/`
+(**implemented** as the follow-up to the core abstraction) knows the
+`read_file` / `write_file` / `smart_edit` tool names and their `file_path` arg;
+it records read/written paths in `after_toolcall` and, in `before_toolcall`,
+blocks `write_file`/`smart_edit` on a file that **exists** but wasn't read this
+run (creating a new file is allowed). On by default via `AgentBuilder`. This
+respects the `interfaces → capabilities → core` import direction, and is the
+motivating proof that `before_toolcall` must run *before* dispatch.
 
 ## Alternatives Considered
 

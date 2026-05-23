@@ -20,6 +20,11 @@ the injected `ProgressSink` Protocol from `ouro.core.loop`.
 - `skills/` — registry, parser, render, installer, bundled system data.
 - `verification/` — `Verifier` Protocol + `LLMVerifier` +
   `VerificationHook` (Ralph-style outer loop).
+- `rules/` — tool-aware loop rules implementing the core `Rule`
+  per-tool-call contract (e.g. `ReadBeforeWriteRule`). Unlike the generic
+  rules in `ouro.core.loop.rules`, these know specific tool names, so they
+  live here. Wired by `AgentBuilder` (`ReadBeforeWriteRule` is on by
+  default; `.without_read_before_write()` / `.with_rule(...)` to change).
 - `todo/`, `context/`, `prompts/` — small leaf utilities.
 - `builder.py` — `AgentBuilder` (fluent construction) +
   `ComposedAgent` (core.Agent + convenience proxies).

@@ -98,6 +98,7 @@ packages = [
     "ouro.capabilities.memory.recall",
     "ouro.capabilities.memory.store",
     "ouro.capabilities.prompts",
+    "ouro.capabilities.rules",
     "ouro.capabilities.skills",
     "ouro.capabilities.todo",
     "ouro.capabilities.tools",
