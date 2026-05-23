@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["LongTermMemoryManager", "Mem0LongTermMemory"]
+__all__ = ["LongTermMemoryManager"]
 
 
 class BaseLongTermMemory(ABC):
@@ -44,9 +44,6 @@ class BaseLongTermMemory(ABC):
     ) -> None:
         """Extract and store durable facts from a conversation."""
 
-
-# Re-export for downstream use
-from .mem0_adapter import Mem0LongTermMemory  # noqa: E402
 
 _INSTRUCTION_TEMPLATE = """\
 <long_term_memory>
