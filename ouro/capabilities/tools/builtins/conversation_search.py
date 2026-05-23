@@ -38,10 +38,8 @@ class ConversationSearchTool(BaseTool):
     @property
     def description(self) -> str:
         return (
-            "Search past conversation messages by keyword. Returns the most "
-            "relevant snippets (ranked by BM25) from any session, or a single "
-            "session if `session_id` is given. Use this to recall what was "
-            "said in earlier turns that are no longer in your context."
+            "Search past conversation messages by keyword. Use this to recall "
+            "what was said in earlier turns that are no longer in your context."
         )
 
     @property
@@ -49,10 +47,7 @@ class ConversationSearchTool(BaseTool):
         return {
             "query": {
                 "type": "string",
-                "description": (
-                    "FTS5 MATCH query — plain keywords, phrases in double quotes, "
-                    "or boolean operators (AND/OR/NOT)."
-                ),
+                "description": "Keywords, double-quoted phrases, or AND/OR/NOT.",
             },
             "session_id": {
                 "type": "string",
