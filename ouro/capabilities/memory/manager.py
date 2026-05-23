@@ -51,16 +51,9 @@ class MemoryManager:
         self.llm = llm
         self._progress: ProgressSink = progress or NullProgressSink()
 
-        # Backend selection: mem0 vector store vs YAML file store.
-        if Config.MEM0_ENABLED:
-            from .store.mem0_memory_store import Mem0MemoryStore
+        from .store import YamlFileMemoryStore
 
-            self._store = Mem0MemoryStore()
-            logger.info("Using mem0 vector-memory backend")
-        else:
-            from .store import YamlFileMemoryStore
-
-            self._store = YamlFileMemoryStore(sessions_dir=sessions_dir)
+        self._store = YamlFileMemoryStore(sessions_dir=sessions_dir)
 
         # Lazy session creation: real session is created on first save.
         if session_id is not None:
@@ -79,12 +72,6 @@ class MemoryManager:
 
             self._long_term = LongTermMemoryManager(llm, memory_dir=memory_dir)
             self._compaction.set_long_term(self._long_term)
-        elif Config.MEM0_ENABLED:
-            from .long_term import Mem0LongTermMemory
-
-            self._long_term = Mem0LongTermMemory(llm, user_id=Config.MEM0_USER_ID)
-            self._compaction.set_long_term(self._long_term)
-            logger.info("Using mem0 long-term memory")
 
     # ------------------------------------------------------------------
     # Session loading / lookup
@@ -220,15 +207,6 @@ class MemoryManager:
             system_messages=sys_msgs,
             messages=messages,
         )
-        # If mem0 LTM is active, also feed the conversation into long-term memory.
-        if Config.MEM0_ENABLED and self._long_term is not None:
-            try:
-                await self._long_term.add_memories_from_conversation(
-                    sys_msgs + messages,
-                    session_id=self.session_id,
-                )
-            except Exception:
-                logger.warning("Failed to add conversation to mem0 LTM", exc_info=True)
         logger.info(f"Saved memory state for session {self.session_id}")
 
     def get_stats(self, *, context: MessageListContext) -> dict[str, Any]:

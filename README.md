@@ -74,7 +74,7 @@ See [LiteLLM Providers](https://docs.litellm.ai/docs/providers) for the full pro
 - **Unified agent loop**: Think-Act-Observe cycle — planning, sub-agents, and tool use all happen in one loop
 - **Self-verification**: Ralph Loop verifies the agent's answer against the original task and re-enters if incomplete (`--verify`)
 - **Parallel execution**: Concurrent readonly tool calls in a single turn, plus `multi_task` for spawning parallel sub-agents with dependency ordering
-- **Memory system**: LLM-driven compression, long-term memory (file-based or mem0 vector search), and YAML session persistence resumable across restarts
+- **Memory system**: LLM-driven compression, file-based long-term memory, FTS5 conversation recall, and YAML session persistence resumable across restarts
 - **Proactive mechanisms**: Heartbeat self-checks + cron-scheduled tasks, with results broadcast to active IM sessions
 - **Personality**: Customizable soul file (`~/.ouro/bot/soul.md`) defines bot identity and tone
 - **Skills**: Extensible skill registry — dynamically loaded per session

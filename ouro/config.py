@@ -20,10 +20,6 @@ MAX_ITERATIONS=1000
 
 # Ralph Loop (outer verification loop — re-checks task completion)
 # RALPH_LOOP_MAX_ITERATIONS=3
-
-# Mem0 vector-memory backend (requires: pip install ouro-ai[mem0])
-# MEM0_ENABLED=false
-# MEM0_USER_ID=default_user
 """
 
 
@@ -106,10 +102,6 @@ class Config:
     )
     LONG_TERM_MEMORY_DAILY_WINDOW = int(_cfg.get("LONG_TERM_MEMORY_DAILY_WINDOW", "2"))
     LONG_TERM_MEMORY_DAILY_RETENTION = int(_cfg.get("LONG_TERM_MEMORY_DAILY_RETENTION", "30"))
-
-    # Mem0 integration (optional vector-memory backend)
-    MEM0_ENABLED = _cfg.get("MEM0_ENABLED", "false").lower() == "true"
-    MEM0_USER_ID = _cfg.get("MEM0_USER_ID", "default_user")
 
     # Logging Configuration
     # Note: Logging is now controlled via --verbose flag

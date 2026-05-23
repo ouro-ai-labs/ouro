@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed (BREAKING)
+
+- **mem0 backend removed**. `MEM0_ENABLED`, `MEM0_USER_ID`, and all
+  `MEM0_*` env overrides are gone; setting them has no effect. The
+  `Mem0MemoryStore` and `Mem0LongTermMemory` classes are deleted, and
+  the `mem0ai` + `qdrant-client` dependencies are dropped from
+  `pyproject.toml`. `YamlFileMemoryStore` is now the only persistence
+  backend. The new `LTM_CONVERSATION_SEARCH_ENABLED` flag (SQLite
+  FTS5, no embedder) covers the cross-session recall use case that
+  mem0 originally addressed.
+
 ## [0.4.2] - 2026-05-20
 
 ### Added

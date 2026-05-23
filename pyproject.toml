@@ -54,9 +54,6 @@ dependencies = [
     "weixin-bot-sdk>=0.1.0",
     # Harbor integration
     "harbor>=0.1.0",
-    # Mem0 vector-memory backend
-    "mem0ai>=0.1.0",
-    "qdrant-client>=1.9.0",
 ]
 
 [project.optional-dependencies]
