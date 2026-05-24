@@ -20,6 +20,10 @@ MAX_ITERATIONS=1000
 
 # Ralph Loop (outer verification loop — re-checks task completion)
 # RALPH_LOOP_MAX_ITERATIONS=3
+
+# Commit / PR attribution: append "Co-Authored-By: ouro" to commits and
+# "Generated with ouro" to PR bodies the agent authors. Set to false to disable.
+# ATTRIBUTION_ENABLED=true
 """
 
 
@@ -77,6 +81,9 @@ class Config:
 
     # Agent Configuration
     MAX_ITERATIONS = int(_cfg.get("MAX_ITERATIONS", "1000"))
+
+    # Commit / PR attribution (append ouro trailers to commits/PRs)
+    ATTRIBUTION_ENABLED = _cfg.get("ATTRIBUTION_ENABLED", "true").lower() == "true"
 
     # Ralph Loop (outer verification loop)
     RALPH_LOOP_MAX_ITERATIONS = int(_cfg.get("RALPH_LOOP_MAX_ITERATIONS", "3"))

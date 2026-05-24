@@ -3,6 +3,7 @@
 import asyncio
 from typing import Any, Dict
 
+from ...prompts.attribution import get_commit_and_pr_instructions
 from ..base import BaseTool
 
 
@@ -12,16 +13,26 @@ class ShellTool(BaseTool):
     DEFAULT_TIMEOUT = 120.0  # Default timeout in seconds
     MAX_TIMEOUT = 600.0  # Maximum allowed timeout
 
+    def __init__(self, attribution_enabled: bool = True) -> None:
+        """Args:
+        attribution_enabled: When True, the description carries the
+            commit/PR attribution template so commits and PRs the model
+            authors end with ouro's trailers. See ``prompts.attribution``.
+        """
+        self._attribution_enabled = attribution_enabled
+
     @property
     def name(self) -> str:
         return "shell"
 
     @property
     def description(self) -> str:
-        return (
+        base = (
             "Execute shell commands. Returns stdout/stderr. "
             "Commands that exceed the timeout are killed and an error is returned."
         )
+        instructions = get_commit_and_pr_instructions(self._attribution_enabled)
+        return f"{base}\n\n{instructions}" if instructions else base
 
     @property
     def parameters(self) -> Dict[str, Any]:
