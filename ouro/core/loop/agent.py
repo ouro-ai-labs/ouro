@@ -156,28 +156,41 @@ class Agent:
                 # below sit in the correct chronological order.
                 messages.append(response.to_message())
 
-                # Per-tool-call rules. `before_toolcall` may block a call (its
-                # text becomes the result and the call is skipped); the rest
-                # dispatch, then `after_toolcall` may rewrite each real result.
-                blocked = self._rules_before(ctx, tool_calls)
-                remaining = [tc for tc in tool_calls if tc.id not in blocked]
+                try:
+                    # Per-tool-call rules. `before_toolcall` may block a call (its
+                    # text becomes the result and the call is skipped); the rest
+                    # dispatch, then `after_toolcall` may rewrite each real result.
+                    blocked = self._rules_before(ctx, tool_calls)
+                    for tc in tool_calls:
+                        if tc.id in blocked:
+                            self.progress.tool_blocked(tc.name, tc.arguments, blocked[tc.id])
+                    remaining = [tc for tc in tool_calls if tc.id not in blocked]
 
-                contents: dict[str, str] = dict(blocked)
-                if remaining:
-                    results = await self._dispatch_tools(ctx, remaining)
-                    for tc, tr in zip(remaining, results):
-                        contents[tc.id] = self._rules_after(ctx, tc, tr)
+                    contents: dict[str, str] = dict(blocked)
+                    if remaining:
+                        results = await self._dispatch_tools(ctx, remaining)
+                        for tc, tr in zip(remaining, results):
+                            contents[tc.id] = self._rules_after(ctx, tc, tr)
 
-                # One tool_result per call, in the model's original order.
-                for tc in tool_calls:
-                    messages.append(
-                        LLMMessage(
-                            role="tool",
-                            content=contents[tc.id],
-                            tool_call_id=tc.id,
-                            name=tc.name,
+                    # One tool_result per call, in the model's original order.
+                    for tc in tool_calls:
+                        messages.append(
+                            LLMMessage(
+                                role="tool",
+                                content=contents[tc.id],
+                                tool_call_id=tc.id,
+                                name=tc.name,
+                            )
                         )
-                    )
+                except Exception:
+                    # If anything in the tool-call dispatch path fails
+                    # (e.g. a ProgressSink implementation raises), roll
+                    # back the assistant message so the conversation
+                    # state remains consistent for the next turn.
+                    snap = messages.snapshot()
+                    if snap and snap[-1].role == "assistant":
+                        messages.replace(snap[:-1])
+                    raise
                 continue
 
             if response.stop_reason == StopReason.LENGTH:
