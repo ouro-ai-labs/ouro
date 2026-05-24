@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-05-24
+
 ### Added
 
 - **Memory blocks**: named, size-bounded markdown blocks under
@@ -15,6 +17,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`read` / `replace` / `append` operations). Strict blocks (`user`,
   `project`) reject overflow with an actionable error; `scratch` is lenient
   with FIFO truncation. Inspired by Letta/MemGPT's core memory.
+- **Rules engine**: pluggable `Rule` abstraction for deterministic
+  pre-dispatch guards. `ReadBeforeWriteRule` blocks blind overwrites of
+  unread files; `AGENTS.md` auto-loading is now deterministic via
+  `ContextRule`. Rules are evaluated in order before each tool call (#190,
+  #192, #193).
+- **Lazy subdirectory AGENTS.md loading**: `.md` files in subdirectories
+  are loaded on-demand when a tool accesses that subtree, rather than
+  eagerly at startup (#196).
+- **Commit/PR attribution**: shell tool descriptions now include commit
+  and PR metadata for better traceability (#194).
+- **Conversation search (FTS5)**: full-text search over conversation
+  history backed by SQLite FTS5, replacing the mem0 vector search use case
+  (#188).
 
 ### Changed (BREAKING)
 
@@ -38,7 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   opportunistically dumped during compaction. The conversation itself is
   still searchable via `conversation_search` (FTS5).
 
-### Removed (BREAKING — from PR #189)
+### Removed (BREAKING)
 
 - **mem0 backend removed**. `MEM0_ENABLED`, `MEM0_USER_ID`, and all
   `MEM0_*` env overrides are gone; setting them has no effect. The
