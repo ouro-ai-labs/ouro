@@ -50,6 +50,7 @@ class ProgressSink(Protocol):
     def final_answer(self, text: str) -> None: ...
     def unfinished_answer(self, text: str) -> None: ...
     def spinner(self, label: str, title: str | None = None) -> AbstractAsyncContextManager[Any]: ...
+    def on_session_loaded(self, messages: list[Any]) -> None: ...
 
 
 class NullProgressSink:
@@ -79,6 +80,9 @@ class NullProgressSink:
 
     def spinner(self, label: str, title: str | None = None) -> AbstractAsyncContextManager[Any]:
         return _NullSpinner()
+
+    def on_session_loaded(self, messages: list[Any]) -> None:
+        pass
 
 
 class LoopContext(Protocol):

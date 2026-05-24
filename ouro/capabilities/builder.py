@@ -437,6 +437,8 @@ class ComposedAgent:
             if isinstance(hook, CompactionHook):
                 hook.compaction = self.memory.compaction
                 break
+        # Notify the progress sink so the UI can replay history.
+        self._progress.on_session_loaded(loaded.build_context())
 
     def get_memory_stats(self) -> dict:
         if self.memory is None:
