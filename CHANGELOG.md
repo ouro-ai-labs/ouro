@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-05-24
+
+### Added
+
+- **Session history replay**: resumed sessions now render full history using the same TUI components as live turns (`print_user_message`, `print_assistant_message`, `print_tool_call`, `print_tool_result`) via `ProgressSink.on_session_loaded` (#203).
+- **Compaction panel**: compaction summaries in resumed sessions render in a dedicated amber/warning-styled **Compaction** panel instead of plain user messages (#204).
+
+### Fixed
+
+- **TUI markup error**: removed `⚠` unicode character from blocked-tool panel title that caused Rich `MarkupError` (#201).
+- **TUI rollback on exception**: added `rollback_incomplete_exchange()` in exception handlers to prevent conversation state corruption when tool calls are interrupted (#201).
+- **TUI visual cleanup**: removed redundant "Assistant:" prefix and "✓ Final answer received" marker from interactive output (#202).
+- **Attribution**: updated Co-Authored-By email from old GitHub username `ahahoul007` to `ouro-ai-lab` (#199).
+
 ## [0.4.3] - 2026-05-24
 
 ### Added
