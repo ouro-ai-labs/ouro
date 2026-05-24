@@ -51,7 +51,10 @@ class ReadBeforeWriteRule:
         self._write_tools = write_tools
         self._read_tools = read_tools
         # Absolute paths the agent has read or written *this run*.
+        # A path maps to True only when the file was read in full (no offset/limit).
         self._seen: set[str] = set()
+        # Absolute paths that were read with offset/limit or returned partial content.
+        self._partial: set[str] = set()
         # Identity of the run context last observed; a new one means a new run.
         self._last_ctx: object | None = None
 
@@ -60,6 +63,7 @@ class ReadBeforeWriteRule:
         # object identity is the reliable signal that a new run has started.
         if ctx is not self._last_ctx:
             self._seen.clear()
+            self._partial.clear()
             self._last_ctx = ctx
 
     @staticmethod
@@ -79,6 +83,21 @@ class ReadBeforeWriteRule:
         # Creating a new file is fine; only guard overwrites of existing content.
         if not os.path.exists(path):
             return None
+        # The file was read, but only partially (offset/limit or truncated).
+        # Force a full read before allowing edits.
+        if path in self._partial:
+            logger.warning(
+                "ReadBeforeWriteRule: blocked %s on partial-read file %r",
+                tool_call.name,
+                tool_call.arguments.get("file_path"),
+            )
+            return (
+                f"[ouro] Refusing to run {tool_call.name} on "
+                f"{tool_call.arguments.get('file_path')!r}: you only read a "
+                "partial view of this file earlier (offset/limit or truncated). "
+                "Call read_file without pagination to load the full contents, "
+                "then retry your change."
+            )
         logger.warning(
             "ReadBeforeWriteRule: blocked %s on unread existing file %r",
             tool_call.name,
@@ -91,6 +110,27 @@ class ReadBeforeWriteRule:
             "Call read_file on it first, then retry your change."
         )
 
+    @staticmethod
+    def _is_partial_read(tool_call: ToolCall, tool_result: ToolResult) -> bool:
+        """Detect whether a read_file call returned partial/truncated content.
+
+        Heuristics:
+        - offset > 0 or limit is set → pagination
+        - result contains '[Lines X-Y of Z]' header → paginated
+        - result mentions 'too large' or 'Showing code structure instead' → truncated
+        """
+        if tool_call.name != "read_file":
+            return False
+        args = tool_call.arguments
+        if args.get("offset", 0) > 0 or args.get("limit") is not None:
+            return True
+        content = tool_result.content or ""
+        return (
+            content.startswith("[Lines ")
+            or "too large" in content
+            or "Showing code structure instead" in content
+        )
+
     def after_toolcall(
         self, ctx: LoopContext, tool_call: ToolCall, tool_result: ToolResult
     ) -> str | None:
@@ -100,5 +140,8 @@ class ReadBeforeWriteRule:
         if tool_call.name in self._read_tools or tool_call.name in self._write_tools:
             path = self._abs_path(tool_call)
             if path is not None:
-                self._seen.add(path)
+                if self._is_partial_read(tool_call, tool_result):
+                    self._partial.add(path)
+                else:
+                    self._seen.add(path)
         return None
