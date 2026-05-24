@@ -160,6 +160,9 @@ class Agent:
                 # text becomes the result and the call is skipped); the rest
                 # dispatch, then `after_toolcall` may rewrite each real result.
                 blocked = self._rules_before(ctx, tool_calls)
+                for tc in tool_calls:
+                    if tc.id in blocked:
+                        self.progress.tool_blocked(tc.name, tc.arguments, blocked[tc.id])
                 remaining = [tc for tc in tool_calls if tc.id not in blocked]
 
                 contents: dict[str, str] = dict(blocked)

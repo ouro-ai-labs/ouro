@@ -186,6 +186,41 @@ def print_tool_result(
         console.print(f"[{colors.warning}]Result truncated[/{colors.warning}]")
 
 
+def print_tool_blocked(tool_name: str, arguments: Dict[str, Any], reason: str) -> None:
+    """Print a tool call that was blocked by a rule.
+
+    Args:
+        tool_name: Name of the tool that was blocked
+        arguments: Tool arguments
+        reason: Reason why the tool was blocked
+    """
+    colors = _get_colors()
+
+    # Format arguments nicely (same as print_tool_call)
+    args_lines = []
+    for key, value in arguments.items():
+        value_str = str(value)
+        if len(value_str) > 100:
+            value_str = value_str[:97] + "..."
+        args_lines.append(
+            f"  [{colors.text_secondary}]{key}:[/{colors.text_secondary}] {value_str}"
+        )
+
+    content_parts = args_lines + ["", f"[{colors.warning}]{reason}[/{colors.warning}]"]
+    content = "\n".join(content_parts)
+
+    console.print(
+        Panel(
+            content,
+            title=f"[{colors.warning}]⚠ Blocked: {tool_name}[/{colors.warning}]",
+            title_align="left",
+            border_style=colors.warning,
+            box=box.ROUNDED,
+            padding=(0, 1),
+        )
+    )
+
+
 def print_final_answer(answer: str) -> None:
     """Print final answer in a formatted panel with Markdown rendering.
 
@@ -395,7 +430,7 @@ def print_user_message(message: str) -> None:
 
 
 def print_assistant_message(message: str, use_markdown: bool = True) -> None:
-    """Print an assistant message.
+    """Print an assistant message in a panel.
 
     Args:
         message: Assistant message text
@@ -403,12 +438,20 @@ def print_assistant_message(message: str, use_markdown: bool = True) -> None:
     """
     colors = _get_colors()
     if use_markdown:
-        md = Markdown(message)
-        console.print(md)
+        content: Markdown | Text = Markdown(message)
     else:
-        console.print(Text(message, style=colors.assistant_output))
-    if not Config.TUI_COMPACT_MODE:
-        console.print()
+        content = Text(message, style=colors.assistant_output)
+
+    console.print(
+        Panel(
+            content,
+            title=f"[bold {colors.secondary}]Assistant[/bold {colors.secondary}]",
+            title_align="left",
+            border_style=colors.secondary,
+            box=box.ROUNDED,
+            padding=(0, 1),
+        )
+    )
 
 
 def print_turn_divider(turn_number: Optional[int] = None) -> None:
