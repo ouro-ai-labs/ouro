@@ -86,7 +86,7 @@ def create_agent(
         GlobTool(),
         GrepTool(),
         SmartEditTool(),
-        ShellTool(),
+        ShellTool(attribution_enabled=Config.ATTRIBUTION_ENABLED),
         ConversationSearchTool(memory_dir=memory_dir),
     ]
 
