@@ -16,7 +16,6 @@ from ouro.interfaces.tui.theme import Theme
 class StatusBarState:
     """State for the status bar."""
 
-    mode: str = "REACT"
     input_tokens: int = 0
     output_tokens: int = 0
     context_tokens: int = 0
@@ -24,6 +23,8 @@ class StatusBarState:
     compression_count: int = 0
     is_processing: bool = False
     model_name: str = ""
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
 
 
 class StatusBar:
@@ -72,17 +73,22 @@ class StatusBar:
                 f"[{colors.text_secondary}]Model:[/{colors.text_secondary}] [{colors.primary}]{self.state.model_name}[/{colors.primary}]"
             )
 
-        # Mode
-        items.append(
-            f"[{colors.text_secondary}]Mode:[/{colors.text_secondary}] [{colors.primary}]{self.state.mode}[/{colors.primary}]"
-        )
-
         # Total Tokens (in/out)
         total_in = self._format_tokens(self.state.input_tokens)
         total_out = self._format_tokens(self.state.output_tokens)
         items.append(
-            f"[{colors.text_secondary}]Total:[/{colors.text_secondary}] {total_in}↓ {total_out}↑"
+            f"[{colors.text_secondary}]Total:[/{colors.text_secondary}] {total_in}↑ {total_out}↓"
         )
+
+        # Cache info
+        if self.state.cache_read_tokens > 0 or self.state.cache_creation_tokens > 0:
+            cache_read = self._format_tokens(self.state.cache_read_tokens)
+            cache_write = self._format_tokens(self.state.cache_creation_tokens)
+            items.append(
+                f"[{colors.text_secondary}]Cache:[/{colors.text_secondary}] "
+                f"[{colors.success}]{cache_read}R[/{colors.success}] "
+                f"[{colors.warning}]{cache_write}W[/{colors.warning}]"
+            )
 
         # Context Tokens
         ctx_tokens = self._format_tokens(self.state.context_tokens)
@@ -117,7 +123,6 @@ class StatusBar:
 
     def update(
         self,
-        mode: Optional[str] = None,
         input_tokens: Optional[int] = None,
         output_tokens: Optional[int] = None,
         context_tokens: Optional[int] = None,
@@ -125,11 +130,12 @@ class StatusBar:
         compression_count: Optional[int] = None,
         is_processing: Optional[bool] = None,
         model_name: Optional[str] = None,
+        cache_read_tokens: Optional[int] = None,
+        cache_creation_tokens: Optional[int] = None,
     ) -> None:
         """Update status bar state.
 
         Args:
-            mode: Agent mode (REACT, PLAN, etc.)
             input_tokens: Total input tokens used
             output_tokens: Total output tokens used
             context_tokens: Current context window tokens
@@ -137,9 +143,9 @@ class StatusBar:
             compression_count: Number of memory compressions performed
             is_processing: Whether currently processing
             model_name: Current model name
+            cache_read_tokens: Total cache read tokens
+            cache_creation_tokens: Total cache creation (write) tokens
         """
-        if mode is not None:
-            self.state.mode = mode
         if input_tokens is not None:
             self.state.input_tokens = input_tokens
         if output_tokens is not None:
@@ -154,6 +160,10 @@ class StatusBar:
             self.state.is_processing = is_processing
         if model_name is not None:
             self.state.model_name = model_name
+        if cache_read_tokens is not None:
+            self.state.cache_read_tokens = cache_read_tokens
+        if cache_creation_tokens is not None:
+            self.state.cache_creation_tokens = cache_creation_tokens
 
         # Refresh live display if active
         if self._live is not None:
