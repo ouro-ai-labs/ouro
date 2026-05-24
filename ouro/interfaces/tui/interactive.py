@@ -243,7 +243,9 @@ class InteractiveSession:
                 terminal_ui.print_error(f"Session '{session_id}' not found")
                 return
 
-            # Load session via agent (agent owns memory lifecycle)
+            # Load session via agent (agent owns memory lifecycle).
+            # The progress sink will automatically replay history via
+            # on_session_loaded when session data is restored.
             await self.agent.load_session(resolved_id)
 
             msg_count = self.agent.get_session_message_count()
@@ -252,53 +254,10 @@ class InteractiveSession:
                 f"{self.agent.get_memory_stats().get('current_tokens', 0)} tokens)"
             )
             terminal_ui.console.print()
-
-            self._print_session_history()
             self._update_status_bar()
 
         except Exception as e:
             terminal_ui.print_error(str(e), title="Error resuming session")
-
-    def _print_session_history(self) -> None:
-        """Print conversation history from a resumed session."""
-        messages = [msg for msg in self.agent.get_session_messages() if msg.role != "system"]
-        if not messages:
-            return
-
-        colors = Theme.get_colors()
-        terminal_ui.console.print(
-            f"[bold {colors.primary}]Session History:[/bold {colors.primary}]"
-        )
-        terminal_ui.console.print(f"[{colors.text_muted}]{'─' * 60}[/{colors.text_muted}]")
-
-        for msg in messages:
-            if msg.role == "user":
-                content = str(msg.content or "")
-                if len(content) > 200:
-                    content = content[:200] + "..."
-                terminal_ui.console.print(
-                    f"\n[bold {colors.primary}]You:[/bold {colors.primary}] {content}"
-                )
-            elif msg.role == "assistant" and msg.content:
-                content = str(msg.content)
-                if len(content) > 300:
-                    content = content[:300] + "..."
-                terminal_ui.console.print(content)
-            elif msg.role == "assistant" and msg.tool_calls:
-                tool_names = ", ".join(
-                    (
-                        tc.get("function", {}).get("name", "?")
-                        if isinstance(tc, dict)
-                        else getattr(getattr(tc, "function", None), "name", "?")
-                    )
-                    for tc in msg.tool_calls
-                )
-                terminal_ui.console.print(
-                    f"[{colors.text_muted}]  (used tools: {tool_names})[/{colors.text_muted}]"
-                )
-            # Skip tool result messages — they are verbose
-
-        terminal_ui.console.print(f"\n[{colors.text_muted}]{'─' * 60}[/{colors.text_muted}]\n")
 
     def _toggle_theme(self) -> None:
         """Toggle between dark and light theme."""
@@ -832,14 +791,14 @@ class InteractiveSession:
 
         colors = Theme.get_colors()
 
-        # If session was loaded via --resume, print history
+        # If session was loaded via --resume, the progress sink has already
+        # replayed history via on_session_loaded; just show the banner here.
         resumed_count = self.agent.get_session_message_count()
         if resumed_count > 0:
             terminal_ui.print_info(
                 f"Resumed session: {self.agent.session_id} " f"({resumed_count} messages)"
             )
             terminal_ui.console.print()
-            self._print_session_history()
 
         terminal_ui.console.print(
             f"[bold {colors.success}]Interactive mode started. Type your message or use commands.[/bold {colors.success}]"

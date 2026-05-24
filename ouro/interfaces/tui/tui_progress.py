@@ -47,3 +47,51 @@ class TuiProgressSink:
 
     def spinner(self, label: str, title: str | None = None) -> AbstractAsyncContextManager[Any]:
         return AsyncSpinner(terminal_ui.console, label, title=title or "Working")
+
+    def on_session_loaded(self, messages: list[Any]) -> None:
+        """Replay persisted session messages using the same TUI renderers as live turns."""
+        import json
+
+        from ouro.interfaces.tui.theme import Theme
+
+        if not messages:
+            return
+
+        colors = Theme.get_colors()
+        terminal_ui.console.print(
+            f"[bold {colors.primary}]Session History:[/bold {colors.primary}]"
+        )
+        terminal_ui.console.print(f"[{colors.text_muted}]{'─' * 60}[/{colors.text_muted}]")
+
+        for msg in messages:
+            role = getattr(msg, "role", None)
+            if role == "user":
+                terminal_ui.print_user_message(str(getattr(msg, "content", "") or ""))
+            elif role == "assistant":
+                content = getattr(msg, "content", None)
+                if content:
+                    terminal_ui.print_assistant_message(content)
+                tool_calls = getattr(msg, "tool_calls", None)
+                if tool_calls:
+                    for tc in tool_calls:
+                        if isinstance(tc, dict):
+                            fn = tc.get("function", {})
+                            name = fn.get("name", "?")
+                            try:
+                                arguments = json.loads(fn.get("arguments", "{}"))
+                            except json.JSONDecodeError:
+                                arguments = {}
+                        else:
+                            name = getattr(getattr(tc, "function", None), "name", "?")
+                            raw_args = getattr(getattr(tc, "function", None), "arguments", "{}")
+                            try:
+                                arguments = (
+                                    json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+                                )
+                            except json.JSONDecodeError:
+                                arguments = {}
+                        terminal_ui.print_tool_call(name, arguments)
+            elif role == "tool":
+                terminal_ui.print_tool_result(str(getattr(msg, "content", "") or ""))
+
+        terminal_ui.console.print(f"\n[{colors.text_muted}]{'─' * 60}[/{colors.text_muted}]\n")
