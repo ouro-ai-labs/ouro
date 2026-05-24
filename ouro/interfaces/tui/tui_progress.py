@@ -66,7 +66,12 @@ class TuiProgressSink:
         for msg in messages:
             role = getattr(msg, "role", None)
             if role == "user":
-                terminal_ui.print_user_message(str(getattr(msg, "content", "") or ""))
+                content = str(getattr(msg, "content", "") or "")
+                if content.startswith("[Previous conversation summary]"):
+                    summary = content.removeprefix("[Previous conversation summary]").lstrip("\n")
+                    terminal_ui.print_compaction_summary(summary)
+                else:
+                    terminal_ui.print_user_message(content)
             elif role == "assistant":
                 content = getattr(msg, "content", None)
                 if content:
