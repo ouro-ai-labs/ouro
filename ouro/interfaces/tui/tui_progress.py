@@ -34,6 +34,9 @@ class TuiProgressSink:
     def tool_result(self, result: str) -> None:
         terminal_ui.print_tool_result(result)
 
+    def tool_blocked(self, name: str, arguments: dict[str, Any], reason: str) -> None:
+        terminal_ui.print_tool_blocked(name, arguments, reason)
+
     def final_answer(self, text: str) -> None:
         # The interactive shell renders the returned final answer itself; here
         # we only emit a lightweight completion marker for non-interactive
