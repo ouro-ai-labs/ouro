@@ -211,6 +211,20 @@ def test_builder_adds_read_before_write_by_default():
     assert "read_before_write" in _rule_names(agent)
 
 
+# ---------------------------------------------------------------------------
+# partial-view guard (removed — FileReadTool now errors on oversized files)
+# ---------------------------------------------------------------------------
+
+# The partial-view guard has been removed. FileReadTool now raises an error
+# when a file is too large to read, instead of returning a code-structure
+# summary. This means there is no longer a risk of the model editing based
+# on synthetic/partial content — the model must explicitly use offset/limit
+# to read the file, and those reads return real content that is safe to edit.
+#
+# Kept for documentation: the key tests that previously validated partial-view
+# behavior are now replaced by FileReadTool tests (see test_file_read_tool.py).
+
+
 def test_builder_can_disable_read_before_write():
     agent = AgentBuilder(llm=object()).without_memory().without_read_before_write().build()
     assert "read_before_write" not in _rule_names(agent)

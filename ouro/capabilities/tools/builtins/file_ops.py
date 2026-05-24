@@ -7,7 +7,20 @@ import aiofiles
 import aiofiles.os
 
 from ..base import BaseTool
-from .code_structure import show_file_structure
+
+
+class FileTooLargeError(Exception):
+    """Raised when a file exceeds the maximum token limit for reading."""
+
+    def __init__(self, token_count: int, max_tokens: int) -> None:
+        self.token_count = token_count
+        self.max_tokens = max_tokens
+        super().__init__(
+            f"File content (~{token_count} tokens) exceeds maximum allowed "
+            f"tokens ({max_tokens}). Use offset and limit parameters to read "
+            f"specific portions of the file, or use grep_content to search "
+            f"for specific content."
+        )
 
 
 class FileReadTool(BaseTool):
@@ -50,38 +63,36 @@ class FileReadTool(BaseTool):
             file_size = await aiofiles.os.path.getsize(file_path)
             estimated_tokens = file_size // self.CHARS_PER_TOKEN
 
-            # If file too large and no pagination, try showing code structure
+            # If file too large and no pagination, raise an error (Claude Code
+            # design: force explicit offset/limit rather than returning synthetic
+            # content like a code-structure summary).
             if estimated_tokens > self.MAX_TOKENS and limit is None:
-                structure = await show_file_structure(file_path)
-                if structure:
-                    return (
-                        f"File too large to read fully (~{estimated_tokens} tokens, "
-                        f"max {self.MAX_TOKENS}). Showing code structure instead:\n\n"
-                        f"{structure}\n\n"
-                        f"Use offset and limit parameters to read specific sections."
-                    )
-                return (
-                    f"Error: File content (~{estimated_tokens} tokens) exceeds "
-                    f"maximum allowed tokens ({self.MAX_TOKENS}). Please use offset "
-                    f"and limit parameters to read specific portions of the file, "
-                    f"or use grep_content to search for specific content."
-                )
+                raise FileTooLargeError(estimated_tokens, self.MAX_TOKENS)
 
             async with aiofiles.open(file_path, encoding="utf-8") as f:
                 if limit is None:
-                    return await f.read()
-                # Pagination mode
-                lines = await f.readlines()
-                total_lines = len(lines)
-                selected = lines[offset : offset + limit]
-                result = "".join(selected)
-                # Add context about total lines
-                if offset > 0 or offset + limit < total_lines:
-                    result = f"[Lines {offset+1}-{min(offset+limit, total_lines)} of {total_lines}]\n{result}"
-                return result
+                    content = await f.read()
+                else:
+                    # Pagination mode
+                    lines = await f.readlines()
+                    total_lines = len(lines)
+                    selected = lines[offset : offset + limit]
+                    content = "".join(selected)
+                    # Add context about total lines
+                    if offset > 0 or offset + limit < total_lines:
+                        content = f"[Lines {offset+1}-{min(offset+limit, total_lines)} of {total_lines}]\n{content}"
+
+            # Validate token count after reading (actual content may differ from estimate)
+            actual_tokens = len(content) // self.CHARS_PER_TOKEN
+            if actual_tokens > self.MAX_TOKENS:
+                raise FileTooLargeError(actual_tokens, self.MAX_TOKENS)
+
+            return content
 
         except FileNotFoundError:
             return f"Error: File '{file_path}' not found"
+        except FileTooLargeError:
+            raise
         except Exception as e:
             return f"Error reading file: {str(e)}"
 

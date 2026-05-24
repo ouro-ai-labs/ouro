@@ -7,6 +7,8 @@ error messages when output exceeds the maximum allowed tokens.
 import shlex
 import sys
 
+import pytest
+
 from ouro.capabilities.tools.builtins.advanced_file_ops import GrepTool
 from ouro.capabilities.tools.builtins.file_ops import FileReadTool
 from ouro.capabilities.tools.builtins.shell import ShellTool
@@ -26,18 +28,20 @@ class TestFileReadToolSizeLimits:
         assert result == "Hello, World!"
 
     async def test_large_file_error_without_pagination(self, tmp_path):
-        """Large files should return error when no pagination is specified."""
+        """Large files should raise FileTooLargeError when no pagination is specified."""
         tool = FileReadTool()
         test_file = tmp_path / "large.txt"
         # Create a file larger than MAX_TOKENS * CHARS_PER_TOKEN = 25000 * 4 = 100KB
         large_content = "line\n" * 30000
         test_file.write_text(large_content)
 
-        result = await tool.execute(str(test_file))
+        from ouro.capabilities.tools.builtins.file_ops import FileTooLargeError
 
-        assert "Error: File content" in result
-        assert "exceeds" in result
-        assert "offset" in result.lower() or "limit" in result.lower()
+        with pytest.raises(FileTooLargeError) as exc_info:
+            await tool.execute(str(test_file))
+
+        assert "exceeds" in str(exc_info.value)
+        assert "offset" in str(exc_info.value).lower() or "limit" in str(exc_info.value).lower()
 
     async def test_large_file_with_pagination(self, tmp_path):
         """Large files can be read with pagination."""
@@ -68,8 +72,8 @@ class TestFileReadToolSizeLimits:
         assert "line 50" in result
         assert "line 59" in result
 
-    async def test_large_python_file_shows_structure(self, tmp_path):
-        """Large Python files should show code structure instead of error."""
+    async def test_large_python_file_raises_error(self, tmp_path):
+        """Large Python files should raise FileTooLargeError (not show structure)."""
         tool = FileReadTool()
         test_file = tmp_path / "large_module.py"
         # Build a large Python file with classes and functions
@@ -88,26 +92,27 @@ class TestFileReadToolSizeLimits:
         lines.append("# " + "x" * 120000)
         test_file.write_text("\n".join(lines))
 
-        result = await tool.execute(str(test_file))
+        from ouro.capabilities.tools.builtins.file_ops import FileTooLargeError
 
-        # Should show structure, not the generic error
-        assert "File too large to read fully" in result
-        assert "Showing code structure instead" in result
-        assert "IMPORTS" in result
-        assert "FUNCTIONS" in result
-        assert "function_0" in result
-        assert "offset" in result.lower() and "limit" in result.lower()
+        with pytest.raises(FileTooLargeError) as exc_info:
+            await tool.execute(str(test_file))
 
-    async def test_large_non_code_file_shows_error(self, tmp_path):
-        """Large non-code files (.txt, .json) should return the original error."""
+        assert "exceeds" in str(exc_info.value)
+        assert "offset" in str(exc_info.value).lower() and "limit" in str(exc_info.value).lower()
+
+    async def test_large_non_code_file_raises_error(self, tmp_path):
+        """Large non-code files (.txt, .json) should raise FileTooLargeError."""
         tool = FileReadTool()
         test_file = tmp_path / "large.json"
         test_file.write_text('{"data": "' + "x" * 150000 + '"}')
 
-        result = await tool.execute(str(test_file))
+        from ouro.capabilities.tools.builtins.file_ops import FileTooLargeError
 
-        assert "Error: File content" in result
-        assert "exceeds" in result
+        with pytest.raises(FileTooLargeError) as exc_info:
+            await tool.execute(str(test_file))
+
+        assert "exceeds" in str(exc_info.value)
+        assert "offset" in str(exc_info.value).lower() or "limit" in str(exc_info.value).lower()
 
     async def test_small_code_file_returns_full_content(self, tmp_path):
         """Small code files should still return full content (no truncation)."""
