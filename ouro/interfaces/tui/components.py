@@ -254,7 +254,7 @@ class MemoryStatsDisplay:
         empty = width - filled
         return filled_char * filled + empty_char * empty
 
-    def show(self, stats: Dict[str, Any], context_limit: int = 60000) -> None:
+    def show(self, stats: Dict[str, Any], context_limit: int = 256000) -> None:
         """Display memory statistics.
 
         Args:
