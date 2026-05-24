@@ -2,22 +2,21 @@
 
 ## Overview
 
-ouro supports project-specific instructions via AGENTS.md files. The agent will automatically look for and read these files when relevant (e.g., before modifying code, exploring a codebase, or starting complex tasks).
+ouro supports project-specific instructions via AGENTS.md files. They are auto-loaded into the system prompt at the start of every run, so the instructions apply deterministically regardless of the task.
 
 ## How It Works
 
-- **Location**: Place AGENTS.md in your project directory (or subdirectories)
-- **Discovery**: Agent uses nearest AGENTS.md (subdirectory wins over parent)
-- **Reading**: Agent reads AGENTS.md when needed (not automatically at startup)
+- **Location**: Place AGENTS.md in your project directory (or any parent directory)
+- **Discovery**: ouro walks from the working directory up to the filesystem root and collects every AGENTS.md found
+- **Loading**: All discovered files are merged and injected at startup, parent-first so the nearest AGENTS.md wins (subdirectory overrides parent)
 - **Format**: Plain markdown, no special syntax required
 
-## When Agent Reads AGENTS.md
+## What Gets Loaded
 
-The agent will look for AGENTS.md in these situations:
-- Before modifying code or making significant changes
-- Before exploring an unfamiliar codebase
-- When you mention project-specific workflows or conventions
-- At the start of complex multi-step tasks
+On every run, ouro discovers and merges AGENTS.md files from the working
+directory upward. No tool calls or LLM judgement are involved — if an
+AGENTS.md exists on the path from the CWD to `/`, its instructions are present
+in context. If none exist, nothing is injected.
 
 ## Example AGENTS.md
 
@@ -148,12 +147,11 @@ AGENTS.md is compatible with:
 - **Cursor**: Supports AGENTS.md alongside other rule systems
 - **Jules** (Google): Reads AGENTS.md automatically
 
-### ouro Difference
-Unlike other tools that auto-load AGENTS.md at startup:
-- **On-demand reading**: Agent decides when to read based on context
-- **Token-efficient**: Only loads when relevant (saves tokens on simple tasks)
-- **Flexible**: Agent adapts based on task complexity
-- **Tool-based**: Uses existing tools (no special loader needed)
+### ouro Behavior
+Like Codex CLI and Jules, ouro auto-loads AGENTS.md at startup:
+- **Deterministic**: Loaded every run, no reliance on LLM judgement
+- **Hierarchical**: Walks CWD → `/`, nearest file wins on conflict
+- **Project tier only**: No `@import` directives, size caps, or user-global tier
 
 ### Migration from Other Tools
 If you're coming from another tool, your existing AGENTS.md should work as-is. ouro will read and follow the same instructions.
@@ -233,15 +231,15 @@ cd backend
 
 ## Troubleshooting
 
-### Agent Not Reading AGENTS.md
+### AGENTS.md Not Loaded
 - Ensure file is named exactly `AGENTS.md` (case-sensitive)
-- Verify file is in project directory or parent directories
-- Try mentioning "check project instructions" in your request
+- Verify it sits in the working directory or one of its parents (the walk only goes upward, not into sibling subdirectories)
+- Empty / whitespace-only files are skipped
 
-### Agent Reading Wrong AGENTS.md
-- The agent chooses the nearest AGENTS.md to the working directory
+### Wrong AGENTS.md Taking Precedence
+- The nearest AGENTS.md to the working directory wins on conflict
 - If working in a subdirectory, ensure you want the subdirectory version
-- Use `cd` to change directories if needed
+- Use `cd` to change the working directory if needed
 
 ### Instructions Not Being Followed
 - Use emphasis: "IMPORTANT", "YOU MUST", "NEVER"

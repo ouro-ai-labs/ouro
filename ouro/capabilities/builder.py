@@ -34,6 +34,7 @@ from ouro.core.loop import (
 )
 
 from .compaction.hook import CompactionHook
+from .context.agents_md import load_agents_md
 from .context.env import format_context_prompt
 from .memory.manager import MemoryManager
 from .prompts import DEFAULT_SYSTEM_PROMPT
@@ -527,6 +528,12 @@ class ComposedAgent:
             system_content = system_content + "\n" + ctx
         except Exception:
             pass
+        try:
+            project_instructions = await load_agents_md()
+            if project_instructions:
+                system_content = system_content + "\n" + project_instructions
+        except Exception:
+            logger.warning("Failed to load AGENTS.md project instructions", exc_info=True)
         if self.memory.long_term:
             try:
                 async with self._progress.spinner("Loading memory...", title="Working"):

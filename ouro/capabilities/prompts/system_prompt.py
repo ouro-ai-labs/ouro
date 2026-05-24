@@ -33,11 +33,4 @@ When you have enough information, provide your final answer directly without usi
 - Use manage_todo_list to track progress for complex tasks
 </tool_usage_guidelines>
 
-<agents_md>
-Project instructions may be defined in AGENTS.md files in the project directory structure.
-Before modifying code, check for AGENTS.md: glob_files(pattern="AGENTS.md")
-If found, read it with read_file and follow the project-specific instructions.
-AGENTS.md is optional. If not found, proceed normally.
-</agents_md>
-
 """
