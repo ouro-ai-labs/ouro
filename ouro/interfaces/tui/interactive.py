@@ -115,7 +115,6 @@ class InteractiveSession:
 
         # Initialize status bar
         self.status_bar = StatusBar(terminal_ui.console)
-        self.status_bar.update(mode="LOOP")
         self.skills_registry = SkillsRegistry()
 
         # Set up signal handler for graceful interruption
@@ -338,6 +337,8 @@ class InteractiveSession:
             cost=stats.get("total_cost", 0),
             compression_count=stats.get("compression_count", 0),
             model_name=model_name,
+            cache_read_tokens=stats.get("cache_read_tokens", 0),
+            cache_creation_tokens=stats.get("cache_creation_tokens", 0),
         )
 
     async def _handle_command(self, user_input: str) -> bool | None:
