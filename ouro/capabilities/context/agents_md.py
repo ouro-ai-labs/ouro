@@ -7,6 +7,11 @@ found. Files closer to the CWD are appended last so they take precedence
 
 Scope is intentionally minimal (see ``rfc/agents-md-autoload.md``): project-tier
 upward walk only. No ``@import`` directives, no size caps, no user/global tier.
+
+Subdirectory ``AGENTS.md`` files *below* the working directory are not part of
+this eager load — they are surfaced lazily by ``NestedAgentsMdRule`` when the
+agent reads a file under them (see ``load_nested_instructions`` and
+``rfc/nested-agents-md.md``).
 """
 
 from __future__ import annotations
@@ -89,3 +94,77 @@ async def load_agents_md(start_dir: str | None = None) -> str:
         return _format(_read_and_merge(_discover_agents_md(start_dir)))
 
     return await asyncio.to_thread(_work)
+
+
+# --- Nested (subdirectory) loading ------------------------------------------
+#
+# The eager load above covers the working directory and everything above it.
+# AGENTS.md files in *subdirectories* of the CWD are surfaced on demand when a
+# file under them is read, via ``NestedAgentsMdRule``. These helpers are
+# synchronous because the rule runs them on the per-tool-call path.
+
+
+def _nested_agents_md_paths(cwd: str, file_path: str) -> list[Path]:
+    """Existing ``AGENTS.md`` along the path from ``cwd`` down to ``file_path``.
+
+    Scans only the directories strictly between ``cwd`` (exclusive) and the
+    directory containing ``file_path`` (inclusive) — the single path down to the
+    file, never sibling subtrees. Returns paths ordered parent-first (nearest
+    last). Returns ``[]`` when ``file_path`` sits at the ``cwd`` level or outside
+    ``cwd``; those directories are already covered by the eager startup load.
+    """
+    cwd_abs = os.path.abspath(cwd)
+    target_dir = os.path.dirname(os.path.abspath(file_path))
+    try:
+        within = os.path.commonpath([cwd_abs, target_dir]) == cwd_abs
+    except ValueError:
+        return []  # different drives / mixed roots (Windows)
+    if not within or target_dir == cwd_abs:
+        return []
+
+    found: list[Path] = []
+    directory = target_dir
+    while directory != cwd_abs:
+        candidate = Path(directory) / AGENTS_FILENAME
+        if candidate.is_file():
+            found.append(candidate)
+        parent = os.path.dirname(directory)
+        if parent == directory:
+            break  # reached filesystem root without hitting cwd (defensive)
+        directory = parent
+    found.reverse()  # parent-first, nearest last
+    return found
+
+
+def _format_nested(merged: str) -> str:
+    """Wrap merged subdirectory AGENTS.md in a ``<project_instructions>`` block."""
+    if not merged:
+        return ""
+    return (
+        "<project_instructions>\n"
+        "Additional project instructions were auto-loaded from AGENTS.md files "
+        "in subdirectories on the path to the file you just accessed (nearest "
+        "last; nearest takes precedence). Follow them while working under those "
+        "subdirectories unless a higher-priority instruction overrides.\n\n"
+        f"{merged}\n"
+        "</project_instructions>\n"
+    )
+
+
+def load_nested_instructions(cwd: str, file_path: str, already_injected: set[str]) -> str:
+    """Read subdirectory AGENTS.md newly relevant to ``file_path`` and format them.
+
+    Walks the directories between ``cwd`` and ``file_path``'s directory, skips
+    AGENTS.md already recorded in ``already_injected`` (by string path), reads
+    the rest, records them in ``already_injected``, and returns a formatted
+    ``<project_instructions>`` block (or ``""`` when nothing new applies).
+
+    ``already_injected`` is mutated in place; paths are recorded even when their
+    content is empty/unreadable so they are not re-read on a later trigger.
+    """
+    paths = _nested_agents_md_paths(cwd, file_path)
+    fresh = [p for p in paths if str(p) not in already_injected]
+    if not fresh:
+        return ""
+    already_injected.update(str(p) for p in fresh)
+    return _format_nested(_read_and_merge(fresh))
