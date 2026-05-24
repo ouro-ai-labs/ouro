@@ -97,7 +97,7 @@ Settings live in `~/.ouro/config` (KEY=VALUE format, auto-created with defaults)
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `MEMORY_ENABLED` | `true` | Enable memory management |
-| `MEMORY_COMPRESSION_THRESHOLD` | `60000` | Token count that triggers compression |
+| `MEMORY_COMPRESSION_THRESHOLD` | `256000` | Token count that triggers compression |
 | `MEMORY_SHORT_TERM_MIN_SIZE` | `6` | Minimum messages to always preserve during compression |
 | `MEMORY_COMPRESSION_RATIO` | `0.3` | Target compression ratio (0.3 = 30% of original) |
 
