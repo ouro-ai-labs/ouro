@@ -25,7 +25,8 @@ class TestAttributionInstructions:
 
     def test_trailer_constants(self):
         assert (
-            COMMIT_TRAILER == "Co-Authored-By: ouro <197364660+ahahoul007@users.noreply.github.com>"
+            COMMIT_TRAILER
+            == "Co-Authored-By: ouro <197364660+ouro-ai-lab@users.noreply.github.com>"
         )
         assert PR_FOOTER == "🤖 Generated with ouro (https://github.com/ouro-ai-labs/ouro)"
 
