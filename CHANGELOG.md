@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-05-24
+
 ### Added
 
 - **Memory blocks**: named, size-bounded markdown blocks under
@@ -15,6 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`read` / `replace` / `append` operations). Strict blocks (`user`,
   `project`) reject overflow with an actionable error; `scratch` is lenient
   with FIFO truncation. Inspired by Letta/MemGPT's core memory.
+- **Pluggable Rule abstraction**: deterministic pre-dispatch guards for the
+  agent loop. Includes `ReadBeforeWriteRule` to block blind overwrites of
+  unread files (#190, #192).
+- **Deterministic AGENTS.md auto-loading**: project-wide and per-directory
+  rule files are loaded automatically based on the working directory (#193).
+- **Lazy subdirectory AGENTS.md loading**: nested `AGENTS.md` files are
+  loaded on-demand when tools target their directories (#196).
+- **Commit/PR attribution**: shell tool descriptions now include Co-Authored-By
+  and PR attribution footers for ouro-generated commits (#194).
 
 ### Changed (BREAKING)
 
