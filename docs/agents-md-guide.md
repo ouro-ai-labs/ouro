@@ -47,18 +47,25 @@ in context. If none exist, nothing is injected.
 You can have multiple AGENTS.md files in different directories:
 
 ```
-project/
-├── AGENTS.md          # General project rules
+project/            # working directory
+├── AGENTS.md          # General project rules — eager-loaded at startup
 └── backend/
-    ├── AGENTS.md      # Backend-specific rules (wins when in backend/)
+    ├── AGENTS.md      # Backend rules — loaded when a file under backend/ is read
     └── api/
-        └── AGENTS.md  # API-specific rules (wins when in api/)
+        └── AGENTS.md  # API rules — loaded when a file under api/ is read
 ```
 
-The agent uses the **nearest** AGENTS.md relative to the working directory. This allows you to:
-- Define general rules at the project root
-- Override with specific rules for subdirectories
-- Keep different conventions for different parts of a monorepo
+There are two complementary mechanisms:
+
+- **Eager (startup)**: AGENTS.md in the working directory and *above* it are loaded once at the start of every run (see "What Gets Loaded").
+- **Lazy (subdirectory)**: AGENTS.md in *subdirectories* of the working directory are loaded on demand — when the agent reads a file under that subdirectory, every AGENTS.md on the path from the working directory down to that file is appended to the read result. Sibling subtrees are never scanned, and each subdirectory's AGENTS.md is injected at most once per run.
+
+This lets you:
+- Define general rules at the project root (always present)
+- Add subdirectory rules that surface only while working in that subtree
+- Keep different conventions for different parts of a monorepo without bloating context
+
+Lazy loading is on by default. The SDK can disable it with `AgentBuilder.without_nested_agents_md()`.
 
 ## Best Practices
 
@@ -148,9 +155,9 @@ AGENTS.md is compatible with:
 - **Jules** (Google): Reads AGENTS.md automatically
 
 ### ouro Behavior
-Like Codex CLI and Jules, ouro auto-loads AGENTS.md at startup:
+Like Codex CLI and Jules, ouro auto-loads AGENTS.md deterministically:
 - **Deterministic**: Loaded every run, no reliance on LLM judgement
-- **Hierarchical**: Walks CWD → `/`, nearest file wins on conflict
+- **Hierarchical**: Eager walk CWD → `/` at startup, plus lazy loading of subdirectory AGENTS.md when a file under them is read; nearest file wins on conflict
 - **Project tier only**: No `@import` directives, size caps, or user-global tier
 
 ### Migration from Other Tools
@@ -233,7 +240,7 @@ cd backend
 
 ### AGENTS.md Not Loaded
 - Ensure file is named exactly `AGENTS.md` (case-sensitive)
-- Verify it sits in the working directory or one of its parents (the walk only goes upward, not into sibling subdirectories)
+- A working-directory or parent AGENTS.md is loaded eagerly at startup; a subdirectory AGENTS.md loads only once the agent **reads a file under that subdirectory** (sibling subtrees are never scanned)
 - Empty / whitespace-only files are skipped
 
 ### Wrong AGENTS.md Taking Precedence

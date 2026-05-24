@@ -5,6 +5,7 @@ the generic rules in ``ouro.core.loop.rules``, they know about specific tool nam
 and argument shapes — so they live here, above the core boundary.
 """
 
+from .nested_agents_md import NestedAgentsMdRule
 from .read_before_write import ReadBeforeWriteRule
 
-__all__ = ["ReadBeforeWriteRule"]
+__all__ = ["NestedAgentsMdRule", "ReadBeforeWriteRule"]

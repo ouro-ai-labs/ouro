@@ -39,7 +39,7 @@ from .context.agents_md import load_agents_md
 from .context.env import format_context_prompt
 from .memory.manager import MemoryManager
 from .prompts import DEFAULT_SYSTEM_PROMPT
-from .rules import ReadBeforeWriteRule
+from .rules import NestedAgentsMdRule, ReadBeforeWriteRule
 from .skills.registry import SkillsRegistry
 from .skills.render import render_skills_section
 from .todo.state import TodoList
@@ -94,9 +94,11 @@ class AgentBuilder:
     verification_max_iterations: int = 0  # 0 disables verification
     progress: ProgressSink = field(default_factory=NullProgressSink)
     extra_hooks: list[Hook] = field(default_factory=list)
-    # Deterministic per-tool-call rules. ReadBeforeWriteRule is on by default;
-    # `extra_rules` run after it. See `ouro.capabilities.rules`.
+    # Deterministic per-tool-call rules. ReadBeforeWriteRule and
+    # NestedAgentsMdRule are on by default; `extra_rules` run after them.
+    # See `ouro.capabilities.rules`.
     read_before_write: bool = True
+    nested_agents_md: bool = True
     extra_rules: list[Rule] = field(default_factory=list)
 
     # ---- LLM ----------------------------------------------------------------
@@ -185,6 +187,10 @@ class AgentBuilder:
         self.read_before_write = False
         return self
 
+    def without_nested_agents_md(self) -> AgentBuilder:
+        self.nested_agents_md = False
+        return self
+
     # ---- Build --------------------------------------------------------------
 
     def build(self) -> ComposedAgent:
@@ -229,10 +235,13 @@ class AgentBuilder:
         hooks.extend(self.extra_hooks)
 
         # Deterministic per-tool-call rules (the repeat breaker is added by the
-        # core Agent itself). ReadBeforeWriteRule is on by default.
+        # core Agent itself). ReadBeforeWriteRule and NestedAgentsMdRule are on
+        # by default.
         rules: list[Rule] = []
         if self.read_before_write:
             rules.append(ReadBeforeWriteRule())
+        if self.nested_agents_md:
+            rules.append(NestedAgentsMdRule())
         rules.extend(self.extra_rules)
 
         core = Agent(
