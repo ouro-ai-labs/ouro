@@ -283,9 +283,7 @@ class InteractiveSession:
                 content = str(msg.content)
                 if len(content) > 300:
                     content = content[:300] + "..."
-                terminal_ui.console.print(
-                    f"[bold {colors.secondary}]Assistant:[/bold {colors.secondary}] {content}"
-                )
+                terminal_ui.console.print(content)
             elif msg.role == "assistant" and msg.tool_calls:
                 tool_names = ", ".join(
                     (
@@ -529,9 +527,6 @@ class InteractiveSession:
             finally:
                 self.current_task = None
 
-            terminal_ui.console.print(
-                f"[bold {colors.secondary}]Assistant:[/bold {colors.secondary}]"
-            )
             terminal_ui.print_assistant_message(result)
             self._update_status_bar()
             if Config.TUI_STATUS_BAR:
@@ -907,9 +902,6 @@ class InteractiveSession:
                         self.current_task = None
 
                     # Display agent response
-                    terminal_ui.console.print(
-                        f"[bold {colors.secondary}]Assistant:[/bold {colors.secondary}]"
-                    )
                     terminal_ui.print_assistant_message(result)
 
                     # Update status bar
