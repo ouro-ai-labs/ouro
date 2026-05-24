@@ -212,7 +212,7 @@ def print_tool_blocked(tool_name: str, arguments: Dict[str, Any], reason: str) -
     console.print(
         Panel(
             content,
-            title=f"[{colors.warning}]⚠ Blocked: {tool_name}[/{colors.warning}]",
+            title=f"[{colors.warning}]Blocked: {tool_name}[/{colors.warning}]",
             title_align="left",
             border_style=colors.warning,
             box=box.ROUNDED,
