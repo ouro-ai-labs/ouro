@@ -86,8 +86,8 @@ class StatusBar:
             cache_write = self._format_tokens(self.state.cache_creation_tokens)
             items.append(
                 f"[{colors.text_secondary}]Cache:[/{colors.text_secondary}] "
-                f"[{colors.success}]{cache_read}R[/{colors.success}] "
-                f"[{colors.warning}]{cache_write}W[/{colors.warning}]"
+                f"[{colors.success}]{cache_read}↑[/{colors.success}] "
+                f"[{colors.warning}]{cache_write}↓[/{colors.warning}]"
             )
 
         # Context Tokens
