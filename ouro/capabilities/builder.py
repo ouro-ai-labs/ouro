@@ -31,12 +31,14 @@ from ouro.core.loop import (
     MessageListContext,
     NullProgressSink,
     ProgressSink,
+    Rule,
 )
 
 from .compaction.hook import CompactionHook
 from .context.env import format_context_prompt
 from .memory.manager import MemoryManager
 from .prompts import DEFAULT_SYSTEM_PROMPT
+from .rules import ReadBeforeWriteRule
 from .skills.registry import SkillsRegistry
 from .skills.render import render_skills_section
 from .todo.state import TodoList
@@ -91,6 +93,10 @@ class AgentBuilder:
     verification_max_iterations: int = 0  # 0 disables verification
     progress: ProgressSink = field(default_factory=NullProgressSink)
     extra_hooks: list[Hook] = field(default_factory=list)
+    # Deterministic per-tool-call rules. ReadBeforeWriteRule is on by default;
+    # `extra_rules` run after it. See `ouro.capabilities.rules`.
+    read_before_write: bool = True
+    extra_rules: list[Rule] = field(default_factory=list)
 
     # ---- LLM ----------------------------------------------------------------
 
@@ -168,6 +174,16 @@ class AgentBuilder:
         self.extra_hooks.append(hook)
         return self
 
+    # ---- Rules --------------------------------------------------------------
+
+    def with_rule(self, rule: Rule) -> AgentBuilder:
+        self.extra_rules.append(rule)
+        return self
+
+    def without_read_before_write(self) -> AgentBuilder:
+        self.read_before_write = False
+        return self
+
     # ---- Build --------------------------------------------------------------
 
     def build(self) -> ComposedAgent:
@@ -211,6 +227,13 @@ class AgentBuilder:
         # Caller-provided extras run after first-party hooks.
         hooks.extend(self.extra_hooks)
 
+        # Deterministic per-tool-call rules (the repeat breaker is added by the
+        # core Agent itself). ReadBeforeWriteRule is on by default.
+        rules: list[Rule] = []
+        if self.read_before_write:
+            rules.append(ReadBeforeWriteRule())
+        rules.extend(self.extra_rules)
+
         core = Agent(
             llm=self.llm,
             tools=tool_executor,
@@ -218,6 +241,7 @@ class AgentBuilder:
             max_iterations=self.max_iterations,
             progress=self.progress,
             usage_callback=(memory.token_tracker.record_usage if memory is not None else None),
+            rules=rules,
         )
 
         return ComposedAgent(

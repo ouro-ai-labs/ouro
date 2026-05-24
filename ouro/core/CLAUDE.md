@@ -20,9 +20,9 @@ Never imports `ouro.capabilities` or `ouro.interfaces`.
 - `loop/protocols.py` — structural Protocols capabilities implement:
   `Hook`, `ToolRegistry`, `ProgressSink`, `LoopContext`. Plus the
   `ContinueDecision` return type used by `on_iteration_end`.
-- `loop/rules.py` — `Rule` protocol + `RuleOutcome` / `RuleViolation`
-  and the generic `RepeatedToolCallRule`. Rules are deterministic
-  pre-dispatch guards; see "Rules" below.
+- `loop/rules.py` — `Rule` protocol (optional `before_toolcall` /
+  `after_toolcall`) + the generic `RepeatedToolCallRule`. Rules are
+  deterministic per-tool-call checks; see "Rules" below.
 - `llm/` — `LLMMessage`, `LLMResponse`, `ToolCall`, `ToolResult`,
   `LiteLLMAdapter`, `ModelManager`, content/compat/reasoning helpers,
   OAuth (chatgpt, copilot).
