@@ -454,6 +454,25 @@ def print_assistant_message(message: str, use_markdown: bool = True) -> None:
     )
 
 
+def print_compaction_summary(summary: str) -> None:
+    """Print a compaction / conversation summary in a distinct panel.
+
+    Args:
+        summary: The summary text (without the ``[Previous conversation summary]`` prefix)
+    """
+    colors = _get_colors()
+    console.print(
+        Panel(
+            Markdown(summary),
+            title=f"[bold {colors.warning}]Compaction[/bold {colors.warning}]",
+            title_align="left",
+            border_style=colors.warning,
+            box=box.ROUNDED,
+            padding=(0, 1),
+        )
+    )
+
+
 def print_turn_divider(turn_number: Optional[int] = None) -> None:
     """Print a divider between conversation turns.
 
