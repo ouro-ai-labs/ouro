@@ -134,6 +134,14 @@ source .venv/bin/activate
 
 End-users should prefer `uv tool install ouro-ai` (see [Quick Start](#quick-start)); the source checkout is only needed when contributing.
 
+## Attribution
+
+When ouro creates git commits or pull requests, it appends an attribution trailer by default (shipped in PR #194):
+
+- Git commits include `Co-Authored-By: ouro <197364660+ahahoul007@users.noreply.github.com>`
+- Pull request bodies include `🤖 Generated with ouro (https://github.com/ouro-ai-labs/ouro)`
+
+Set `ATTRIBUTION_ENABLED=false` in `~/.ouro/config` to disable.
 ## License
 
 MIT License
