@@ -1,7 +1,13 @@
 """Base tool interface for all agent tools."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ouro.core.llm.tool_output import ToolOutput
 from abc import ABC, abstractmethod
-from typing import Any, Dict
+from typing import Any
 
 
 class BaseTool(ABC):
@@ -39,16 +45,16 @@ class BaseTool(ABC):
 
     @property
     @abstractmethod
-    def parameters(self) -> Dict[str, Any]:
+    def parameters(self) -> dict[str, Any]:
         """JSON Schema for tool parameters."""
         pass
 
     @abstractmethod
-    async def execute(self, **kwargs) -> str:
-        """Execute the tool and return result as string."""
+    async def execute(self, **kwargs) -> str | ToolOutput:
+        """Execute the tool and return result as string or ToolOutput."""
         raise NotImplementedError
 
-    def to_anthropic_schema(self) -> Dict[str, Any]:
+    def to_anthropic_schema(self) -> dict[str, Any]:
         """Convert to Anthropic tool schema format."""
         params = self.parameters
         # Parameters without a 'default' value are required

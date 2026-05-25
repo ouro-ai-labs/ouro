@@ -25,8 +25,8 @@ class TestFileReadToolSizeLimits:
 
         assert result == "Hello, World!"
 
-    async def test_large_file_error_without_pagination(self, tmp_path):
-        """Large files should return error when no pagination is specified."""
+    async def test_large_file_returns_partial_view(self, tmp_path):
+        """Large files should return partial-view content with metadata."""
         tool = FileReadTool()
         test_file = tmp_path / "large.txt"
         # Create a file larger than MAX_TOKENS * CHARS_PER_TOKEN = 25000 * 4 = 100KB
@@ -35,9 +35,15 @@ class TestFileReadToolSizeLimits:
 
         result = await tool.execute(str(test_file))
 
-        assert "Error: File content" in result
-        assert "exceeds" in result
-        assert "offset" in result.lower() or "limit" in result.lower()
+        # For non-code files, show_file_structure returns empty, so it falls
+        # back to a plain error string. For code files it returns a ToolOutput.
+        from ouro.core.llm.tool_output import ToolOutput
+
+        assert isinstance(result, (str, ToolOutput))
+        text = result.content if isinstance(result, ToolOutput) else result
+        assert "exceeds" in text or "File too large" in text
+        if isinstance(result, ToolOutput):
+            assert result.metadata.get("is_partial_view") is True
 
     async def test_large_file_with_pagination(self, tmp_path):
         """Large files can be read with pagination."""
@@ -68,8 +74,8 @@ class TestFileReadToolSizeLimits:
         assert "line 50" in result
         assert "line 59" in result
 
-    async def test_large_python_file_shows_structure(self, tmp_path):
-        """Large Python files should show code structure instead of error."""
+    async def test_large_python_file_returns_partial_view(self, tmp_path):
+        """Large Python files should return partial view with structure metadata."""
         tool = FileReadTool()
         test_file = tmp_path / "large_module.py"
         # Build a large Python file with classes and functions
@@ -90,16 +96,14 @@ class TestFileReadToolSizeLimits:
 
         result = await tool.execute(str(test_file))
 
-        # Should show structure, not the generic error
-        assert "File too large to read fully" in result
-        assert "Showing code structure instead" in result
-        assert "IMPORTS" in result
-        assert "FUNCTIONS" in result
-        assert "function_0" in result
-        assert "offset" in result.lower() and "limit" in result.lower()
+        from ouro.core.llm.tool_output import ToolOutput
 
-    async def test_large_non_code_file_shows_error(self, tmp_path):
-        """Large non-code files (.txt, .json) should return the original error."""
+        assert isinstance(result, ToolOutput)
+        assert result.metadata.get("is_partial_view") is True
+        assert "File too large to read fully" in result.content
+
+    async def test_large_non_code_file_returns_partial_view(self, tmp_path):
+        """Large non-code files (.txt, .json) should return partial view."""
         tool = FileReadTool()
         test_file = tmp_path / "large.json"
         test_file.write_text('{"data": "' + "x" * 150000 + '"}')

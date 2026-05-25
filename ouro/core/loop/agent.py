@@ -11,7 +11,7 @@ import asyncio
 import os
 from typing import Any, Callable, Sequence
 
-from ouro.core.llm import LLMMessage, LLMResponse, StopReason, ToolCall, ToolResult
+from ouro.core.llm import LLMMessage, LLMResponse, StopReason, ToolCall, ToolOutput, ToolResult
 from ouro.core.llm.reasoning import normalize_reasoning_effort
 from ouro.core.log import get_logger
 
@@ -258,14 +258,36 @@ class Agent:
         return ``None`` to leave it unchanged. Returns the final result text.
         """
         content = result.content
+        metadata = result.metadata
         for rule in self.rules:
             fn = getattr(rule, "after_toolcall", None)
             if fn is None:
                 continue
-            current = ToolResult(tool_call_id=tool_call.id, content=content, name=tool_call.name)
+            current = ToolResult(
+                tool_call_id=tool_call.id,
+                content=content,
+                name=tool_call.name,
+                metadata=metadata,
+            )
             replacement = fn(ctx, tool_call, current)
             if replacement is not None:
                 content = replacement
+
+        # Second pass: rules that need the full metadata (e.g. is_partial_view).
+        for rule in self.rules:
+            fn = getattr(rule, "after_toolcall_with_metadata", None)
+            if fn is None:
+                continue
+            current = ToolResult(
+                tool_call_id=tool_call.id,
+                content=content,
+                name=tool_call.name,
+                metadata=metadata,
+            )
+            replacement = fn(ctx, tool_call, current)
+            if replacement is not None:
+                content = replacement
+
         return content
 
     async def _dispatch_tools(
@@ -330,8 +352,15 @@ class Agent:
             self.progress.tool_call(tc.name, tc.arguments)
             async with self.progress.spinner(f"Executing {tc.name}...", title="Working"):
                 output = await self.tools.execute_tool_call(tc.name, tc.arguments)
-            self.progress.tool_result(output)
-            results.append(ToolResult(tool_call_id=tc.id, content=output, name=tc.name))
+            self.progress.tool_result(str(output))
+            results.append(
+                ToolResult(
+                    tool_call_id=tc.id,
+                    content=output.content,
+                    name=tc.name,
+                    metadata=output.metadata,
+                )
+            )
         return results
 
     async def _exec_parallel(
@@ -340,7 +369,7 @@ class Agent:
         for tc in tool_calls:
             self.progress.tool_call(tc.name, tc.arguments)
 
-        outputs: list[str | None] = [None] * len(tool_calls)
+        outputs: list[ToolOutput | None] = [None] * len(tool_calls)
 
         async def _run(i: int, tc: ToolCall) -> None:
             outputs[i] = await self.tools.execute_tool_call(tc.name, tc.arguments)
@@ -355,9 +384,17 @@ class Agent:
 
         results: list[ToolResult] = []
         for i, tc in enumerate(tool_calls):
-            output = outputs[i] or ""
-            self.progress.tool_result(output)
-            results.append(ToolResult(tool_call_id=tc.id, content=output, name=tc.name))
+            out = outputs[i]
+            content = out.content if out is not None else ""
+            self.progress.tool_result(content)
+            results.append(
+                ToolResult(
+                    tool_call_id=tc.id,
+                    content=content,
+                    name=tc.name,
+                    metadata=out.metadata if out is not None else None,
+                )
+            )
         return results
 
     async def _fanout_async(self, method: str, ctx: LoopContext, *args: Any) -> None:
