@@ -18,6 +18,10 @@ Two optional hooks — a rule implements whichever it needs:
   dispatched call returns. Return a string to **replace** its result text;
   return ``None`` to leave it unchanged. Use it to rewrite output and/or to
   record state from real results (e.g. which files were read).
+- ``after_toolcall_with_metadata(ctx, tool_call, tool_result) -> str | None``
+  is an optional variant of ``after_toolcall`` that receives the full
+  ``ToolResult`` including its ``metadata`` dict (e.g. ``is_partial_view``).
+  It is called **after** ``after_toolcall`` if both are present.
 
 Both are per-tool-call and should be cheap and side-effect-free: no LLM calls
 and no heavy or blocking I/O (a quick local check such as ``os.path.exists`` is

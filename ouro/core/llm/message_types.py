@@ -230,6 +230,7 @@ class ToolResult:
     tool_call_id: str
     content: str
     name: Optional[str] = None  # Tool name (optional but recommended)
+    metadata: Optional[Dict[str, Any]] = None  # Tool-specific metadata (e.g. is_partial_view)
 
     def to_message(self) -> LLMMessage:
         """Convert to LLMMessage for conversation history.

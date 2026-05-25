@@ -18,7 +18,7 @@ from typing import (
 )
 
 if TYPE_CHECKING:
-    from ouro.core.llm import LLMMessage, LLMResponse
+    from ouro.core.llm import LLMMessage, LLMResponse, ToolOutput
     from ouro.core.loop.context import MessageListContext
     from ouro.core.loop.message_list import MessageList
 
@@ -28,7 +28,7 @@ class ToolRegistry(Protocol):
     def get_tool_schemas(self) -> list[dict[str, Any]]: ...
     def is_tool_readonly(self, name: str) -> bool: ...
     def conflict_keys(self, name: str, arguments: dict[str, Any]) -> set[str] | None: ...
-    async def execute_tool_call(self, name: str, arguments: dict[str, Any]) -> str: ...
+    async def execute_tool_call(self, name: str, arguments: dict[str, Any]) -> ToolOutput: ...
 
 
 class _NullSpinner:

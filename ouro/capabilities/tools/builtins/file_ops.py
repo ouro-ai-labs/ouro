@@ -6,7 +6,10 @@ from typing import Any, Dict
 import aiofiles
 import aiofiles.os
 
+from ouro.core.llm.tool_output import ToolOutput
+
 from ..base import BaseTool
+from .code_structure import show_file_structure
 
 
 class FileTooLargeError(Exception):
@@ -56,18 +59,33 @@ class FileReadTool(BaseTool):
             },
         }
 
-    async def execute(self, file_path: str, offset: int = 0, limit: int = None) -> str:
+    async def execute(self, file_path: str, offset: int = 0, limit: int = None) -> str | ToolOutput:
         """Read file with optional pagination."""
         try:
             # Pre-check file size
             file_size = await aiofiles.os.path.getsize(file_path)
             estimated_tokens = file_size // self.CHARS_PER_TOKEN
 
-            # If file too large and no pagination, raise an error (Claude Code
-            # design: force explicit offset/limit rather than returning synthetic
-            # content like a code-structure summary).
+            # If file too large and no pagination, show code structure with
+            # metadata flag so rules know this is a partial view.
             if estimated_tokens > self.MAX_TOKENS and limit is None:
-                raise FileTooLargeError(estimated_tokens, self.MAX_TOKENS)
+                structure = await show_file_structure(file_path)
+                if structure:
+                    return ToolOutput(
+                        content=(
+                            f"File too large to read fully (~{estimated_tokens} tokens, "
+                            f"max {self.MAX_TOKENS}). Showing code structure instead:\n\n"
+                            f"{structure}\n\n"
+                            f"Use offset and limit parameters to read specific sections."
+                        ),
+                        metadata={"is_partial_view": True},
+                    )
+                return (
+                    f"Error: File content (~{estimated_tokens} tokens) exceeds "
+                    f"maximum allowed tokens ({self.MAX_TOKENS}). Please use offset "
+                    f"and limit parameters to read specific portions of the file, "
+                    f"or use grep_content to search for specific content."
+                )
 
             async with aiofiles.open(file_path, encoding="utf-8") as f:
                 if limit is None:

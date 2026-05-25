@@ -52,6 +52,10 @@ class ReadBeforeWriteRule:
         self._read_tools = read_tools
         # Absolute paths the agent has read or written *this run*.
         self._seen: set[str] = set()
+        # Absolute paths where the last read returned a partial view (e.g.
+        # code-structure summary because the file was too large). Edits against
+        # these are blocked until a real full read is performed.
+        self._partial: set[str] = set()
         # Identity of the run context last observed; a new one means a new run.
         self._last_ctx: object | None = None
 
@@ -60,6 +64,7 @@ class ReadBeforeWriteRule:
         # object identity is the reliable signal that a new run has started.
         if ctx is not self._last_ctx:
             self._seen.clear()
+            self._partial.clear()
             self._last_ctx = ctx
 
     @staticmethod
@@ -79,6 +84,22 @@ class ReadBeforeWriteRule:
         # Creating a new file is fine; only guard overwrites of existing content.
         if not os.path.exists(path):
             return None
+        # The file was read, but the returned content was a partial view (e.g.
+        # a code-structure summary because the file was too large). Force a
+        # real read before allowing edits.
+        if path in self._partial:
+            logger.warning(
+                "ReadBeforeWriteRule: blocked %s on partial-view file %r",
+                tool_call.name,
+                tool_call.arguments.get("file_path"),
+            )
+            return (
+                f"[ouro] Refusing to run {tool_call.name} on "
+                f"{tool_call.arguments.get('file_path')!r}: the last read "
+                "returned a partial view (code-structure summary) rather than "
+                "the actual file contents. Call read_file to load the real "
+                "source, then retry your change."
+            )
         logger.warning(
             "ReadBeforeWriteRule: blocked %s on unread existing file %r",
             tool_call.name,
@@ -100,5 +121,13 @@ class ReadBeforeWriteRule:
         if tool_call.name in self._read_tools or tool_call.name in self._write_tools:
             path = self._abs_path(tool_call)
             if path is not None:
-                self._seen.add(path)
+                # Check metadata for partial-view flag (set by FileReadTool when
+                # it returns a code-structure summary instead of real content).
+                metadata = tool_result.metadata or {}
+                if metadata.get("is_partial_view"):
+                    self._partial.add(path)
+                else:
+                    self._seen.add(path)
+                    # A full read clears any previous partial-view status.
+                    self._partial.discard(path)
         return None

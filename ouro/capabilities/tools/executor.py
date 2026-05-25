@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 
 from ouro.capabilities.tools.base import BaseTool
 from ouro.config import Config
+from ouro.core.llm import ToolOutput
 
 
 class ToolExecutor:
@@ -14,10 +15,10 @@ class ToolExecutor:
         """Initialize with a list of tools."""
         self.tools = {tool.name: tool for tool in tools}
 
-    async def execute_tool_call(self, tool_name: str, tool_input: Dict[str, Any]) -> str:
+    async def execute_tool_call(self, tool_name: str, tool_input: Dict[str, Any]) -> ToolOutput:
         """Execute a single tool call and return result."""
         if tool_name not in self.tools:
-            return f"Error: Tool '{tool_name}' not found"
+            return ToolOutput(content=f"Error: Tool '{tool_name}' not found")
 
         try:
             timeout = Config.TOOL_TIMEOUT
@@ -32,14 +33,17 @@ class ToolExecutor:
                     result = await self.tools[tool_name].execute(**tool_input)
             else:
                 result = await self.tools[tool_name].execute(**tool_input)
-            return str(result)
+
+            if isinstance(result, ToolOutput):
+                return result
+            return ToolOutput(content=str(result))
         except asyncio.CancelledError:
             # Re-raise CancelledError to allow proper cleanup
             raise
         except TimeoutError:
-            return f"Error: Tool '{tool_name}' timed out after {timeout}s"
+            return ToolOutput(content=f"Error: Tool '{tool_name}' timed out after {timeout}s")
         except Exception as e:
-            return f"Error executing {tool_name}: {str(e)}"
+            return ToolOutput(content=f"Error executing {tool_name}: {str(e)}")
 
     def is_tool_readonly(self, tool_name: str) -> bool:
         """Check if a tool is readonly (safe for parallel execution)."""

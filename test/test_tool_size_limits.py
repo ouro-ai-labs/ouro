@@ -7,8 +7,6 @@ error messages when output exceeds the maximum allowed tokens.
 import shlex
 import sys
 
-import pytest
-
 from ouro.capabilities.tools.builtins.advanced_file_ops import GrepTool
 from ouro.capabilities.tools.builtins.file_ops import FileReadTool
 from ouro.capabilities.tools.builtins.shell import ShellTool
@@ -27,21 +25,25 @@ class TestFileReadToolSizeLimits:
 
         assert result == "Hello, World!"
 
-    async def test_large_file_error_without_pagination(self, tmp_path):
-        """Large files should raise FileTooLargeError when no pagination is specified."""
+    async def test_large_file_returns_partial_view(self, tmp_path):
+        """Large files should return partial-view content with metadata."""
         tool = FileReadTool()
         test_file = tmp_path / "large.txt"
         # Create a file larger than MAX_TOKENS * CHARS_PER_TOKEN = 25000 * 4 = 100KB
         large_content = "line\n" * 30000
         test_file.write_text(large_content)
 
-        from ouro.capabilities.tools.builtins.file_ops import FileTooLargeError
+        result = await tool.execute(str(test_file))
 
-        with pytest.raises(FileTooLargeError) as exc_info:
-            await tool.execute(str(test_file))
+        # For non-code files, show_file_structure returns empty, so it falls
+        # back to a plain error string. For code files it returns a ToolOutput.
+        from ouro.core.llm.tool_output import ToolOutput
 
-        assert "exceeds" in str(exc_info.value)
-        assert "offset" in str(exc_info.value).lower() or "limit" in str(exc_info.value).lower()
+        assert isinstance(result, (str, ToolOutput))
+        text = result.content if isinstance(result, ToolOutput) else result
+        assert "exceeds" in text or "File too large" in text
+        if isinstance(result, ToolOutput):
+            assert result.metadata.get("is_partial_view") is True
 
     async def test_large_file_with_pagination(self, tmp_path):
         """Large files can be read with pagination."""
@@ -72,8 +74,8 @@ class TestFileReadToolSizeLimits:
         assert "line 50" in result
         assert "line 59" in result
 
-    async def test_large_python_file_raises_error(self, tmp_path):
-        """Large Python files should raise FileTooLargeError (not show structure)."""
+    async def test_large_python_file_returns_partial_view(self, tmp_path):
+        """Large Python files should return partial view with structure metadata."""
         tool = FileReadTool()
         test_file = tmp_path / "large_module.py"
         # Build a large Python file with classes and functions
@@ -92,27 +94,24 @@ class TestFileReadToolSizeLimits:
         lines.append("# " + "x" * 120000)
         test_file.write_text("\n".join(lines))
 
-        from ouro.capabilities.tools.builtins.file_ops import FileTooLargeError
+        result = await tool.execute(str(test_file))
 
-        with pytest.raises(FileTooLargeError) as exc_info:
-            await tool.execute(str(test_file))
+        from ouro.core.llm.tool_output import ToolOutput
 
-        assert "exceeds" in str(exc_info.value)
-        assert "offset" in str(exc_info.value).lower() and "limit" in str(exc_info.value).lower()
+        assert isinstance(result, ToolOutput)
+        assert result.metadata.get("is_partial_view") is True
+        assert "File too large to read fully" in result.content
 
-    async def test_large_non_code_file_raises_error(self, tmp_path):
-        """Large non-code files (.txt, .json) should raise FileTooLargeError."""
+    async def test_large_non_code_file_returns_partial_view(self, tmp_path):
+        """Large non-code files (.txt, .json) should return partial view."""
         tool = FileReadTool()
         test_file = tmp_path / "large.json"
         test_file.write_text('{"data": "' + "x" * 150000 + '"}')
 
-        from ouro.capabilities.tools.builtins.file_ops import FileTooLargeError
+        result = await tool.execute(str(test_file))
 
-        with pytest.raises(FileTooLargeError) as exc_info:
-            await tool.execute(str(test_file))
-
-        assert "exceeds" in str(exc_info.value)
-        assert "offset" in str(exc_info.value).lower() or "limit" in str(exc_info.value).lower()
+        assert "Error: File content" in result
+        assert "exceeds" in result
 
     async def test_small_code_file_returns_full_content(self, tmp_path):
         """Small code files should still return full content (no truncation)."""

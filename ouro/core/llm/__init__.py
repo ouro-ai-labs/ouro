@@ -29,6 +29,7 @@ from .reasoning import (
     display_reasoning_effort,
     normalize_reasoning_effort,
 )
+from .tool_output import ToolOutput
 
 __all__ = [
     # Core types
@@ -39,6 +40,7 @@ __all__ = [
     "ToolCallBlock",
     "FunctionCall",
     "StopReason",
+    "ToolOutput",
     # Adapter
     "LiteLLMAdapter",
     # Model Manager
