@@ -1,5 +1,6 @@
 """File operation tools for reading and writing files."""
 
+import hashlib
 import os
 from typing import Any, Dict
 
@@ -10,6 +11,11 @@ from ouro.core.llm.tool_output import ToolOutput
 
 from ..base import BaseTool
 from .code_structure import show_file_structure
+
+
+def _content_hash(content: str) -> str:
+    """Return a deterministic hash for file content."""
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
 
 
 class FileTooLargeError(Exception):
@@ -105,7 +111,17 @@ class FileReadTool(BaseTool):
             if actual_tokens > self.MAX_TOKENS:
                 raise FileTooLargeError(actual_tokens, self.MAX_TOKENS)
 
-            return content
+            # Return content with snapshot metadata for stale-detection rules.
+            stat = await aiofiles.os.stat(file_path)
+            return ToolOutput(
+                content=content,
+                metadata={
+                    "snapshot": {
+                        "mtime": stat.st_mtime,
+                        "hash": _content_hash(content),
+                    }
+                },
+            )
 
         except FileNotFoundError:
             return f"Error: File '{file_path}' not found"

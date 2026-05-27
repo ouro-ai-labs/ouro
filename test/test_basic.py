@@ -24,7 +24,7 @@ async def test_tools_execute_and_cleanup(tmp_path):
     assert "Successfully wrote" in write_result
 
     read_result = await file_read.execute(file_path=str(test_file))
-    assert "Hello, Agent!" in read_result
+    assert "Hello, Agent!" in str(read_result)
 
     assert test_file.exists()
     os.remove(test_file)

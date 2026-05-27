@@ -1,17 +1,22 @@
-"""Tests for smart_edit stale-detection (mtime + content hash)."""
+"""Tests for stale-detection via ReadBeforeWriteRule (mtime + content hash).
+
+Stale detection now lives in ``ReadBeforeWriteRule`` rather than
+``SmartEditTool``.  When a file is read, ``FileReadTool`` returns a
+``ToolOutput`` with ``metadata={"snapshot": {"mtime": ..., "hash": ...}}``.
+The rule stores this snapshot and checks it before allowing any
+``smart_edit`` / ``write_file`` on the same path.
+"""
 
 from __future__ import annotations
 
 import asyncio
 
-import pytest
-
-from ouro.capabilities.tools.builtins.smart_edit import (
-    SmartEditTool,
+from ouro.capabilities.rules.read_before_write import (
+    ReadBeforeWriteRule,
     _check_stale,
     _content_hash,
-    _read_file_with_snapshot,
 )
+from ouro.core.llm.message_types import ToolResult
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -20,6 +25,19 @@ from ouro.capabilities.tools.builtins.smart_edit import (
 
 def _run(coro):
     return asyncio.get_event_loop().run_until_complete(coro)
+
+
+class FakeLoopContext:
+    """Minimal stand-in for LoopContext."""
+
+    def __init__(self):
+        self.task = "test"
+        self.iteration = 1
+        self.usage_total = {}
+        self.stop_reason_last = None
+
+    def add_usage(self, usage):
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -39,211 +57,168 @@ def test_content_hash_sensitive():
 
 
 # ---------------------------------------------------------------------------
-# _read_file_with_snapshot
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_read_file_with_snapshot(tmp_path):
-    f = tmp_path / "a.py"
-    f.write_text("x = 1\n", encoding="utf-8")
-    content, mtime, hash_val = await _read_file_with_snapshot(f)
-    assert content == "x = 1\n"
-    assert hash_val == _content_hash("x = 1\n")
-    assert isinstance(mtime, float)
-
-
-# ---------------------------------------------------------------------------
 # _check_stale
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_check_stale_mtime_unchanged(tmp_path):
+def test_check_stale_mtime_unchanged(tmp_path):
     f = tmp_path / "a.py"
     f.write_text("x = 1\n", encoding="utf-8")
-    content, mtime, hash_val = await _read_file_with_snapshot(f)
-    assert await _check_stale(f, mtime, hash_val, content) is None
+    stat = f.stat()
+    assert _check_stale(str(f), stat.st_mtime, _content_hash("x = 1\n")) is None
 
 
-@pytest.mark.asyncio
-async def test_check_stale_mtime_noise_content_same(tmp_path):
+def test_check_stale_mtime_noise_content_same(tmp_path):
     """mtime drift but content identical → not stale (OS noise)."""
     f = tmp_path / "a.py"
     f.write_text("x = 1\n", encoding="utf-8")
-    content, mtime, hash_val = await _read_file_with_snapshot(f)
-    # Simulate mtime noise by touching the file with same content
-    await asyncio.sleep(0.01)
+    stat = f.stat()
+    import time
+
+    time.sleep(0.01)
     f.write_text("x = 1\n", encoding="utf-8")
-    assert await _check_stale(f, mtime, hash_val, content) is None
+    assert _check_stale(str(f), stat.st_mtime, _content_hash("x = 1\n")) is None
 
 
-@pytest.mark.asyncio
-async def test_check_stale_real_modification(tmp_path):
+def test_check_stale_real_modification(tmp_path):
     """Content actually changed → stale."""
     f = tmp_path / "a.py"
     f.write_text("x = 1\n", encoding="utf-8")
-    content, mtime, hash_val = await _read_file_with_snapshot(f)
-    await asyncio.sleep(0.01)
+    stat = f.stat()
+    import time
+
+    time.sleep(0.01)
     f.write_text("x = 2\n", encoding="utf-8")
-    msg = await _check_stale(f, mtime, hash_val, content)
+    msg = _check_stale(str(f), stat.st_mtime, _content_hash("x = 1\n"))
     assert msg is not None
     assert "modified on disk" in msg
-    assert "x = 2" in msg or "x = 1" in msg
 
 
-@pytest.mark.asyncio
-async def test_check_stale_file_vanished(tmp_path):
+def test_check_stale_file_vanished(tmp_path):
     """File deleted after read → let write fail naturally, not stale."""
     f = tmp_path / "a.py"
     f.write_text("x = 1\n", encoding="utf-8")
-    content, mtime, hash_val = await _read_file_with_snapshot(f)
+    stat = f.stat()
     f.unlink()
-    assert await _check_stale(f, mtime, hash_val, content) is None
+    assert _check_stale(str(f), stat.st_mtime, _content_hash("x = 1\n")) is None
 
 
 # ---------------------------------------------------------------------------
-# SmartEditTool integration with stale detection
+# ReadBeforeWriteRule stale integration
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_diff_replace_succeeds_when_fresh(tmp_path):
+class FakeToolCall:
+    def __init__(self, name, file_path):
+        self.name = name
+        self.arguments = {"file_path": str(file_path)}
+        self.id = "tc-1"
+
+
+def test_rule_blocks_stale_edit(tmp_path):
+    """If the file changed after read, before_toolcall blocks the edit."""
+    rule = ReadBeforeWriteRule()
+    ctx = FakeLoopContext()
+
     f = tmp_path / "a.py"
-    f.write_text("def foo():\n    pass\n", encoding="utf-8")
-    tool = SmartEditTool()
-    result = await tool.execute(
-        file_path=str(f),
-        mode="diff_replace",
-        old_code="    pass",
-        new_code="    return 42",
+    f.write_text("x = 1\n", encoding="utf-8")
+    stat = f.stat()
+
+    # Simulate read_file returning a snapshot
+    read_tc = FakeToolCall("read_file", f)
+    read_result = ToolResult(
+        tool_call_id="tc-1",
+        content="x = 1\n",
+        metadata={
+            "snapshot": {
+                "mtime": stat.st_mtime,
+                "hash": _content_hash("x = 1\n"),
+            }
+        },
     )
-    assert "Successfully edited" in result
-    assert "return 42" in f.read_text(encoding="utf-8")
+    rule.after_toolcall(ctx, read_tc, read_result)
+
+    # Modify file behind the rule's back
+    f.write_text("x = 2\n", encoding="utf-8")
+
+    # Now try to smart_edit — should be blocked as stale
+    edit_tc = FakeToolCall("smart_edit", f)
+    msg = rule.before_toolcall(ctx, edit_tc)
+    assert msg is not None
+    assert "modified on disk" in msg
 
 
-@pytest.mark.asyncio
-async def test_diff_replace_blocked_when_stale(tmp_path):
+def test_rule_allows_fresh_edit(tmp_path):
+    """If the file hasn't changed, edit is allowed."""
+    rule = ReadBeforeWriteRule()
+    ctx = FakeLoopContext()
+
     f = tmp_path / "a.py"
-    f.write_text("def foo():\n    pass\n", encoding="utf-8")
-    tool = SmartEditTool()
+    f.write_text("x = 1\n", encoding="utf-8")
+    stat = f.stat()
 
-    # Patch _read_file_with_snapshot to capture the snapshot, then
-    # modify the file before the tool writes.
-    original_read = _read_file_with_snapshot
+    read_tc = FakeToolCall("read_file", f)
+    read_result = ToolResult(
+        tool_call_id="tc-1",
+        content="x = 1\n",
+        metadata={
+            "snapshot": {
+                "mtime": stat.st_mtime,
+                "hash": _content_hash("x = 1\n"),
+            }
+        },
+    )
+    rule.after_toolcall(ctx, read_tc, read_result)
 
-    async def _patched_read(path):
-        content, mtime, hash_val = await original_read(path)
-        # Mutate the file *after* the tool has read it
-        f.write_text("def foo():\n    return 0\n", encoding="utf-8")
-        await asyncio.sleep(0.01)
-        return content, mtime, hash_val
-
-    import ouro.capabilities.tools.builtins.smart_edit as _se
-
-    _se._read_file_with_snapshot = _patched_read
-    try:
-        result = await tool.execute(
-            file_path=str(f),
-            mode="diff_replace",
-            old_code="    pass",
-            new_code="    return 42",
-        )
-        assert "modified on disk" in result
-        # File should NOT have been overwritten
-        assert "return 0" in f.read_text(encoding="utf-8")
-        assert "return 42" not in f.read_text(encoding="utf-8")
-    finally:
-        _se._read_file_with_snapshot = original_read
+    # No modification — edit should pass stale check
+    edit_tc = FakeToolCall("smart_edit", f)
+    assert rule.before_toolcall(ctx, edit_tc) is None
 
 
-@pytest.mark.asyncio
-async def test_smart_insert_blocked_when_stale(tmp_path):
+def test_rule_allows_after_write(tmp_path):
+    """Writing a file clears the snapshot and allows subsequent edits."""
+    rule = ReadBeforeWriteRule()
+    ctx = FakeLoopContext()
+
     f = tmp_path / "a.py"
-    f.write_text("class A:\n    pass\n", encoding="utf-8")
-    tool = SmartEditTool()
+    f.write_text("x = 1\n", encoding="utf-8")
 
-    original_read = _read_file_with_snapshot
+    # Simulate write_file (no snapshot metadata)
+    write_tc = FakeToolCall("write_file", f)
+    write_result = ToolResult(tool_call_id="tc-1", content="ok")
+    rule.after_toolcall(ctx, write_tc, write_result)
 
-    async def _patched_read(path):
-        content, mtime, hash_val = await original_read(path)
-        f.write_text("class A:\n    x = 1\n", encoding="utf-8")
-        await asyncio.sleep(0.01)
-        return content, mtime, hash_val
-
-    import ouro.capabilities.tools.builtins.smart_edit as _se
-
-    _se._read_file_with_snapshot = _patched_read
-    try:
-        result = await tool.execute(
-            file_path=str(f),
-            mode="smart_insert",
-            anchor="class A:",
-            code="    def run(self): pass",
-            position="after",
-        )
-        assert "modified on disk" in result
-    finally:
-        _se._read_file_with_snapshot = original_read
+    # Edit should be allowed without stale check
+    edit_tc = FakeToolCall("smart_edit", f)
+    assert rule.before_toolcall(ctx, edit_tc) is None
 
 
-@pytest.mark.asyncio
-async def test_block_edit_blocked_when_stale(tmp_path):
+def test_rule_resets_per_run(tmp_path):
+    """A new run context clears all state."""
+    rule = ReadBeforeWriteRule()
+    ctx1 = FakeLoopContext()
+
     f = tmp_path / "a.py"
-    f.write_text("line1\nline2\nline3\n", encoding="utf-8")
-    tool = SmartEditTool()
+    f.write_text("x = 1\n", encoding="utf-8")
+    stat = f.stat()
 
-    original_read = _read_file_with_snapshot
+    read_tc = FakeToolCall("read_file", f)
+    read_result = ToolResult(
+        tool_call_id="tc-1",
+        content="x = 1\n",
+        metadata={
+            "snapshot": {
+                "mtime": stat.st_mtime,
+                "hash": _content_hash("x = 1\n"),
+            }
+        },
+    )
+    rule.after_toolcall(ctx1, read_tc, read_result)
 
-    async def _patched_read(path):
-        content, mtime, hash_val = await original_read(path)
-        f.write_text("line1\nmodified\nline3\n", encoding="utf-8")
-        await asyncio.sleep(0.01)
-        return content, mtime, hash_val
-
-    import ouro.capabilities.tools.builtins.smart_edit as _se
-
-    _se._read_file_with_snapshot = _patched_read
-    try:
-        result = await tool.execute(
-            file_path=str(f),
-            mode="block_edit",
-            start_line=2,
-            end_line=2,
-            new_code="replaced",
-        )
-        assert "modified on disk" in result
-    finally:
-        _se._read_file_with_snapshot = original_read
-
-
-@pytest.mark.asyncio
-async def test_dry_run_does_not_trigger_stale_check(tmp_path):
-    """Dry run should not trigger stale detection (no write happens)."""
-    f = tmp_path / "a.py"
-    f.write_text("def foo():\n    pass\n", encoding="utf-8")
-    tool = SmartEditTool()
-
-    original_read = _read_file_with_snapshot
-
-    async def _patched_read(path):
-        content, mtime, hash_val = await original_read(path)
-        f.write_text("def foo():\n    return 0\n", encoding="utf-8")
-        await asyncio.sleep(0.01)
-        return content, mtime, hash_val
-
-    import ouro.capabilities.tools.builtins.smart_edit as _se
-
-    _se._read_file_with_snapshot = _patched_read
-    try:
-        result = await tool.execute(
-            file_path=str(f),
-            mode="diff_replace",
-            old_code="    pass",
-            new_code="    return 42",
-            dry_run=True,
-        )
-        assert "[DRY RUN]" in result
-        assert "modified on disk" not in result
-    finally:
-        _se._read_file_with_snapshot = original_read
+    # New run
+    ctx2 = FakeLoopContext()
+    edit_tc = FakeToolCall("smart_edit", f)
+    # Should be blocked because state was reset
+    msg = rule.before_toolcall(ctx2, edit_tc)
+    assert msg is not None
+    assert "have not read it" in msg

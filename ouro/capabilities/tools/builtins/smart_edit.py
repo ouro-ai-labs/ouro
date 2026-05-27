@@ -7,7 +7,6 @@ This tool provides advanced editing features beyond the basic EditTool:
 - Rollback: Can revert changes if editing fails
 """
 
-import hashlib
 import os
 import subprocess
 from difflib import SequenceMatcher, unified_diff
@@ -18,69 +17,6 @@ import aiofiles
 import aiofiles.os
 
 from ouro.capabilities.tools.base import BaseTool
-
-
-def _content_hash(content: str) -> str:
-    """Return a deterministic hash for file content."""
-    return hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
-
-
-async def _read_file_with_snapshot(path: Path) -> Tuple[str, float, str]:
-    """Read file and return (content, mtime, content_hash).
-
-    The snapshot is used for stale-detection: before writing we re-read
-    and compare mtime (cheap) then content hash (expensive fallback) so
-    that OS-level mtime noise (OneDrive sync, IDE format-on-save, etc.)
-    does not produce false positives.
-    """
-    stat = await aiofiles.os.stat(str(path))
-    async with aiofiles.open(path, encoding="utf-8") as f:
-        content = await f.read()
-    return content, stat.st_mtime, _content_hash(content)
-
-
-async def _check_stale(
-    path: Path, read_mtime: float, read_hash: str, original_content: str
-) -> Optional[str]:
-    """Check whether the file changed on disk since we read it.
-
-    Returns an error message if stale, None if safe to write.
-    """
-    try:
-        stat = await aiofiles.os.stat(str(path))
-    except OSError:
-        return None  # File vanished; let the write fail naturally
-
-    if stat.st_mtime == read_mtime:
-        return None  # mtime unchanged — fast path
-
-    # mtime drifted: could be OS noise or a real edit.  Verify with hash.
-    async with aiofiles.open(path, encoding="utf-8") as f:
-        current_content = await f.read()
-    current_hash = _content_hash(current_content)
-    if current_hash == read_hash:
-        return None  # Content identical — mtime noise, safe to proceed
-
-    # Real concurrent modification.  Build a concise diff so the model
-    # can see what changed and craft a corrected edit.
-    old_lines = original_content.splitlines(keepends=True)
-    new_lines = current_content.splitlines(keepends=True)
-    diff = "".join(
-        unified_diff(
-            old_lines,
-            new_lines,
-            fromfile=f"{path} (when you read it)",
-            tofile=f"{path} (current on disk)",
-            lineterm="",
-            n=2,
-        )
-    )
-    return (
-        f"[ouro] Refusing to edit {path}: the file was modified on disk "
-        f"after you read it. Another process or editor may have changed it.\n\n"
-        f"Please re-read the file and retry your edit.\n\n"
-        f"Diff of changes since your read:\n{diff or '(binary or empty diff)'}"
-    )
 
 
 def _is_git_repo(path: Path) -> bool:
@@ -240,16 +176,15 @@ IMPORTANT:
             if create_backup is None:
                 create_backup = not _is_git_repo(path)
 
-            # Read original content and capture a snapshot for stale detection
-            original_content, read_mtime, read_hash = await _read_file_with_snapshot(path)
+            # Read original content
+            async with aiofiles.open(path, encoding="utf-8") as f:
+                original_content = await f.read()
 
             # Execute the appropriate edit mode
             if mode == "diff_replace":
                 result = await self._diff_replace(
                     path,
                     original_content,
-                    read_mtime,
-                    read_hash,
                     old_code,
                     new_code,
                     fuzzy_match,
@@ -261,8 +196,6 @@ IMPORTANT:
                 result = await self._smart_insert(
                     path,
                     original_content,
-                    read_mtime,
-                    read_hash,
                     anchor,
                     code,
                     position,
@@ -274,8 +207,6 @@ IMPORTANT:
                 result = await self._block_edit(
                     path,
                     original_content,
-                    read_mtime,
-                    read_hash,
                     start_line,
                     end_line,
                     new_code,
@@ -295,8 +226,6 @@ IMPORTANT:
         self,
         path: Path,
         original_content: str,
-        read_mtime: float,
-        read_hash: str,
         old_code: str,
         new_code: str,
         fuzzy_match: bool,
@@ -347,11 +276,6 @@ IMPORTANT:
             output_parts.append("[DRY RUN] No changes made to file.")
             return "\n".join(output_parts)
 
-        # Stale-detection: ensure the file hasn't changed since we read it
-        stale_msg = await _check_stale(path, read_mtime, read_hash, original_content)
-        if stale_msg:
-            return stale_msg
-
         # Create backup if requested
         backup_path = None
         if create_backup:
@@ -377,8 +301,6 @@ IMPORTANT:
         self,
         path: Path,
         original_content: str,
-        read_mtime: float,
-        read_hash: str,
         anchor: str,
         code: str,
         position: str,
@@ -426,11 +348,6 @@ IMPORTANT:
             output_parts.append("[DRY RUN] No changes made to file.")
             return "\n".join(output_parts)
 
-        # Stale-detection: ensure the file hasn't changed since we read it
-        stale_msg = await _check_stale(path, read_mtime, read_hash, original_content)
-        if stale_msg:
-            return stale_msg
-
         # Create backup and apply
         backup_path = None
         if create_backup:
@@ -446,8 +363,6 @@ IMPORTANT:
         self,
         path: Path,
         original_content: str,
-        read_mtime: float,
-        read_hash: str,
         start_line: int,
         end_line: int,
         new_content_block: str,
@@ -483,11 +398,6 @@ IMPORTANT:
         if dry_run:
             output_parts.append("[DRY RUN] No changes made to file.")
             return "\n".join(output_parts)
-
-        # Stale-detection: ensure the file hasn't changed since we read it
-        stale_msg = await _check_stale(path, read_mtime, read_hash, original_content)
-        if stale_msg:
-            return stale_msg
 
         # Create backup and apply
         backup_path = None
