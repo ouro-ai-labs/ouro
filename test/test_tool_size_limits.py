@@ -23,7 +23,7 @@ class TestFileReadToolSizeLimits:
 
         result = await tool.execute(str(test_file))
 
-        assert result == "Hello, World!"
+        assert str(result) == "Hello, World!"
 
     async def test_large_file_returns_partial_view(self, tmp_path):
         """Large files should return partial-view content with metadata."""
@@ -55,10 +55,10 @@ class TestFileReadToolSizeLimits:
         # Read first 10 lines
         result = await tool.execute(str(test_file), offset=0, limit=10)
 
-        assert "[Lines 1-10 of 100]" in result
-        assert "line 0" in result
-        assert "line 9" in result
-        assert "line 10" not in result
+        assert "[Lines 1-10 of 100]" in result.content
+        assert "line 0" in result.content
+        assert "line 9" in result.content
+        assert "line 10" not in result.content
 
     async def test_pagination_offset(self, tmp_path):
         """Pagination offset should work correctly."""
@@ -70,9 +70,9 @@ class TestFileReadToolSizeLimits:
         # Read lines 50-59
         result = await tool.execute(str(test_file), offset=50, limit=10)
 
-        assert "[Lines 51-60 of 100]" in result
-        assert "line 50" in result
-        assert "line 59" in result
+        assert "[Lines 51-60 of 100]" in result.content
+        assert "line 50" in result.content
+        assert "line 59" in result.content
 
     async def test_large_python_file_returns_partial_view(self, tmp_path):
         """Large Python files should return partial view with structure metadata."""
@@ -122,7 +122,7 @@ class TestFileReadToolSizeLimits:
 
         result = await tool.execute(str(test_file))
 
-        assert result == content
+        assert str(result) == content
 
     async def test_file_not_found(self):
         """Non-existent files should return error."""
