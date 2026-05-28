@@ -330,6 +330,8 @@ class InteractiveSession:
         stats = self.agent.get_memory_stats()
         model_info = self.agent.get_current_model_info()
         model_name = model_info["name"] if model_info else ""
+        session_id = self.agent.session_id or ""
+        session_prefix = session_id[:8] if session_id else ""
         self.status_bar.update(
             input_tokens=stats.get("total_input_tokens", 0),
             output_tokens=stats.get("total_output_tokens", 0),
@@ -339,6 +341,7 @@ class InteractiveSession:
             model_name=model_name,
             cache_read_tokens=stats.get("cache_read_tokens", 0),
             cache_creation_tokens=stats.get("cache_creation_tokens", 0),
+            session_prefix=session_prefix,
         )
 
     async def _handle_command(self, user_input: str) -> bool | None:
@@ -808,8 +811,9 @@ class InteractiveSession:
             f"[{colors.text_muted}]Tip: Type '/' for command suggestions, Ctrl+T to toggle thinking display[/{colors.text_muted}]\n"
         )
 
-        # Show initial status bar
+        # Show initial status bar (reflect resumed session state if any)
         if Config.TUI_STATUS_BAR:
+            self._update_status_bar()
             self.status_bar.show()
 
         try:
