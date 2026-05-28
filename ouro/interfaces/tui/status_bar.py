@@ -25,6 +25,7 @@ class StatusBarState:
     model_name: str = ""
     cache_read_tokens: int = 0
     cache_creation_tokens: int = 0
+    session_prefix: str = ""
 
 
 class StatusBar:
@@ -66,6 +67,12 @@ class StatusBar:
 
         # Build status items
         items = []
+
+        # Session prefix (if set)
+        if self.state.session_prefix:
+            items.append(
+                f"[{colors.text_secondary}]Session:[/{colors.text_secondary}] [{colors.primary}]{self.state.session_prefix}[/{colors.primary}]"
+            )
 
         # Model name (if set)
         if self.state.model_name:
@@ -132,6 +139,7 @@ class StatusBar:
         model_name: Optional[str] = None,
         cache_read_tokens: Optional[int] = None,
         cache_creation_tokens: Optional[int] = None,
+        session_prefix: Optional[str] = None,
     ) -> None:
         """Update status bar state.
 
@@ -145,6 +153,7 @@ class StatusBar:
             model_name: Current model name
             cache_read_tokens: Total cache read tokens
             cache_creation_tokens: Total cache creation (write) tokens
+            session_prefix: Current session prefix
         """
         if input_tokens is not None:
             self.state.input_tokens = input_tokens
@@ -164,6 +173,8 @@ class StatusBar:
             self.state.cache_read_tokens = cache_read_tokens
         if cache_creation_tokens is not None:
             self.state.cache_creation_tokens = cache_creation_tokens
+        if session_prefix is not None:
+            self.state.session_prefix = session_prefix
 
         # Refresh live display if active
         if self._live is not None:
