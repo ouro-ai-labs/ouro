@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from ouro.capabilities.tasks.models import TaskStatus
-from ouro.capabilities.tasks.store import ClaimResult, TaskStore
+from ouro.capabilities.tasks.store import TaskStore
 
 
 @pytest.fixture
@@ -148,7 +148,7 @@ class TestListAvailable:
         assert available[0].id == t2.id
 
     def test_available_excludes_owned(self, store: TaskStore) -> None:
-        t1 = store.create(subject="Claimed", description="...", owner="alice")
+        store.create(subject="Claimed", description="...", owner="alice")
         t2 = store.create(subject="Free", description="...")
         available = store.list_available()
         assert len(available) == 1
@@ -156,7 +156,7 @@ class TestListAvailable:
 
     def test_available_excludes_blocked(self, store: TaskStore) -> None:
         t1 = store.create(subject="Blocker", description="...")
-        t2 = store.create(subject="Blocked", description="...", blockedBy=[t1.id])
+        store.create(subject="Blocked", description="...", blockedBy=[t1.id])
         available = store.list_available()
         # Only t1 is available (pending, unowned, not blocked)
         assert len(available) == 1

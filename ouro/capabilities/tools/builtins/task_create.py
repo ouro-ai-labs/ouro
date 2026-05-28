@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from ouro.capabilities.tasks.models import TaskStatus
 from ouro.capabilities.tasks.store import TaskStore
 from ouro.capabilities.tools.base import BaseTool
 

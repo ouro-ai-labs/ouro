@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from ouro.capabilities.tasks.models import TaskStatus
 from ouro.capabilities.tasks.store import TaskStore
 from ouro.capabilities.tools.builtins.task_create import TaskCreateTool
 from ouro.capabilities.tools.builtins.task_delete import TaskDeleteTool

@@ -5,7 +5,7 @@ from __future__ import annotations
 from ouro.core.log import get_logger
 
 from .models import Task, TaskStatus
-from .store import ClaimResult, TaskStore
+from .store import TaskStore
 
 logger = get_logger(__name__)
 
@@ -149,7 +149,9 @@ class TaskEngine:
         """Return tasks that have unresolved blockers."""
         all_tasks = self.store.list_all()
         completed_ids = {t.id for t in all_tasks if t.status == TaskStatus.COMPLETED}
-        return [t for t in all_tasks if t.blockedBy and not all(b in completed_ids for b in t.blockedBy)]
+        return [
+            t for t in all_tasks if t.blockedBy and not all(b in completed_ids for b in t.blockedBy)
+        ]
 
     def format_task_list(self, tasks: list[Task] | None = None) -> str:
         """Format tasks for display, similar to TodoList.format_list()."""
@@ -164,20 +166,14 @@ class TaskEngine:
 
         lines = ["Current Task List:"]
         for task in tasks:
-            status_symbol = {
-                TaskStatus.PENDING: "⏳",
-                TaskStatus.IN_PROGRESS: "🔄",
-                TaskStatus.COMPLETED: "✅",
-            }[task.status]
-
             owner_str = f" ({task.owner})" if task.owner else ""
             blockers = [b for b in task.blockedBy if b not in completed_ids]
-            blocked_str = f" [blocked by {', '.join(f'#{b}' for b in blockers)}]" if blockers else ""
+            blocked_str = (
+                f" [blocked by {', '.join(f'#{b}' for b in blockers)}]" if blockers else ""
+            )
 
             display = task.activeForm or task.subject
-            lines.append(
-                f"#{task.id} [{task.status.value}]{owner_str} {display}{blocked_str}"
-            )
+            lines.append(f"#{task.id} [{task.status.value}]{owner_str} {display}{blocked_str}")
 
         # Summary
         pending = sum(1 for t in tasks if t.status == TaskStatus.PENDING)

@@ -23,13 +23,16 @@ class ClaimResult:
     """Result of a task claim attempt."""
 
     success: bool
-    reason: Literal[
-        "task_not_found",
-        "already_claimed",
-        "already_resolved",
-        "blocked",
-        "agent_busy",
-    ] | None = None
+    reason: (
+        Literal[
+            "task_not_found",
+            "already_claimed",
+            "already_resolved",
+            "blocked",
+            "agent_busy",
+        ]
+        | None
+    ) = None
     task: Task | None = None
     busy_with_tasks: list[str] | None = None
     blocked_by_tasks: list[str] | None = None
@@ -84,12 +87,8 @@ class TaskStore:
                 VALUES ('default', 0)
                 """
             )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)"
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_tasks_owner ON tasks(owner)"
-            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_owner ON tasks(owner)")
             conn.commit()
 
     # ------------------------------------------------------------------
@@ -196,9 +195,7 @@ class TaskStore:
         """Get a task by id."""
         with sqlite3.connect(self._db_path, timeout=30.0) as conn:
             conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                "SELECT * FROM tasks WHERE id = ?", (task_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
             return self._task_from_row(row) if row else None
 
     def update(self, task_id: str, **fields) -> Task | None:
@@ -229,9 +226,7 @@ class TaskStore:
         with sqlite3.connect(self._db_path, timeout=30.0) as conn:
             conn.row_factory = sqlite3.Row
             # Read current task
-            row = conn.execute(
-                "SELECT * FROM tasks WHERE id = ?", (task_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
             if not row:
                 return None
 
@@ -260,18 +255,14 @@ class TaskStore:
             conn.commit()
 
             # Return updated task
-            row = conn.execute(
-                "SELECT * FROM tasks WHERE id = ?", (task_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
             return self._task_from_row(row)
 
     def delete(self, task_id: str) -> bool:
         """Delete a task and clean up references in blocks/blockedBy."""
         with sqlite3.connect(self._db_path, timeout=30.0) as conn:
             conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                "SELECT * FROM tasks WHERE id = ?", (task_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
             if not row:
                 return False
 
@@ -302,9 +293,7 @@ class TaskStore:
         """Return all tasks ordered by creation time."""
         with sqlite3.connect(self._db_path, timeout=30.0) as conn:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                "SELECT * FROM tasks ORDER BY created_at"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM tasks ORDER BY created_at").fetchall()
             return [self._task_from_row(r) for r in rows]
 
     def list_available(self, agent_id: str | None = None) -> list[Task]:
@@ -329,9 +318,7 @@ class TaskStore:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 # 1. Read target task
-                row = conn.execute(
-                    "SELECT * FROM tasks WHERE id = ?", (task_id,)
-                ).fetchone()
+                row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
                 if not row:
                     conn.rollback()
                     return ClaimResult(success=False, reason="task_not_found")
@@ -361,9 +348,7 @@ class TaskStore:
                 completed_ids = {
                     r["id"] for r in all_tasks if r["status"] == TaskStatus.COMPLETED.value
                 }
-                unresolved_blockers = [
-                    b for b in task.blockedBy if b not in completed_ids
-                ]
+                unresolved_blockers = [b for b in task.blockedBy if b not in completed_ids]
                 if unresolved_blockers:
                     conn.rollback()
                     return ClaimResult(
@@ -389,7 +374,6 @@ class TaskStore:
                     )
 
                 # 6. Claim!
-                import time
 
                 conn.execute(
                     "UPDATE tasks SET owner = ?, status = ?, completed_at = ? WHERE id = ?",
@@ -398,9 +382,7 @@ class TaskStore:
                 conn.commit()
 
                 # Return updated task
-                row = conn.execute(
-                    "SELECT * FROM tasks WHERE id = ?", (task_id,)
-                ).fetchone()
+                row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
                 updated = self._task_from_row(row)
                 logger.debug(f"Agent '{agent_id}' claimed task {task_id}")
                 return ClaimResult(success=True, task=updated)
