@@ -14,13 +14,23 @@ class ShellTool(BaseTool):
     MAX_TIMEOUT = 600.0  # Maximum allowed timeout
 
     # Exit-code semantics for common commands.
-    # Maps (command_base, exit_code) -> human-readable meaning.
-    _EXIT_SEMANTICS: dict[tuple[str, int], str] = {
-        ("grep", 1): "no matches found",
-        ("rg", 1): "no matches found",
-        ("find", 1): "no matches found",
-        ("diff", 1): "files differ",
-        ("git", 1): "no changes / nothing to do",
+    #
+    # Each entry maps (command_base, exit_code) -> (is_error, explanation).
+    # is_error=False means the exit code conveys information, not failure
+    # (e.g. grep returning 1 for "no matches" is not an error condition).
+    _EXIT_SEMANTICS: dict[tuple[str, int], tuple[bool, str]] = {
+        # grep / ripgrep: 0=matches, 1=no matches, 2+=error
+        ("grep", 1): (False, "no matches found"),
+        ("rg", 1): (False, "no matches found"),
+        # find: 0=success, 1=partial success, 2+=error
+        ("find", 1): (False, "some directories were inaccessible"),
+        # diff: 0=identical, 1=differ, 2+=error
+        ("diff", 1): (False, "files differ"),
+        # test / [: 0=true, 1=false, 2+=error
+        ("test", 1): (False, "condition is false"),
+        ("[", 1): (False, "condition is false"),
+        # git: many subcommands use 1 for "nothing to do"
+        ("git", 1): (False, "no changes / nothing to do"),
     }
 
     def __init__(self, attribution_enabled: bool = True) -> None:
@@ -33,16 +43,31 @@ class ShellTool(BaseTool):
 
     @classmethod
     def _command_base(cls, command: str) -> str | None:
-        """Extract the base command name (first token, stripped of flags)."""
+        """Extract the base command name from a command line.
+
+        Handles:
+        - Leading paths: /usr/bin/grep -> grep
+        - Pipes: cat file | grep pattern -> grep (last command determines exit code)
+        - Basic command with flags: grep -r foo -> grep
+        """
         if not command:
             return None
-        first = command.strip().split(None, 1)[0]
+
+        # Split on pipes; the last segment determines the exit code
+        segments = command.split("|")
+        last_segment = segments[-1].strip()
+
+        # First token of the last segment
+        first = last_segment.split(None, 1)[0]
         # Strip leading path, e.g. /usr/bin/grep -> grep
         return first.rsplit("/", 1)[-1]
 
     @classmethod
-    def _explain_exit_code(cls, command: str, code: int) -> str | None:
-        """Return a human-readable explanation for a non-zero exit code, if known."""
+    def _explain_exit_code(cls, command: str, code: int) -> tuple[bool, str] | None:
+        """Return (is_error, explanation) for a non-zero exit code, if known.
+
+        Returns None for unknown commands/codes — caller should treat as generic error.
+        """
         if code == 0:
             return None
         base = cls._command_base(command)
@@ -115,12 +140,14 @@ class ShellTool(BaseTool):
             # Append exit-code explanation for known commands
             returncode = process.returncode
             if returncode is not None and returncode != 0:
-                explanation = self._explain_exit_code(command, returncode)
-                if explanation:
+                semantic = self._explain_exit_code(command, returncode)
+                if semantic is not None:
+                    is_error, explanation = semantic
+                    prefix = "exit" if is_error else "info"
                     output = (
-                        f"{output}\n[exit {returncode}: {explanation}]"
+                        f"{output}\n[{prefix} {returncode}: {explanation}]"
                         if output
-                        else f"[exit {returncode}: {explanation}]"
+                        else f"[{prefix} {returncode}: {explanation}]"
                     )
                 else:
                     output = f"{output}\n[exit {returncode}]" if output else f"[exit {returncode}]"
