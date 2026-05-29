@@ -75,6 +75,7 @@ See [LiteLLM Providers](https://docs.litellm.ai/docs/providers) for the full pro
 - **Self-verification**: Ralph Loop verifies the agent's answer against the original task and re-enters if incomplete (`--verify`)
 - **Parallel execution**: Concurrent readonly tool calls in a single turn, plus `multi_task` for spawning parallel sub-agents with dependency ordering
 - **Memory system**: LLM-driven compression, file-based long-term memory, FTS5 conversation recall, and YAML session persistence resumable across restarts
+- **Task V2** (Phase 1): SQLite-backed persistent task store with dependency graphs — enable via `AgentBuilder.with_task_v2()` for multi-agent coordination
 - **Proactive mechanisms**: Heartbeat self-checks + cron-scheduled tasks, with results broadcast to active IM sessions
 - **Personality**: Customizable soul file (`~/.ouro/bot/soul.md`) defines bot identity and tone
 - **Skills**: Extensible skill registry — dynamically loaded per session
@@ -115,6 +116,7 @@ README — start with the umbrella overview, then drill in:
 - [Configuration](docs/configuration.md) -- model setup, runtime settings, custom endpoints
 - [Examples](docs/examples.md) -- usage patterns and programmatic API
 - [Memory Management](docs/memory-management.md) -- compression, persistence, token tracking
+- [Task V2](docs/task-v2.md) -- persistent task store with dependency graphs (Phase 1)
 - [Extending](docs/extending.md) -- adding tools, agents, LLM providers
 - [Packaging](docs/packaging.md) -- building, publishing, Docker
 
