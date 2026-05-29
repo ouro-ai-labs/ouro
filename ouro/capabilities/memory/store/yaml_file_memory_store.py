@@ -247,6 +247,7 @@ class YamlFileMemoryStore(MemoryStore):
         session_id: str,
         system_messages: List[LLMMessage],
         messages: List[LLMMessage],
+        token_stats: Optional[Dict[str, Any]] = None,
     ) -> None:
         dir_name = await self._resolve_session_dir(session_id)
         if not dir_name:
@@ -269,6 +270,13 @@ class YamlFileMemoryStore(MemoryStore):
             data["messages"] = messages_list
 
             data["updated_at"] = datetime.now().isoformat()
+
+            # Persist token usage statistics if provided
+            if token_stats is not None:
+                data["token_stats"] = token_stats
+            elif "token_stats" in data:
+                # Preserve existing token_stats if not explicitly cleared
+                pass
 
             await self._save_session_data(dir_name, data)
 
@@ -298,6 +306,7 @@ class YamlFileMemoryStore(MemoryStore):
             "stats": {
                 "created_at": data.get("created_at", ""),
             },
+            "token_stats": data.get("token_stats"),
         }
 
     async def list_sessions(self, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:

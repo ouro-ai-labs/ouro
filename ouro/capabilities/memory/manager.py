@@ -109,6 +109,28 @@ class MemoryManager:
             system_messages=session_data.get("system_messages") or [],
             detached=session_data.get("messages") or [],
         )
+
+        # Restore token usage statistics if present
+        token_stats = session_data.get("token_stats")
+        if token_stats:
+            manager.token_tracker.total_input_tokens = token_stats.get("total_input_tokens", 0)
+            manager.token_tracker.total_output_tokens = token_stats.get("total_output_tokens", 0)
+            manager.token_tracker.total_cache_read_tokens = token_stats.get(
+                "total_cache_read_tokens", 0
+            )
+            manager.token_tracker.total_cache_creation_tokens = token_stats.get(
+                "total_cache_creation_tokens", 0
+            )
+            manager.token_tracker.compression_savings = token_stats.get("compression_savings", 0)
+            manager.token_tracker.compression_cost = token_stats.get("compression_cost", 0)
+            logger.info(
+                f"Restored token stats for session {session_id}: "
+                f"input={manager.token_tracker.total_input_tokens}, "
+                f"output={manager.token_tracker.total_output_tokens}, "
+                f"cache_read={manager.token_tracker.total_cache_read_tokens}, "
+                f"cache_creation={manager.token_tracker.total_cache_creation_tokens}"
+            )
+
         logger.info(
             f"Loaded session {session_id}: "
             f"{len(context.detached)} messages, "
@@ -202,10 +224,21 @@ class MemoryManager:
             logger.debug("Skipping save_memory: no session created")
             return
 
+        # Build token stats snapshot for persistence
+        token_stats = {
+            "total_input_tokens": self.token_tracker.total_input_tokens,
+            "total_output_tokens": self.token_tracker.total_output_tokens,
+            "total_cache_read_tokens": self.token_tracker.total_cache_read_tokens,
+            "total_cache_creation_tokens": self.token_tracker.total_cache_creation_tokens,
+            "compression_savings": self.token_tracker.compression_savings,
+            "compression_cost": self.token_tracker.compression_cost,
+        }
+
         await self._store.save_memory(
             session_id=self.session_id,
             system_messages=sys_msgs,
             messages=messages,
+            token_stats=token_stats,
         )
         # Reindex FTS recall — best-effort, never blocks the save path.
         try:

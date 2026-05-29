@@ -40,6 +40,7 @@ class MemoryStore(ABC):
         session_id: str,
         system_messages: List[LLMMessage],
         messages: List[LLMMessage],
+        token_stats: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Save complete memory state (replaces existing data).
 
@@ -47,6 +48,7 @@ class MemoryStore(ABC):
             session_id: Session ID
             system_messages: List of system messages
             messages: List of regular messages
+            token_stats: Optional token usage statistics to persist
         """
 
     @abstractmethod
