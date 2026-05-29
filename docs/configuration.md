@@ -110,6 +110,37 @@ Long-term memory uses **named markdown blocks** at
 [memory-management.md](memory-management.md#long-term-memory-memory-blocks)
 for details.
 
+### Task V2
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `TASK_V2_ENABLED` | `false` | Enable persistent task store (Phase 1, opt-in) |
+| `TASK_V2_STORE_PATH` | `~/.ouro/tasks/default.db` | SQLite database path for tasks |
+
+Task V2 provides a SQLite-backed persistent task store with dependency graphs. When enabled, agents get 5 additional tools: `task_create`, `task_update`, `task_list`, `task_get`, `task_delete`. Tasks persist across restarts and support atomic claim/unclaim for multi-agent coordination.
+
+Enable via AgentBuilder:
+
+```python
+agent = (
+    AgentBuilder()
+    .with_llm(llm)
+    .with_task_v2(enabled=True)  # Uses default path
+    .build()
+)
+```
+
+Or with a custom path:
+
+```python
+agent = (
+    AgentBuilder()
+    .with_llm(llm)
+    .with_task_v2(enabled=True, store_path="/custom/path/tasks.db")
+    .build()
+)
+```
+
 ### Retry
 
 | Setting | Default | Description |

@@ -134,14 +134,65 @@ ouro --task "Run pytest and summarize the results"
 ouro --task "List all classes and functions in src/"
 ```
 
+## Task V2 (Persistent Task Management)
+
+Task V2 provides a SQLite-backed persistent task store with dependency graphs. Enable it when building an agent:
+
+```python
+from ouro.capabilities.builder import AgentBuilder
+from ouro.core.llm import LiteLLMAdapter
+
+llm = LiteLLMAdapter(model="openai/gpt-4o", api_key="sk-...")
+
+agent = (
+    AgentBuilder()
+    .with_llm(llm)
+    .with_task_v2(enabled=True)  # Enable persistent task store
+    .build()
+)
+
+# The agent now has access to 5 task tools:
+# - task_create: Create tasks with optional dependencies
+# - task_update: Update status, owner, dependencies
+# - task_list: List all tasks with status
+# - task_get: Get details of a specific task
+# - task_delete: Delete a task
+```
+
+Tasks persist across restarts in `~/.ouro/tasks/default.db`. Custom path:
+
+```python
+agent = (
+    AgentBuilder()
+    .with_llm(llm)
+    .with_task_v2(enabled=True, store_path="/path/to/tasks.db")
+    .build()
+)
+```
+
+Access the task store programmatically:
+
+```python
+# List all tasks
+print(agent.task_store.list_all())
+
+# Create a task directly
+from ouro.capabilities.tasks import TaskStore
+store = TaskStore("~/.ouro/tasks/default.db")
+task = store.create(subject="Fix bug", description="Fix the auth bug")
+
+# Claim a task (atomic, prevents double-claim)
+result = store.claim(task.id, owner="alice")
+if result.success:
+    print(f"Claimed task #{task.id}")
+```
+
 ## Programmatic Usage
 
 ```python
 import asyncio
-from agent.agent import LoopAgent
-from llm import LiteLLMAdapter, ModelManager
-from tools.file_ops import FileReadTool
-from tools.shell import ShellTool
+from ouro.capabilities.builder import AgentBuilder
+from ouro.core.llm import LiteLLMAdapter, ModelManager
 
 async def main():
     mm = ModelManager()
@@ -155,10 +206,11 @@ async def main():
         api_base=profile.api_base,
     )
 
-    agent = LoopAgent(
-        llm=llm,
-        max_iterations=15,
-        tools=[ShellTool(), FileReadTool()],
+    agent = (
+        AgentBuilder()
+        .with_llm(llm)
+        .with_max_iterations(15)
+        .build()
     )
 
     result = await agent.run("Calculate 2^100 using python")

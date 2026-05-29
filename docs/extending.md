@@ -64,6 +64,65 @@ tools = [
 - Return descriptive error messages instead of raising exceptions.
 - Keep each tool focused on one operation.
 
+## Task V2 Tools
+
+Task V2 provides 5 built-in tools for persistent task management. They are auto-injected when you enable Task V2 via `AgentBuilder.with_task_v2()`.
+
+### Available Tools
+
+| Tool | Readonly | Purpose |
+|------|----------|---------|
+| `task_create` | No | Create a task with subject, description, optional dependencies |
+| `task_update` | No | Update status, owner, dependencies, or metadata |
+| `task_list` | Yes | List all tasks with status summary |
+| `task_get` | Yes | Get full details of a specific task |
+| `task_delete` | No | Permanently delete a task and clean up references |
+
+### Direct Store Access
+
+For programmatic use (e.g., swarm coordination), access the store directly:
+
+```python
+from ouro.capabilities.tasks import TaskStore, TaskStatus
+
+store = TaskStore("~/.ouro/tasks/default.db")
+
+# Create with dependencies
+task = store.create(
+    subject="Refactor auth",
+    description="Move auth logic to middleware",
+    blockedBy=["1", "2"]  # Wait for tasks #1 and #2
+)
+
+# Claim (atomic, prevents double-claim)
+result = store.claim(task.id, owner="agent-1")
+if result.success:
+    print(f"Claimed: {result.task}")
+else:
+    print(f"Failed: {result.error}")
+
+# Complete
+store.update(task.id, status=TaskStatus.COMPLETED)
+
+# Query
+available = store.list_available()  # Pending + unowned + unblocked
+all_tasks = store.list_all()
+```
+
+### Store API
+
+```python
+class TaskStore:
+    def create(self, subject, description, ...) -> Task
+    def get(self, task_id) -> Task | None
+    def update(self, task_id, **fields) -> Task
+    def delete(self, task_id) -> None
+    def claim(self, task_id, owner) -> ClaimResult
+    def unassign(self, task_id) -> Task
+    def list_all(self) -> list[Task]
+    def list_available(self) -> list[Task]
+```
+
 ## Creating Agents
 
 Agents inherit from `BaseAgent`. The only built-in agent is `LoopAgent`.
