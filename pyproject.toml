@@ -101,6 +101,7 @@ packages = [
     "ouro.capabilities.rules",
     "ouro.capabilities.skills",
     "ouro.capabilities.tasks",
+    "ouro.capabilities.swarm",
     "ouro.capabilities.todo",
     "ouro.capabilities.tools",
     "ouro.capabilities.tools.builtins",
