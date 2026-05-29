@@ -42,8 +42,16 @@ from .prompts import DEFAULT_SYSTEM_PROMPT
 from .rules import NestedAgentsMdRule, ReadBeforeWriteRule
 from .skills.registry import SkillsRegistry
 from .skills.render import render_skills_section
+
+# Task V2 (Phase 1 — opt-in)
+from .tasks.store import TaskStore
 from .todo.state import TodoList
 from .tools.base import BaseTool
+from .tools.builtins.task_create import TaskCreateTool
+from .tools.builtins.task_delete import TaskDeleteTool
+from .tools.builtins.task_get import TaskGetTool
+from .tools.builtins.task_list import TaskListTool
+from .tools.builtins.task_update import TaskUpdateTool
 from .tools.builtins.todo_tool import TodoTool
 from .tools.executor import ToolExecutor
 from .verification.hook import VerificationHook
@@ -100,6 +108,9 @@ class AgentBuilder:
     read_before_write: bool = True
     nested_agents_md: bool = True
     extra_rules: list[Rule] = field(default_factory=list)
+    # Task V2 feature flag (off by default; Phase 1 opt-in)
+    task_v2_enabled: bool = False
+    task_store_path: str | None = None
 
     # ---- LLM ----------------------------------------------------------------
 
@@ -167,6 +178,25 @@ class AgentBuilder:
         self.verifier = verifier
         return self
 
+    # ---- Task V2 ----------------------------------------------------------
+
+    def with_task_v2(self, enabled: bool = True, store_path: str | None = None) -> AgentBuilder:
+        """Enable Task V2 persistent task store.
+
+        When enabled, the agent gets task_create, task_update, task_list,
+        task_get, and task_delete tools alongside the legacy TodoTool.
+        Pass store_path to override the default ~/.ouro/tasks/default.db location.
+        """
+        self.task_v2_enabled = enabled
+        self.task_store_path = store_path
+        return self
+
+    def without_task_v2(self) -> AgentBuilder:
+        """Explicitly disable Task V2 (default)."""
+        self.task_v2_enabled = False
+        self.task_store_path = None
+        return self
+
     # ---- Progress sink + extra hooks ---------------------------------------
 
     def with_progress_sink(self, progress: ProgressSink) -> AgentBuilder:
@@ -201,6 +231,25 @@ class AgentBuilder:
         todo_list = TodoList()
         tools: list[BaseTool] = list(self.tools)
         tools.append(TodoTool(todo_list))
+
+        # Task V2 store + tools (opt-in, Phase 1)
+        task_store: TaskStore | None = None
+        if self.task_v2_enabled:
+            import os
+
+            store_path = self.task_store_path or os.path.expanduser("~/.ouro/tasks/default.db")
+            os.makedirs(os.path.dirname(store_path), exist_ok=True)
+            task_store = TaskStore(store_path)
+            tools.extend(
+                [
+                    TaskCreateTool(task_store),
+                    TaskUpdateTool(task_store),
+                    TaskListTool(task_store),
+                    TaskGetTool(task_store),
+                    TaskDeleteTool(task_store),
+                ]
+            )
+
         tool_executor = ToolExecutor(tools)
 
         # Memory + hook (optional but typically on).
@@ -267,6 +316,7 @@ class AgentBuilder:
             progress=self.progress,
             sessions_dir=self.sessions_dir,
             memory_dir=self.memory_dir,
+            task_store=task_store,
         )
 
 
@@ -321,6 +371,7 @@ class ComposedAgent:
         progress: ProgressSink,
         sessions_dir: str | None,
         memory_dir: str | None,
+        task_store: TaskStore | None = None,
     ) -> None:
         self._core = core
         self.llm = llm
@@ -335,6 +386,7 @@ class ComposedAgent:
         self._progress = progress
         self._sessions_dir = sessions_dir
         self._memory_dir = memory_dir
+        self.task_store = task_store
         # Persistent conversation state across multi-turn runs.  System
         # messages stay fixed after the first turn; detached messages
         # accumulate user / assistant / tool exchanges.  The core loop
