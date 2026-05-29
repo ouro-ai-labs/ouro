@@ -64,7 +64,9 @@ Returns:
     async def execute(self, taskId: str, agentId: str = "", **kwargs: Any) -> str:
         owner = agentId or self._agent_id
         if not owner:
-            return "Error: No agent identifier provided. Pass agentId parameter or configure the tool."
+            return (
+                "Error: No agent identifier provided. Pass agentId parameter or configure the tool."
+            )
 
         result = self._store.claim(taskId, owner)
 

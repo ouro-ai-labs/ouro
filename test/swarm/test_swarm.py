@@ -39,6 +39,7 @@ class FakeLLM:
 
     def to_message(self, response):
         from ouro.core.llm import LLMMessage
+
         return LLMMessage(role="assistant", content=response.content)
 
     @property
@@ -133,7 +134,9 @@ class TestSwarmCoordinator:
         assert status.completed == 0
         assert len(status.available_agents) == 2
 
-    async def test_health_check_recovery(self, coordinator: SwarmCoordinator, store: TaskStore) -> None:
+    async def test_health_check_recovery(
+        self, coordinator: SwarmCoordinator, store: TaskStore
+    ) -> None:
         store.create(subject="Test task", description="...")
         await coordinator.spawn_agents(n=1)
 

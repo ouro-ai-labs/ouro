@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Callable
 
 from ouro.capabilities.builder import AgentBuilder, ComposedAgent
 from ouro.capabilities.tasks.engine import TaskEngine
@@ -160,7 +160,7 @@ class SwarmCoordinator:
             prompt = self._build_task_prompt(task)
 
             # Run the agent
-            result = await handle.agent.run(prompt)
+            await handle.agent.run(prompt)
 
             # Mark complete
             self.engine.complete_task(task_id)
@@ -220,14 +220,10 @@ class SwarmCoordinator:
         in_progress = sum(1 for t in all_tasks if t.status == TaskStatus.IN_PROGRESS)
         completed = len(completed_ids)
         blocked = sum(
-            1
-            for t in all_tasks
-            if t.blockedBy and not all(b in completed_ids for b in t.blockedBy)
+            1 for t in all_tasks if t.blockedBy and not all(b in completed_ids for b in t.blockedBy)
         )
 
-        available = [
-            h.agent_id for h in self.agents.values() if not h.task_ids
-        ]
+        available = [h.agent_id for h in self.agents.values() if not h.task_ids]
 
         return SwarmStatus(
             agents=list(self.agents.values()),
