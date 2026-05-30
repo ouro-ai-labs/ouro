@@ -216,6 +216,7 @@ Examples:
             cmd.append("-c")  # --count
         else:  # with_context
             cmd.append("-n")  # --line-number
+            cmd.append("--heading")  # group matches by file, print path once
             if context_lines > 0:
                 cmd.extend(["-C", str(context_lines)])
 
