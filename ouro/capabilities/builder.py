@@ -47,6 +47,7 @@ from .skills.render import render_skills_section
 from .tasks.store import TaskStore
 from .todo.state import TodoList
 from .tools.base import BaseTool
+from .tools.builtins.task_claim import TaskClaimTool
 from .tools.builtins.task_create import TaskCreateTool
 from .tools.builtins.task_delete import TaskDeleteTool
 from .tools.builtins.task_get import TaskGetTool
@@ -111,6 +112,7 @@ class AgentBuilder:
     # Task V2 feature flag (off by default; Phase 1 opt-in)
     task_v2_enabled: bool = False
     task_store_path: str | None = None
+    agent_id: str | None = None
 
     # ---- LLM ----------------------------------------------------------------
 
@@ -180,15 +182,19 @@ class AgentBuilder:
 
     # ---- Task V2 ----------------------------------------------------------
 
-    def with_task_v2(self, enabled: bool = True, store_path: str | None = None) -> AgentBuilder:
+    def with_task_v2(
+        self, enabled: bool = True, store_path: str | None = None, agent_id: str | None = None
+    ) -> AgentBuilder:
         """Enable Task V2 persistent task store.
 
         When enabled, the agent gets task_create, task_update, task_list,
-        task_get, and task_delete tools alongside the legacy TodoTool.
+        task_get, task_delete, and task_claim tools alongside the legacy TodoTool.
         Pass store_path to override the default ~/.ouro/tasks/default.db location.
+        Pass agent_id to set the default agent identifier for task_claim.
         """
         self.task_v2_enabled = enabled
         self.task_store_path = store_path
+        self.agent_id = agent_id
         return self
 
     def without_task_v2(self) -> AgentBuilder:
@@ -240,6 +246,7 @@ class AgentBuilder:
             store_path = self.task_store_path or os.path.expanduser("~/.ouro/tasks/default.db")
             os.makedirs(os.path.dirname(store_path), exist_ok=True)
             task_store = TaskStore(store_path)
+            claim_tool = TaskClaimTool(task_store, agent_id=self.agent_id)
             tools.extend(
                 [
                     TaskCreateTool(task_store),
@@ -247,6 +254,7 @@ class AgentBuilder:
                     TaskListTool(task_store),
                     TaskGetTool(task_store),
                     TaskDeleteTool(task_store),
+                    claim_tool,
                 ]
             )
 
