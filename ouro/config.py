@@ -21,6 +21,11 @@ MAX_ITERATIONS=1000
 # Ralph Loop (outer verification loop — re-checks task completion)
 # RALPH_LOOP_MAX_ITERATIONS=3
 
+# Agent Team / Task V2 (persistent task store + multi-agent coordination)
+# When enabled, replaces TodoTool and MultiTaskTool with task_create,
+# task_claim, task_update, task_list, task_get, task_delete tools.
+# ENABLE_AGENT_TEAM=false
+
 # Commit / PR attribution: append "Co-Authored-By: ouro" to commits and
 # "Generated with ouro" to PR bodies the agent authors. Set to false to disable.
 # ATTRIBUTION_ENABLED=true
@@ -87,6 +92,11 @@ class Config:
 
     # Ralph Loop (outer verification loop)
     RALPH_LOOP_MAX_ITERATIONS = int(_cfg.get("RALPH_LOOP_MAX_ITERATIONS", "3"))
+
+    # Agent Team / Task V2 (persistent task store + multi-agent coordination)
+    # When enabled, replaces TodoTool and MultiTaskTool with task_create,
+    # task_claim, task_update, task_list, task_get, task_delete tools.
+    ENABLE_AGENT_TEAM = _cfg.get("ENABLE_AGENT_TEAM", "false").lower() == "true"
 
     # Retry Configuration
     RETRY_MAX_ATTEMPTS = int(_cfg.get("RETRY_MAX_ATTEMPTS", "3"))
