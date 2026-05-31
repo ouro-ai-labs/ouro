@@ -43,6 +43,9 @@ from .rules import NestedAgentsMdRule, ReadBeforeWriteRule
 from .skills.registry import SkillsRegistry
 from .skills.render import render_skills_section
 
+# Auto Swarm
+from .swarm.auto_swarm_hook import AutoSwarmHook
+
 # Task V2 (Phase 1 — opt-in)
 from .tasks.store import TaskStore
 from .todo.state import TodoList
@@ -109,8 +112,9 @@ class AgentBuilder:
     read_before_write: bool = True
     nested_agents_md: bool = True
     extra_rules: list[Rule] = field(default_factory=list)
-    # Task V2 feature flag (off by default; Phase 1 opt-in)
-    task_v2_enabled: bool = False
+    # Agent Team feature flag (off by default; Phase 1 opt-in)
+    # When enabled: Task V2 tools replace TodoTool/MultiTaskTool, auto-swarm is active
+    enable_agent_team: bool = False
     task_store_path: str | None = None
     agent_id: str | None = None
 
@@ -180,26 +184,31 @@ class AgentBuilder:
         self.verifier = verifier
         return self
 
-    # ---- Task V2 ----------------------------------------------------------
+    # ---- Agent Team -------------------------------------------------------
 
-    def with_task_v2(
+    def with_agent_team(
         self, enabled: bool = True, store_path: str | None = None, agent_id: str | None = None
     ) -> AgentBuilder:
-        """Enable Task V2 persistent task store.
+        """Enable agent team collaboration with Task V2 and auto-swarm.
 
-        When enabled, the agent gets task_create, task_update, task_list,
-        task_get, task_delete, and task_claim tools alongside the legacy TodoTool.
-        Pass store_path to override the default ~/.ouro/tasks/default.db location.
-        Pass agent_id to set the default agent identifier for task_claim.
+        When enabled:
+        - Task V2 tools (task_create, task_update, task_list, task_get, task_delete, task_claim)
+          replace TodoTool and MultiTaskTool
+        - Auto-swarm is active: complex tasks are automatically decomposed
+          and executed by multiple agents in parallel
+        - Pass store_path to override the default ~/.ouro/tasks/default.db location
+        - Pass agent_id to set the default agent identifier for task_claim
+
+        When disabled (default): legacy TodoTool + MultiTaskTool are used.
         """
-        self.task_v2_enabled = enabled
+        self.enable_agent_team = enabled
         self.task_store_path = store_path
         self.agent_id = agent_id
         return self
 
-    def without_task_v2(self) -> AgentBuilder:
-        """Explicitly disable Task V2 (default)."""
-        self.task_v2_enabled = False
+    def without_agent_team(self) -> AgentBuilder:
+        """Explicitly disable agent team (default)."""
+        self.enable_agent_team = False
         self.task_store_path = None
         return self
 
@@ -233,14 +242,29 @@ class AgentBuilder:
         if self.llm is None:
             raise ValueError("AgentBuilder requires .with_llm(...) before .build()")
 
-        # Build the tool registry. TodoTool is auto-injected so all builds get it.
+        # Determine which task management system to use.
+        # When enable_agent_team=True:
+        #   - Use Task V2 tools (task_create, task_update, task_list, task_get, task_delete, task_claim)
+        #   - Skip TodoTool (replaced by Task V2)
+        #   - Auto-swarm is active for complex task decomposition
+        # When enable_agent_team=False (default):
+        #   - Use TodoTool (legacy)
+        #   - MultiTaskTool can be added manually via with_tool()
+        use_v2_mode = self.enable_agent_team
+
         todo_list = TodoList()
         tools: list[BaseTool] = list(self.tools)
-        tools.append(TodoTool(todo_list))
 
-        # Task V2 store + tools (opt-in, Phase 1)
+        if use_v2_mode:
+            # Task V2 mode: skip TodoTool, use Task V2 tools instead
+            pass  # TodoTool is NOT added
+        else:
+            # Legacy mode: TodoTool is auto-injected
+            tools.append(TodoTool(todo_list))
+
+        # Task V2 store + tools
         task_store: TaskStore | None = None
-        if self.task_v2_enabled:
+        if self.enable_agent_team:
             import os
 
             store_path = self.task_store_path or os.path.expanduser("~/.ouro/tasks/default.db")
@@ -285,6 +309,27 @@ class AgentBuilder:
                     max_iterations=self.verification_max_iterations,
                     verifier=self.verifier,
                     progress=self.progress,
+                )
+            )
+
+        # Auto-swarm hook (active when agent team is enabled).
+        if self.enable_agent_team and self.llm is not None:
+            llm = self.llm  # capture for closure
+
+            def builder_factory(agent_id: str):
+                return (
+                    AgentBuilder()
+                    .with_llm(llm)
+                    .with_agent_team(enabled=True, agent_id=agent_id)
+                    .without_memory()
+                    .with_max_iterations(self.max_iterations)
+                )
+
+            hooks.append(
+                AutoSwarmHook(
+                    llm=llm,
+                    builder_factory=builder_factory,
+                    enabled=True,
                 )
             )
 

@@ -14,13 +14,15 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import TYPE_CHECKING
 
-from ouro.capabilities.builder import AgentBuilder, ComposedAgent
 from ouro.capabilities.tasks.engine import TaskEngine
 from ouro.capabilities.tasks.models import TaskStatus
 from ouro.capabilities.tasks.store import TaskStore
 from ouro.core.log import get_logger
+
+if TYPE_CHECKING:
+    from ouro.capabilities.builder import ComposedAgent
 
 logger = get_logger(__name__)
 
@@ -62,7 +64,7 @@ class SwarmCoordinator:
     def __init__(
         self,
         store: TaskStore,
-        builder_factory: Callable[[str], AgentBuilder],
+        builder_factory,
         heartbeat_interval: float = 30.0,
         max_idle_iterations: int = 10,
     ) -> None:

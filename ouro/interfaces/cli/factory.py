@@ -99,12 +99,18 @@ def create_agent(
         .with_tools(tools)
     )
 
+    # Agent Team / Task V2: persistent task store + multi-agent coordination.
+    # When enabled, replaces TodoTool and MultiTaskTool with task_create,
+    # task_claim, task_update, task_list, task_get, task_delete tools.
+    if Config.ENABLE_AGENT_TEAM:
+        builder = builder.with_agent_team(enabled=True)
+
     agent = builder.build()
 
-    # MultiTaskTool needs the agent reference; add post-build to break
-    # the construction-time circular dependency.
-    multi = MultiTaskTool(agent)
-    agent.tool_executor.add_tool(multi)
+    # MultiTaskTool is only added when Agent Team is disabled (legacy mode).
+    if not Config.ENABLE_AGENT_TEAM:
+        multi = MultiTaskTool(agent)
+        agent.tool_executor.add_tool(multi)
 
     # MemoryBlockEditTool needs the MemoryBlockManager owned by MemoryManager;
     # add post-build for the same reason.
