@@ -25,6 +25,47 @@ Ouro ships with a unified agent core and two deployment modes:
 | **Run** | `ouro-cli` | `ouro-bot` |
 | **Guide** | [CLI Guide](docs/cli-guide.md) | [Bot Guide](docs/bot-guide.md) |
 
+## Architecture
+
+Ouro is organized into three layers with strict downward-only imports:
+
+<img src="docs/assets/architecture.png" alt="Ouro Architecture" width="800">
+
+*Each layer has its own README — start with the [umbrella overview](ouro/README.md), then drill into [`core`](ouro/core/README.md), [`capabilities`](ouro/capabilities/README.md), or [`interfaces`](ouro/interfaces/README.md).*
+
+## Features
+
+### 🤖 Agent Team — Multi-Agent Swarm with Persistent Tasks
+
+The flagship feature. Enable with `ENABLE_AGENT_TEAM=true` in `~/.ouro/config`.
+
+- **Persistent Task Store** — SQLite-backed tasks with dependency graphs (`task_create`, `task_claim`, `task_update`, `task_list`, `task_get`, `task_delete`)
+- **Atomic Task Claiming** — Agents race to claim available tasks; one agent, one in-progress task
+- **Auto-Swarm** — Complex tasks are automatically decomposed and executed by multiple agents in parallel
+- **Replaces legacy** `TodoTool` and `MultiTaskTool` when enabled
+
+### 🔄 Self-Verification — Ralph Loop
+
+The agent verifies its own answer against the original task and re-enters the loop if incomplete. Enable with `--verify` or `RALPH_LOOP_MAX_ITERATIONS=3`.
+
+### 🧠 Memory System
+
+LLM-driven compression, file-based long-term memory, FTS5 conversation recall, and YAML session persistence resumable across restarts.
+
+### 💬 Dual Deployment
+
+Same agent core, two modes:
+- **CLI** — Interactive REPL with rich TUI, slash commands, session resume
+- **Bot** — Persistent IM assistant for Lark, Slack, WeChat with proactive cron scheduling
+
+### 🔐 OAuth Login
+
+`--login` / `/login` to authenticate with ChatGPT Codex subscription models.
+
+### 📊 Benchmarks
+
+First-class [Harbor](https://github.com/laude-institute/harbor) integration for agent evaluation (see [Evaluation](#evaluation)).
+
 ## Quick Start
 
 Prerequisites: Python 3.12+ and one of [`uv`](https://docs.astral.sh/uv/) (recommended) or [`pipx`](https://pipx.pypa.io/).
@@ -68,20 +109,6 @@ ouro-bot
 
 See [LiteLLM Providers](https://docs.litellm.ai/docs/providers) for the full provider list.
 
-## Features
-
-- **Dual mode**: Interactive CLI with rich TUI + persistent IM bot (Lark, Slack) — same agent core, two deployment modes
-- **Unified agent loop**: Think-Act-Observe cycle — planning, sub-agents, and tool use all happen in one loop
-- **Self-verification**: Ralph Loop verifies the agent's answer against the original task and re-enters if incomplete (`--verify`)
-- **Parallel execution**: Concurrent readonly tool calls in a single turn, plus `multi_task` for spawning parallel sub-agents with dependency ordering
-- **Memory system**: LLM-driven compression, file-based long-term memory, FTS5 conversation recall, and YAML session persistence resumable across restarts
-- **Task V2** (Phase 1): SQLite-backed persistent task store with dependency graphs — enable via `AgentBuilder.with_task_v2()` for multi-agent coordination
-- **Proactive mechanisms**: Heartbeat self-checks + cron-scheduled tasks, with results broadcast to active IM sessions
-- **Personality**: Customizable soul file (`~/.ouro/bot/soul.md`) defines bot identity and tone
-- **Skills**: Extensible skill registry — dynamically loaded per session
-- **OAuth login**: `--login` / `/login` to authenticate with ChatGPT Codex subscription models
-- **Benchmarks**: First-class [Harbor](https://github.com/laude-institute/harbor) integration for agent evaluation (see [Evaluation](#evaluation))
-
 ## Evaluation
 
 Ouro can be evaluated on agent benchmarks using [Harbor](https://github.com/laude-institute/harbor). A convenience script `harbor-run.sh` is provided at the repo root:
@@ -97,17 +124,6 @@ export OURO_API_KEY=<your-api-key>
 ```
 
 Extra flags are forwarded to `harbor run`, so any Harbor CLI option works. See [ouro_harbor/README.md](ouro_harbor/README.md) for full details.
-
-## Architecture
-
-Ouro is a three-layer namespace package. Imports flow downward only;
-boundaries are enforced by `import-linter`. Each layer has its own
-README — start with the umbrella overview, then drill in:
-
-- **[Architecture overview](ouro/README.md)** -- the three layers and how they fit together
-- [`ouro.core`](ouro/core/README.md) -- agent loop + LLM primitives + hook protocol (Python SDK)
-- [`ouro.capabilities`](ouro/capabilities/README.md) -- `AgentBuilder`, tools, memory, skills, verification (Python SDK)
-- [`ouro.interfaces`](ouro/interfaces/README.md) -- CLI / TUI / bot entry points (no SDK)
 
 ## Documentation
 
