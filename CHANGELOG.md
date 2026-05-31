@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-31
+
+### Added
+
+- **Task V2**: persistent task store with dependency graphs (`task_create`, `task_list`, `task_update`, `task_delete`, `task_link`, `task_unlink`, `task_show`) backed by SQLite. Supports `status`, `priority`, `tags`, `due_date`, and topological ordering via `task_list --order topo` (#214).
+- **Agent Swarm**: multi-agent coordination with automatic task decomposition. The orchestrator breaks down complex tasks into subtasks, spawns specialized workers, and aggregates results. Includes `task_claim` tool for workers to pick up tasks (#216, #219).
+- **Auto-swarm mode**: `--mode auto-swarm` enables fully automatic task decomposition and multi-agent execution without manual orchestration (#219).
+- **Task V2 documentation**: new `docs/tasks.md` covering task lifecycle, dependency graphs, and swarm usage (#215).
+
+### Changed
+
+- **Memory compression threshold**: increased default from 60K to 256K tokens to reduce compaction frequency (#212).
+- **Status bar improvements**: replaced Mode indicator with ↑↓ arrows for KV cache read/write, cleaner layout (#206, #207).
+- **Session resumption**: restored status bar state and added session prefix on resume (#213).
+- **Token usage persistence**: token usage stats are now persisted and restored on session resume (#217).
+
+### Fixed
+
+- **`grep_content` token waste**: output is now grouped by file with `head_limit`/`offset` pagination, `type` filter, and anti-repetition hints to reduce `RepeatedToolCallRule` triggers (#218, #220).
+- **`smart_edit` stale detection**: added mtime + content hash checks to warn when a file changed between read and edit (#210).
+- **`ReadBeforeWriteRule` partial-read guard**: prevents overwrites when only a portion of a file was read (#208).
+- **Shell exit-code interpretation**: semantic interpretation of exit codes in shell tool results (#209).
+
 ## [0.4.4] - 2026-05-24
 
 ### Added
