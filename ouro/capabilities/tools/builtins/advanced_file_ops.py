@@ -74,6 +74,11 @@ class GrepTool(BaseTool):
 
     readonly = True
 
+    # Default cap on grep results when head_limit is unspecified.
+    # 250 is generous enough for exploratory searches while preventing context bloat.
+    # Pass head_limit=0 explicitly for unlimited.
+    DEFAULT_HEAD_LIMIT = 250
+
     def __init__(self):
         """Initialize GrepTool, checking for ripgrep availability."""
         self._rg_path = shutil.which("rg")
@@ -87,6 +92,9 @@ class GrepTool(BaseTool):
     def description(self) -> str:
         return """Search file contents using regex patterns.
 
+ALWAYS use grep_content for code search tasks. NEVER invoke `grep` or `rg` as a shell command — this tool has correct permissions and ignore patterns configured.
+If you just searched for a pattern and got results, do NOT run the exact same search again. Read the matching files or refine your pattern instead.
+
 Output modes:
 - files_only: Just list files containing matches (default)
 - with_context: Show matching lines with line numbers
@@ -94,13 +102,16 @@ Output modes:
 
 Options:
 - file_pattern: Glob pattern to filter files (e.g., '**/*.py', 'src/**/*.js')
+- type: File type to search (e.g., 'py', 'js', 'rust') — more efficient than glob for standard types
 - exclude_patterns: Glob patterns to exclude (e.g., ['**/*.pyc', 'node_modules/**'])
 - context_lines: Show N lines before and after matches (with_context mode)
 - multiline: Enable multiline pattern matching
+- head_limit: Limit output to first N results (default: 250, 0 = unlimited)
+- offset: Skip first N results before applying head_limit (default: 0)
 
 Examples:
 - Find functions: pattern="def\\s+\\w+", file_pattern="**/*.py"
-- Search imports: pattern="^import\\s+", file_pattern="src/**/*.py"
+- Search imports: pattern="^import\\s+", type="py"
 - Find TODOs: pattern="TODO|FIXME", exclude_patterns=["tests/**"]
 - Count prints: pattern="print\\(", mode="count"
 - With context: pattern="ERROR", mode="with_context", context_lines=2"""
@@ -125,14 +136,14 @@ Examples:
                 "type": "string",
                 "description": "Optional glob pattern to filter files before content search (e.g., '**/*.py', 'src/**/*.js')",
             },
+            "type": {
+                "type": "string",
+                "description": "File type to search (e.g., 'py', 'js', 'rust') — more efficient than glob for standard types",
+            },
             "exclude_patterns": {
                 "type": "array",
                 "items": {"type": "string"},
                 "description": "Optional list of glob patterns to exclude (e.g., ['**/*.pyc', 'node_modules/**'])",
-            },
-            "max_matches_per_file": {
-                "type": "integer",
-                "description": "Maximum matches to show per file in with_context mode (default: 5)",
             },
             "context_lines": {
                 "type": "integer",
@@ -142,9 +153,13 @@ Examples:
                 "type": "boolean",
                 "description": "Enable multiline pattern matching (default: false)",
             },
-            "max_count": {
+            "head_limit": {
                 "type": "integer",
-                "description": "Maximum total number of results to return (default: 50)",
+                "description": "Limit output to first N results (default: 250, 0 = unlimited)",
+            },
+            "offset": {
+                "type": "integer",
+                "description": "Skip first N results before applying head_limit (default: 0)",
             },
         }
 
@@ -155,17 +170,21 @@ Examples:
         mode: str = "files_only",
         case_sensitive: bool = True,
         file_pattern: str = None,
+        type: str = None,
         exclude_patterns: list = None,
-        max_matches_per_file: int = 5,
         context_lines: int = 0,
         multiline: bool = False,
-        max_count: int = 50,
+        head_limit: int = None,
+        offset: int = 0,
         **kwargs,
     ) -> str:
         """Search for pattern in files with optional file filtering."""
         base_path = Path(path)
         if not await aiofiles.os.path.exists(str(base_path)):
             return f"Error: Path does not exist: {path}"
+
+        # Normalize head_limit: None -> DEFAULT_HEAD_LIMIT, 0 -> unlimited
+        effective_head_limit = head_limit if head_limit is not None else self.DEFAULT_HEAD_LIMIT
 
         # Use ripgrep if available
         if self._has_ripgrep:
@@ -175,11 +194,12 @@ Examples:
                 mode=mode,
                 case_sensitive=case_sensitive,
                 file_pattern=file_pattern,
+                type=type,
                 exclude_patterns=exclude_patterns,
-                max_matches_per_file=max_matches_per_file,
                 context_lines=context_lines,
                 multiline=multiline,
-                max_count=max_count,
+                head_limit=effective_head_limit,
+                offset=offset,
             )
         else:
             return await self._execute_python_fallback(
@@ -188,10 +208,59 @@ Examples:
                 mode=mode,
                 case_sensitive=case_sensitive,
                 file_pattern=file_pattern,
+                type=type,
                 exclude_patterns=exclude_patterns,
-                max_matches_per_file=max_matches_per_file,
-                max_count=max_count,
+                context_lines=context_lines,
+                multiline=multiline,
+                head_limit=effective_head_limit,
+                offset=offset,
             )
+
+    def _apply_head_limit(
+        self,
+        items: list[str],
+        head_limit: int,
+        offset: int = 0,
+    ) -> tuple[list[str], bool]:
+        """Apply head_limit and offset to result items.
+
+        Returns (sliced_items, was_truncated).
+        """
+        # Explicit 0 = unlimited escape hatch
+        if head_limit == 0:
+            return items[offset:], False
+
+        sliced = items[offset : offset + head_limit]
+        was_truncated = len(items) - offset > head_limit
+        return sliced, was_truncated
+
+    def _format_pagination_hint(
+        self,
+        mode: str,
+        shown: int,
+        total: int,
+        was_truncated: bool,
+        head_limit: int,
+        offset: int,
+    ) -> str:
+        """Build a clear pagination / completion hint."""
+        if mode == "files_only":
+            noun = "file" if total == 1 else "files"
+            if was_truncated:
+                return f"Found {total} {noun} (showing {shown}, use offset={offset + head_limit} to see more)"
+            return f"Found {total} {noun}"
+
+        if mode == "count":
+            noun = "file" if total == 1 else "files"
+            if was_truncated:
+                return f"Found {total} {noun} with matches (showing {shown}, use offset={offset + head_limit} to see more)"
+            return f"Found {total} {noun} with matches"
+
+        # with_context mode
+        noun = "line" if total == 1 else "lines"
+        if was_truncated:
+            return f"Found {total} matching {noun} (showing {shown}, use offset={offset + head_limit} to see more)"
+        return f"Found {total} matching {noun}"
 
     async def _execute_ripgrep(
         self,
@@ -200,11 +269,12 @@ Examples:
         mode: str,
         case_sensitive: bool,
         file_pattern: Optional[str],
+        type: Optional[str],
         exclude_patterns: Optional[List[str]],
-        max_matches_per_file: int,
         context_lines: int,
         multiline: bool,
-        max_count: int,
+        head_limit: int,
+        offset: int,
     ) -> str:
         """Execute search using ripgrep."""
         cmd = [self._rg_path]
@@ -228,7 +298,11 @@ Examples:
         if multiline:
             cmd.append("-U")  # --multiline
 
-        # File type filtering via glob
+        # File type filtering
+        if type:
+            cmd.extend(["--type", type])
+
+        # File pattern filtering via glob
         if file_pattern:
             cmd.extend(["-g", file_pattern])
 
@@ -246,10 +320,6 @@ Examples:
         excludes = exclude_patterns if exclude_patterns is not None else default_excludes
         for exclude in excludes:
             cmd.extend(["-g", f"!{exclude}"])
-
-        # Max results per file (only for with_context mode)
-        if mode == "with_context":
-            cmd.extend(["-m", str(max_matches_per_file)])
 
         # Include hidden files but exclude .git
         cmd.append("--hidden")
@@ -279,22 +349,26 @@ Examples:
                     return f"Error executing ripgrep: {error_output.strip()}"
                 return f"No matches found for pattern '{pattern}'"
 
-            # Limit output size
+            # Split into lines and apply head_limit/offset
             lines = output.strip().split("\n") if output.strip() else []
-            if len(lines) > max_count:
-                lines = lines[:max_count]
-                lines.append(f"\n... (truncated, showing first {max_count} results)")
+            total_lines = len(lines)
+            sliced_lines, was_truncated = self._apply_head_limit(lines, head_limit, offset)
 
-            output = "\n".join(lines)
+            # Build pagination hint
+            hint = self._format_pagination_hint(
+                mode, len(sliced_lines), total_lines, was_truncated, head_limit, offset
+            )
+
+            result = hint + "\n" + "\n".join(sliced_lines) if sliced_lines else hint
 
             # Check output size
-            estimated_tokens = len(output) // self.CHARS_PER_TOKEN
+            estimated_tokens = len(result) // self.CHARS_PER_TOKEN
             if estimated_tokens > self.MAX_TOKENS:
                 max_chars = self.MAX_TOKENS * self.CHARS_PER_TOKEN
-                output = output[:max_chars]
-                output += f"\n... (output truncated to ~{self.MAX_TOKENS} tokens)"
+                result = result[:max_chars]
+                result += f"\n... (output truncated to ~{self.MAX_TOKENS} tokens)"
 
-            return output
+            return result
 
         except Exception as e:
             return f"Error executing ripgrep: {str(e)}"
@@ -306,13 +380,18 @@ Examples:
         mode: str,
         case_sensitive: bool,
         file_pattern: Optional[str],
+        type: Optional[str],
         exclude_patterns: Optional[List[str]],
-        max_matches_per_file: int,
-        max_count: int,
+        context_lines: int,
+        multiline: bool,
+        head_limit: int,
+        offset: int,
     ) -> str:
         """Execute search using Python regex (fallback when ripgrep not available)."""
         try:
             flags = 0 if case_sensitive else re.IGNORECASE
+            if multiline:
+                flags |= re.DOTALL
             regex = re.compile(pattern, flags)
         except re.error as e:
             return f"Error: Invalid regex pattern: {str(e)}"
@@ -395,7 +474,8 @@ Examples:
                 if not skip:
                     filtered_files.append(file_path)
 
-            results = []
+            # Collect all results first, then apply head_limit/offset
+            all_results = []
             files_searched = 0
 
             for file_path in filtered_files:
@@ -410,30 +490,37 @@ Examples:
                         continue
 
                     if mode == "files_only":
-                        results.append(str(file_path))
+                        all_results.append(str(file_path))
                     elif mode == "count":
-                        results.append(f"{file_path}: {len(matches)} matches")
+                        all_results.append(f"{file_path}: {len(matches)} matches")
                     elif mode == "with_context":
                         lines = content.splitlines()
-                        for match in matches[:max_matches_per_file]:
+                        for match in matches:
                             line_no = content[: match.start()].count("\n") + 1
                             if line_no <= len(lines):
-                                results.append(f"{file_path}:{line_no}: {lines[line_no-1].strip()}")
+                                all_results.append(
+                                    f"{file_path}:{line_no}: {lines[line_no-1].strip()}"
+                                )
                 except (UnicodeDecodeError, PermissionError):
                     continue
 
-                if len(results) >= max_count:
-                    break
+            total_results = len(all_results)
+            sliced_results, was_truncated = self._apply_head_limit(all_results, head_limit, offset)
 
-            if not results:
-                return (
-                    f"No matches found for pattern '{pattern}' in {files_searched} files searched"
-                )
+            # Build pagination hint
+            hint = self._format_pagination_hint(
+                mode, len(sliced_results), total_results, was_truncated, head_limit, offset
+            )
 
-            output = "\n".join(results)
+            if not sliced_results:
+                if total_results == 0:
+                    return f"No matches found for pattern '{pattern}' in {files_searched} files searched"
+                return hint
+
+            result = hint + "\n" + "\n".join(sliced_results)
 
             # Check output size
-            estimated_tokens = len(output) // self.CHARS_PER_TOKEN
+            estimated_tokens = len(result) // self.CHARS_PER_TOKEN
             if estimated_tokens > self.MAX_TOKENS:
                 return (
                     f"Error: Grep output (~{estimated_tokens} tokens) exceeds "
@@ -441,6 +528,6 @@ Examples:
                     f"file_pattern or pattern to narrow results."
                 )
 
-            return output
+            return result
         except Exception as e:
             return f"Error executing grep: {str(e)}"
