@@ -113,15 +113,10 @@ class AgentBuilder:
     nested_agents_md: bool = True
     extra_rules: list[Rule] = field(default_factory=list)
     # Task V2 feature flag (off by default; Phase 1 opt-in)
-    task_v2_enabled: bool = False
+    # When enabled: Task V2 tools replace TodoTool/MultiTaskTool, auto-swarm is active
+    enable_task_v2: bool = False
     task_store_path: str | None = None
     agent_id: str | None = None
-    # Auto-swarm: automatically decompose complex tasks into multi-agent execution
-    auto_swarm_enabled: bool = False
-    auto_swarm_threshold: float = 0.6
-    auto_swarm_max_agents: int = 3
-    # When task_v2_enabled=True, use Task V2 tools + Swarm instead of TodoTool + MultiTaskTool
-    use_task_v2_as_default: bool = False
 
     # ---- LLM ----------------------------------------------------------------
 
@@ -194,62 +189,27 @@ class AgentBuilder:
     def with_task_v2(
         self, enabled: bool = True, store_path: str | None = None, agent_id: str | None = None
     ) -> AgentBuilder:
-        """Enable Task V2 persistent task store.
+        """Enable Task V2 persistent task store and auto-swarm.
 
-        When enabled, the agent gets task_create, task_update, task_list,
-        task_get, task_delete, and task_claim tools alongside the legacy TodoTool.
-        Pass store_path to override the default ~/.ouro/tasks/default.db location.
-        Pass agent_id to set the default agent identifier for task_claim.
+        When enabled:
+        - Task V2 tools (task_create, task_update, task_list, task_get, task_delete, task_claim)
+          replace TodoTool and MultiTaskTool
+        - Auto-swarm is active: complex tasks are automatically decomposed
+          and executed by multiple agents in parallel
+        - Pass store_path to override the default ~/.ouro/tasks/default.db location
+        - Pass agent_id to set the default agent identifier for task_claim
+
+        When disabled (default): legacy TodoTool + MultiTaskTool are used.
         """
-        self.task_v2_enabled = enabled
+        self.enable_task_v2 = enabled
         self.task_store_path = store_path
         self.agent_id = agent_id
         return self
 
     def without_task_v2(self) -> AgentBuilder:
         """Explicitly disable Task V2 (default)."""
-        self.task_v2_enabled = False
+        self.enable_task_v2 = False
         self.task_store_path = None
-        return self
-
-    def with_task_v2_as_default(self, enabled: bool = True) -> AgentBuilder:
-        """Use Task V2 + Swarm as default task management (replaces TodoTool + MultiTaskTool).
-
-        When enabled and task_v2_enabled is also True:
-        - Task V2 tools (task_create, task_update, task_list, task_get, task_delete, task_claim) are registered
-        - TodoTool is NOT registered
-        - MultiTaskTool is NOT registered
-        - Auto-swarm can be enabled separately via with_auto_swarm()
-
-        When disabled (default):
-        - TodoTool is registered (legacy behavior)
-        - MultiTaskTool is registered (legacy behavior)
-        - Task V2 tools are only registered if task_v2_enabled=True (additive)
-        """
-        self.use_task_v2_as_default = enabled
-        return self
-
-    # ---- Auto Swarm ---------------------------------------------------------
-
-    def with_auto_swarm(
-        self,
-        enabled: bool = True,
-        threshold: float = 0.6,
-        max_agents: int = 3,
-    ) -> AgentBuilder:
-        """Enable auto-swarm for complex task decomposition.
-
-        When enabled, complex tasks (complexity >= threshold) are automatically
-        decomposed into subtasks and executed by multiple agents in parallel.
-        """
-        self.auto_swarm_enabled = enabled
-        self.auto_swarm_threshold = threshold
-        self.auto_swarm_max_agents = max_agents
-        return self
-
-    def without_auto_swarm(self) -> AgentBuilder:
-        """Explicitly disable auto-swarm (default)."""
-        self.auto_swarm_enabled = False
         return self
 
     # ---- Progress sink + extra hooks ---------------------------------------
@@ -283,13 +243,14 @@ class AgentBuilder:
             raise ValueError("AgentBuilder requires .with_llm(...) before .build()")
 
         # Determine which task management system to use.
-        # When use_task_v2_as_default=True and task_v2_enabled=True:
+        # When enable_task_v2=True:
         #   - Use Task V2 tools (task_create, task_update, task_list, task_get, task_delete, task_claim)
-        #   - Skip TodoTool and MultiTaskTool (they are replaced by Task V2 + Swarm)
-        # Otherwise (default):
-        #   - Use TodoTool (legacy) and MultiTaskTool
-        #   - Task V2 tools are additive if task_v2_enabled=True
-        use_v2_mode = self.use_task_v2_as_default and self.task_v2_enabled
+        #   - Skip TodoTool (replaced by Task V2)
+        #   - Auto-swarm is active for complex task decomposition
+        # When enable_task_v2=False (default):
+        #   - Use TodoTool (legacy)
+        #   - MultiTaskTool can be added manually via with_tool()
+        use_v2_mode = self.enable_task_v2
 
         todo_list = TodoList()
         tools: list[BaseTool] = list(self.tools)
@@ -303,7 +264,7 @@ class AgentBuilder:
 
         # Task V2 store + tools
         task_store: TaskStore | None = None
-        if self.task_v2_enabled:
+        if self.enable_task_v2:
             import os
 
             store_path = self.task_store_path or os.path.expanduser("~/.ouro/tasks/default.db")
@@ -351,8 +312,8 @@ class AgentBuilder:
                 )
             )
 
-        # Auto-swarm hook (off by default).
-        if self.auto_swarm_enabled and self.llm is not None:
+        # Auto-swarm hook (active when Task V2 is enabled).
+        if self.enable_task_v2 and self.llm is not None:
             llm = self.llm  # capture for closure
 
             def builder_factory(agent_id: str):
@@ -368,8 +329,6 @@ class AgentBuilder:
                 AutoSwarmHook(
                     llm=llm,
                     builder_factory=builder_factory,
-                    complexity_threshold=self.auto_swarm_threshold,
-                    max_agents=self.auto_swarm_max_agents,
                     enabled=True,
                 )
             )
