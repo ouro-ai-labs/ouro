@@ -175,17 +175,61 @@ class TestGrepToolSizeLimits:
 
         assert "test.py" in result
 
-    async def test_max_results_limit(self, tmp_path):
-        """Grep should respect max results limit."""
+    async def test_head_limit_truncation(self, tmp_path):
+        """Grep should respect head_limit and show pagination hint."""
         tool = GrepTool()
         # Create files with many matches
         for i in range(100):
             (tmp_path / f"file{i}.txt").write_text("match\nmatch\nmatch\n")
 
+        # Default head_limit=250 should show all 300 lines but with hint
         result = await tool.execute("match", str(tmp_path), mode="with_context")
+        assert "Found" in result
+        assert "matching lines" in result
 
-        # Results should be limited (50 by default)
-        assert result.count("match") <= 60  # Some margin for variations
+        # With head_limit=10, should truncate and show pagination hint
+        result = await tool.execute("match", str(tmp_path), mode="with_context", head_limit=10)
+        assert "showing 10" in result
+        assert "use offset=10 to see more" in result
+
+        # With offset=10, should skip first 10
+        result = await tool.execute(
+            "match", str(tmp_path), mode="with_context", head_limit=10, offset=10
+        )
+        assert "showing 10" in result
+        assert "use offset=20 to see more" in result
+
+    async def test_head_limit_files_only(self, tmp_path):
+        """Grep files_only mode should respect head_limit."""
+        tool = GrepTool()
+        for i in range(10):
+            (tmp_path / f"file{i}.txt").write_text("match\n")
+
+        result = await tool.execute("match", str(tmp_path), mode="files_only", head_limit=5)
+        assert "Found 10 files" in result
+        assert "showing 5" in result
+        assert "use offset=5 to see more" in result
+
+    async def test_head_limit_count_mode(self, tmp_path):
+        """Grep count mode should respect head_limit."""
+        tool = GrepTool()
+        for i in range(10):
+            (tmp_path / f"file{i}.txt").write_text("match\nmatch\n")
+
+        result = await tool.execute("match", str(tmp_path), mode="count", head_limit=5)
+        assert "Found 10 files" in result
+        assert "showing 5" in result
+        assert "use offset=5 to see more" in result
+
+    async def test_head_limit_zero_unlimited(self, tmp_path):
+        """head_limit=0 should return unlimited results."""
+        tool = GrepTool()
+        for i in range(50):
+            (tmp_path / f"file{i}.txt").write_text("match\n")
+
+        result = await tool.execute("match", str(tmp_path), mode="files_only", head_limit=0)
+        assert "Found 50 files" in result
+        assert "showing" not in result  # No truncation hint when all shown
 
 
 class TestToolConstants:
