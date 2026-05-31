@@ -43,6 +43,9 @@ from .rules import NestedAgentsMdRule, ReadBeforeWriteRule
 from .skills.registry import SkillsRegistry
 from .skills.render import render_skills_section
 
+# Auto Swarm
+from .swarm.auto_swarm_hook import AutoSwarmHook
+
 # Task V2 (Phase 1 — opt-in)
 from .tasks.store import TaskStore
 from .todo.state import TodoList
@@ -113,6 +116,10 @@ class AgentBuilder:
     task_v2_enabled: bool = False
     task_store_path: str | None = None
     agent_id: str | None = None
+    # Auto-swarm: automatically decompose complex tasks into multi-agent execution
+    auto_swarm_enabled: bool = False
+    auto_swarm_threshold: float = 0.6
+    auto_swarm_max_agents: int = 3
 
     # ---- LLM ----------------------------------------------------------------
 
@@ -203,6 +210,29 @@ class AgentBuilder:
         self.task_store_path = None
         return self
 
+    # ---- Auto Swarm ---------------------------------------------------------
+
+    def with_auto_swarm(
+        self,
+        enabled: bool = True,
+        threshold: float = 0.6,
+        max_agents: int = 3,
+    ) -> AgentBuilder:
+        """Enable auto-swarm for complex task decomposition.
+
+        When enabled, complex tasks (complexity >= threshold) are automatically
+        decomposed into subtasks and executed by multiple agents in parallel.
+        """
+        self.auto_swarm_enabled = enabled
+        self.auto_swarm_threshold = threshold
+        self.auto_swarm_max_agents = max_agents
+        return self
+
+    def without_auto_swarm(self) -> AgentBuilder:
+        """Explicitly disable auto-swarm (default)."""
+        self.auto_swarm_enabled = False
+        return self
+
     # ---- Progress sink + extra hooks ---------------------------------------
 
     def with_progress_sink(self, progress: ProgressSink) -> AgentBuilder:
@@ -285,6 +315,29 @@ class AgentBuilder:
                     max_iterations=self.verification_max_iterations,
                     verifier=self.verifier,
                     progress=self.progress,
+                )
+            )
+
+        # Auto-swarm hook (off by default).
+        if self.auto_swarm_enabled and self.llm is not None:
+            llm = self.llm  # capture for closure
+
+            def builder_factory(agent_id: str):
+                return (
+                    AgentBuilder()
+                    .with_llm(llm)
+                    .with_task_v2(enabled=True, agent_id=agent_id)
+                    .without_memory()
+                    .with_max_iterations(self.max_iterations)
+                )
+
+            hooks.append(
+                AutoSwarmHook(
+                    llm=llm,
+                    builder_factory=builder_factory,
+                    complexity_threshold=self.auto_swarm_threshold,
+                    max_agents=self.auto_swarm_max_agents,
+                    enabled=True,
                 )
             )
 

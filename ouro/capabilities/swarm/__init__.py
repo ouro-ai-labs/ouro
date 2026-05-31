@@ -7,6 +7,8 @@ on them, and mark them complete. The coordinator handles agent lifecycle
 interface for swarm operations.
 """
 
+from .analyzer import TaskAnalyzer
+from .auto_swarm_hook import AutoSwarmHook
 from .coordinator import SwarmCoordinator
 
-__all__ = ["SwarmCoordinator"]
+__all__ = ["SwarmCoordinator", "TaskAnalyzer", "AutoSwarmHook"]
