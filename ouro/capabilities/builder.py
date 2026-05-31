@@ -112,9 +112,9 @@ class AgentBuilder:
     read_before_write: bool = True
     nested_agents_md: bool = True
     extra_rules: list[Rule] = field(default_factory=list)
-    # Task V2 feature flag (off by default; Phase 1 opt-in)
+    # Agent Team feature flag (off by default; Phase 1 opt-in)
     # When enabled: Task V2 tools replace TodoTool/MultiTaskTool, auto-swarm is active
-    enable_task_v2: bool = False
+    enable_agent_team: bool = False
     task_store_path: str | None = None
     agent_id: str | None = None
 
@@ -184,12 +184,12 @@ class AgentBuilder:
         self.verifier = verifier
         return self
 
-    # ---- Task V2 ----------------------------------------------------------
+    # ---- Agent Team -------------------------------------------------------
 
-    def with_task_v2(
+    def with_agent_team(
         self, enabled: bool = True, store_path: str | None = None, agent_id: str | None = None
     ) -> AgentBuilder:
-        """Enable Task V2 persistent task store and auto-swarm.
+        """Enable agent team collaboration with Task V2 and auto-swarm.
 
         When enabled:
         - Task V2 tools (task_create, task_update, task_list, task_get, task_delete, task_claim)
@@ -201,14 +201,14 @@ class AgentBuilder:
 
         When disabled (default): legacy TodoTool + MultiTaskTool are used.
         """
-        self.enable_task_v2 = enabled
+        self.enable_agent_team = enabled
         self.task_store_path = store_path
         self.agent_id = agent_id
         return self
 
-    def without_task_v2(self) -> AgentBuilder:
-        """Explicitly disable Task V2 (default)."""
-        self.enable_task_v2 = False
+    def without_agent_team(self) -> AgentBuilder:
+        """Explicitly disable agent team (default)."""
+        self.enable_agent_team = False
         self.task_store_path = None
         return self
 
@@ -243,14 +243,14 @@ class AgentBuilder:
             raise ValueError("AgentBuilder requires .with_llm(...) before .build()")
 
         # Determine which task management system to use.
-        # When enable_task_v2=True:
+        # When enable_agent_team=True:
         #   - Use Task V2 tools (task_create, task_update, task_list, task_get, task_delete, task_claim)
         #   - Skip TodoTool (replaced by Task V2)
         #   - Auto-swarm is active for complex task decomposition
-        # When enable_task_v2=False (default):
+        # When enable_agent_team=False (default):
         #   - Use TodoTool (legacy)
         #   - MultiTaskTool can be added manually via with_tool()
-        use_v2_mode = self.enable_task_v2
+        use_v2_mode = self.enable_agent_team
 
         todo_list = TodoList()
         tools: list[BaseTool] = list(self.tools)
@@ -264,7 +264,7 @@ class AgentBuilder:
 
         # Task V2 store + tools
         task_store: TaskStore | None = None
-        if self.enable_task_v2:
+        if self.enable_agent_team:
             import os
 
             store_path = self.task_store_path or os.path.expanduser("~/.ouro/tasks/default.db")
@@ -312,15 +312,15 @@ class AgentBuilder:
                 )
             )
 
-        # Auto-swarm hook (active when Task V2 is enabled).
-        if self.enable_task_v2 and self.llm is not None:
+        # Auto-swarm hook (active when agent team is enabled).
+        if self.enable_agent_team and self.llm is not None:
             llm = self.llm  # capture for closure
 
             def builder_factory(agent_id: str):
                 return (
                     AgentBuilder()
                     .with_llm(llm)
-                    .with_task_v2(enabled=True, agent_id=agent_id)
+                    .with_agent_team(enabled=True, agent_id=agent_id)
                     .without_memory()
                     .with_max_iterations(self.max_iterations)
                 )
