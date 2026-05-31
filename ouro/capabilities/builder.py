@@ -120,6 +120,8 @@ class AgentBuilder:
     auto_swarm_enabled: bool = False
     auto_swarm_threshold: float = 0.6
     auto_swarm_max_agents: int = 3
+    # When task_v2_enabled=True, use Task V2 tools + Swarm instead of TodoTool + MultiTaskTool
+    use_task_v2_as_default: bool = False
 
     # ---- LLM ----------------------------------------------------------------
 
@@ -210,6 +212,23 @@ class AgentBuilder:
         self.task_store_path = None
         return self
 
+    def with_task_v2_as_default(self, enabled: bool = True) -> AgentBuilder:
+        """Use Task V2 + Swarm as default task management (replaces TodoTool + MultiTaskTool).
+
+        When enabled and task_v2_enabled is also True:
+        - Task V2 tools (task_create, task_update, task_list, task_get, task_delete, task_claim) are registered
+        - TodoTool is NOT registered
+        - MultiTaskTool is NOT registered
+        - Auto-swarm can be enabled separately via with_auto_swarm()
+
+        When disabled (default):
+        - TodoTool is registered (legacy behavior)
+        - MultiTaskTool is registered (legacy behavior)
+        - Task V2 tools are only registered if task_v2_enabled=True (additive)
+        """
+        self.use_task_v2_as_default = enabled
+        return self
+
     # ---- Auto Swarm ---------------------------------------------------------
 
     def with_auto_swarm(
@@ -263,12 +282,26 @@ class AgentBuilder:
         if self.llm is None:
             raise ValueError("AgentBuilder requires .with_llm(...) before .build()")
 
-        # Build the tool registry. TodoTool is auto-injected so all builds get it.
+        # Determine which task management system to use.
+        # When use_task_v2_as_default=True and task_v2_enabled=True:
+        #   - Use Task V2 tools (task_create, task_update, task_list, task_get, task_delete, task_claim)
+        #   - Skip TodoTool and MultiTaskTool (they are replaced by Task V2 + Swarm)
+        # Otherwise (default):
+        #   - Use TodoTool (legacy) and MultiTaskTool
+        #   - Task V2 tools are additive if task_v2_enabled=True
+        use_v2_mode = self.use_task_v2_as_default and self.task_v2_enabled
+
         todo_list = TodoList()
         tools: list[BaseTool] = list(self.tools)
-        tools.append(TodoTool(todo_list))
 
-        # Task V2 store + tools (opt-in, Phase 1)
+        if use_v2_mode:
+            # Task V2 mode: skip TodoTool, use Task V2 tools instead
+            pass  # TodoTool is NOT added
+        else:
+            # Legacy mode: TodoTool is auto-injected
+            tools.append(TodoTool(todo_list))
+
+        # Task V2 store + tools
         task_store: TaskStore | None = None
         if self.task_v2_enabled:
             import os
