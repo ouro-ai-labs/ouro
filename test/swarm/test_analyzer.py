@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
-
-from ouro.capabilities.swarm.analyzer import TaskAnalysis, TaskAnalyzer
+from ouro.capabilities.swarm.analyzer import TaskAnalyzer
 
 
 class FakeLLM:

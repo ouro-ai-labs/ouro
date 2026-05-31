@@ -81,7 +81,7 @@ class AutoSwarmHook:
         tasks = store.list_all()
 
         result_parts = [
-            f"# Swarm Execution Complete\n",
+            "# Swarm Execution Complete\n",
             f"**Task:** {task}\n",
             f"**Complexity:** {analysis.complexity_score:.2f}\n",
             f"**Subtasks:** {status.total_tasks} total, {status.completed} completed\n\n",

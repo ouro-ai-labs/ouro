@@ -10,7 +10,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from ouro.core.llm import LLMMessage, LLMResponse, StopReason
+from ouro.core.llm import LLMMessage
 from ouro.core.log import get_logger
 
 logger = get_logger(__name__)
