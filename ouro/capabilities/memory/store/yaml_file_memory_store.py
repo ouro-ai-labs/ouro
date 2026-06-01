@@ -286,6 +286,31 @@ class YamlFileMemoryStore(MemoryStore):
             f"{len(messages)} messages"
         )
 
+    async def replace_messages(self, session_id: str, messages: List[LLMMessage]) -> None:
+        """Replace only the messages list, preserving system_messages and token_stats."""
+        dir_name = await self._resolve_session_dir(session_id)
+        if not dir_name:
+            logger.warning(f"Session {session_id} not found")
+            return
+
+        async with self._write_lock:
+            data = await self._load_session_data(dir_name)
+            if not data:
+                logger.warning(f"Session {session_id} not found")
+                return
+
+            messages_list = []
+            for msg in messages:
+                msg_data = serialize_message(msg)
+                msg_data["tokens"] = 0
+                messages_list.append(msg_data)
+            data["messages"] = messages_list
+            data["updated_at"] = datetime.now().isoformat()
+
+            await self._save_session_data(dir_name, data)
+
+        logger.debug(f"Replaced messages for session {session_id}: {len(messages)} messages")
+
     async def load_session(self, session_id: str) -> Optional[Dict[str, Any]]:
         dir_name = await self._resolve_session_dir(session_id)
         if not dir_name:

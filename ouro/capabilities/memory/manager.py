@@ -220,6 +220,22 @@ class MemoryManager:
 
         await self._store.save_message(self.session_id, message, tokens)
 
+    async def replace_messages(self, messages: list[LLMMessage]) -> None:
+        """Replace the entire messages list in session storage.
+
+        Used when compaction shortens the message list, to keep the
+        persisted state consistent with the in-memory state without
+        losing system_messages or token_stats.
+        """
+        if not self._session_created:
+            await self._ensure_session()
+
+        if not self._store or not self._session_created or not self.session_id:
+            logger.debug("Skipping replace_messages: no session created")
+            return
+
+        await self._store.replace_messages(self.session_id, messages)
+
     async def save_memory(self, *, context: MessageListContext) -> None:
         """Persist the conversation snapshot to disk.
 

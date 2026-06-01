@@ -114,3 +114,30 @@ class TestSessionPersistenceHook:
 
         assert result.kind == ContinueDecision.cont().kind
         assert hook._last_saved_count == 0  # unchanged
+
+    async def test_on_iteration_end_after_compaction(self, mock_llm, mock_loop_ctx):
+        """When compaction shortens the list, do a full replacement."""
+        memory = MemoryManager(mock_llm)
+        await memory._ensure_session()
+
+        hook = SessionPersistenceHook(memory)
+        messages = MessageList()
+        messages.append(LLMMessage(role="user", content="a"))
+        messages.append(LLMMessage(role="assistant", content="b"))
+        messages.append(LLMMessage(role="user", content="c"))
+
+        # Save all 3
+        await hook.on_iteration_end(mock_loop_ctx, messages, None, False)
+        assert hook._last_saved_count == 3
+
+        # Simulate compaction: replace with a shorter summary
+        messages.replace([LLMMessage(role="assistant", content="summary")])
+
+        # Hook should detect list got shorter and do full replacement
+        result = await hook.on_iteration_end(mock_loop_ctx, messages, None, False)
+        assert result.kind == ContinueDecision.cont().kind
+        assert hook._last_saved_count == 1
+
+        loaded = await memory._store.load_session(memory.session_id)
+        assert len(loaded["messages"]) == 1
+        assert loaded["messages"][0].content == "summary"
