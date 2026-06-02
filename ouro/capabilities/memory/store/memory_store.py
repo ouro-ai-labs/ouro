@@ -52,6 +52,19 @@ class MemoryStore(ABC):
         """
 
     @abstractmethod
+    async def replace_messages(self, session_id: str, messages: List[LLMMessage]) -> None:
+        """Replace only the messages list, preserving system_messages and token_stats.
+
+        Used by SessionPersistenceHook when compaction shortens the
+        message list, to do a full refresh without losing system
+        messages or accumulated token statistics.
+
+        Args:
+            session_id: Session ID
+            messages: New message list (replaces existing)
+        """
+
+    @abstractmethod
     async def load_session(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Load complete session state.
 

@@ -37,6 +37,7 @@ from ouro.core.loop import (
 from .compaction.hook import CompactionHook
 from .context.agents_md import load_agents_md
 from .context.env import format_context_prompt
+from .memory.hook import SessionPersistenceHook
 from .memory.manager import MemoryManager
 from .prompts import DEFAULT_SYSTEM_PROMPT
 from .rules import NestedAgentsMdRule, ReadBeforeWriteRule
@@ -300,6 +301,7 @@ class AgentBuilder:
             )
             memory.set_todo_context_provider(_make_todo_context_provider(todo_list))
             hooks.append(CompactionHook(memory.compaction))
+            hooks.append(SessionPersistenceHook(memory))
 
         # Verification hook (off by default).
         if self.verification_max_iterations > 0:
