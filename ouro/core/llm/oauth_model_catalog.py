@@ -32,20 +32,24 @@ OAUTH_PROVIDER_MODEL_IDS: dict[str, tuple[str, ...]] = {
     ),
     "copilot": (
         # Anthropic (GA)
+        "github_copilot/claude-opus-4.8",
         "github_copilot/claude-opus-4.7",
         "github_copilot/claude-opus-4.6",
+        "github_copilot/claude-opus-4.5",
         "github_copilot/claude-sonnet-4.6",
         "github_copilot/claude-sonnet-4.5",
         "github_copilot/claude-haiku-4.5",
         # OpenAI (GA)
+        "github_copilot/gpt-5.5",
         "github_copilot/gpt-5.4",
         "github_copilot/gpt-5.4-mini",
-        "github_copilot/gpt-5.2",
+        "github_copilot/gpt-5.3-codex",
         # Google (GA + preview)
         "github_copilot/gemini-2.5-pro",
         "github_copilot/gemini-3.1-pro",
-        # xAI (GA)
-        "github_copilot/grok-code-fast-1",
+        "github_copilot/gemini-3.5-flash",
+        # Microsoft (GA)
+        "github_copilot/mai-code-1-flash",
     ),
 }
 
