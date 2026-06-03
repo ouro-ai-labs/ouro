@@ -2512,7 +2512,7 @@ requires-dist = [
     { name = "import-linter", marker = "extra == 'dev'", specifier = ">=2.0" },
     { name = "isort", marker = "extra == 'dev'", specifier = "==6.0.0" },
     { name = "lark-oapi", specifier = ">=1.4.0" },
-    { name = "litellm", specifier = ">=1.81.1,<2.0" },
+    { name = "litellm", specifier = ">=1.87.0,<2.0" },
     { name = "lxml", specifier = ">=5.0.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.0.0" },
