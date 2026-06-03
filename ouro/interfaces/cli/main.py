@@ -297,7 +297,11 @@ def main():
 
         print(result)
 
-    asyncio.run(_run())
+    try:
+        asyncio.run(_run())
+    finally:
+        if not args.task and agent.session_id:
+            terminal_ui.print_info(f"Session ID: {agent.session_id}")
 
 
 if __name__ == "__main__":

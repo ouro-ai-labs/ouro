@@ -224,6 +224,68 @@ def test_main_logout_when_no_state(monkeypatch):
     assert calls["info"][0] == "No chatgpt login state found."
 
 
+def test_main_does_not_print_session_id_after_task_run(monkeypatch):
+    calls, _ = _setup_common(monkeypatch, ["--task", "hello"])
+    agent = SimpleNamespace(
+        session_id="12345678-1234-1234-1234-123456789abc",
+        skills_registry=None,
+        llm=object(),
+        _core=SimpleNamespace(add_hook=lambda hook: None),
+        set_reasoning_effort=lambda effort: None,
+        run=None,
+    )
+
+    async def fake_load():
+        return None
+
+    async def fake_run(task: str, verify: bool = False):
+        assert task == "hello"
+        assert verify is False
+        return "done"
+
+    agent.run = fake_run
+
+    monkeypatch.setattr(ouro_main.Config, "validate", staticmethod(lambda: None))
+    monkeypatch.setattr(ouro_main, "create_agent", lambda model_id=None: agent)
+    monkeypatch.setattr(ouro_main, "SkillsRegistry", lambda: SimpleNamespace(load=fake_load))
+
+    printed: list[str] = []
+    monkeypatch.setattr(
+        "builtins.print", lambda *args, **kwargs: printed.append(" ".join(str(a) for a in args))
+    )
+
+    ouro_main.main()
+
+    assert printed == ["done"]
+    assert "Session ID: 12345678-1234-1234-1234-123456789abc" not in calls["info"]
+
+
+def test_main_prints_session_id_after_interactive_mode(monkeypatch):
+    calls, _ = _setup_common(monkeypatch, [])
+    agent = SimpleNamespace(
+        session_id="abcdefab-cdef-cdef-cdef-abcdefabcdef",
+        set_reasoning_effort=lambda effort: None,
+        load_session=None,
+    )
+
+    async def fake_interactive_mode(passed_agent):
+        assert passed_agent is agent
+        return None
+
+    async def fake_load_session(session_id: str):
+        agent.session_id = session_id
+
+    agent.load_session = fake_load_session
+
+    monkeypatch.setattr(ouro_main.Config, "validate", staticmethod(lambda: None))
+    monkeypatch.setattr(ouro_main, "create_agent", lambda model_id=None: agent)
+    monkeypatch.setattr(ouro_main, "run_interactive_mode", fake_interactive_mode)
+
+    ouro_main.main()
+
+    assert calls["info"][-1] == "Session ID: abcdefab-cdef-cdef-cdef-abcdefabcdef"
+
+
 async def test_pick_auth_provider_cli_filters_for_logout(monkeypatch):
     state = {"providers": None}
 
