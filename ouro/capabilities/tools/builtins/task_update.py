@@ -7,6 +7,7 @@ from typing import Any
 from ouro.capabilities.tasks.models import TaskStatus
 from ouro.capabilities.tasks.store import TaskStore
 from ouro.capabilities.tools.base import BaseTool
+from ouro.core.loop import NullProgressSink
 
 
 class TaskUpdateTool(BaseTool):
@@ -16,8 +17,9 @@ class TaskUpdateTool(BaseTool):
     or edit task content.
     """
 
-    def __init__(self, store: TaskStore):
+    def __init__(self, store: TaskStore, progress=None):
         self._store = store
+        self._progress = progress or NullProgressSink()
 
     @property
     def name(self) -> str:
@@ -207,4 +209,17 @@ EXAMPLES:
         status_str = f"status={updated.status.value}" if status else ""
         owner_str = f"owner={updated.owner}" if owner != "" else ""
         changes = ", ".join(filter(None, [status_str, owner_str]))
+        display = updated.activeForm or updated.subject
+        line = f"[{updated.status.value}] #{updated.id}"
+        if updated.owner:
+            line += f" ({updated.owner})"
+        line += f" {display}"
+        self._progress.event(
+            "task_status",
+            {
+                "line": line,
+                "summary": f"Updated task #{taskId}: {changes or 'fields updated'}",
+                "title": "Task Updated",
+            },
+        )
         return f"Updated task #{taskId}: {changes or 'fields updated'}"

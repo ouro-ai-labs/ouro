@@ -142,6 +142,23 @@ class TestGetBlockedTasks:
         assert blocked == []
 
 
+class TestTaskListView:
+    def test_view_empty(self, engine: TaskEngine) -> None:
+        view = engine.get_task_list_view()
+        assert view["task_lines"] == []
+        assert view["summary"] == "No tasks in the list"
+
+    def test_view_contains_counts_and_lines(self, engine: TaskEngine) -> None:
+        blocker = engine.store.create(subject="Blocker", description="...")
+        engine.store.create(subject="Blocked", description="...", blockedBy=[blocker.id])
+        engine.store.create(subject="Running", description="...", status=TaskStatus.IN_PROGRESS)
+        engine.store.create(subject="Done", description="...", status=TaskStatus.COMPLETED)
+
+        view = engine.get_task_list_view()
+        assert "[blocked] #2 Blocked [waiting for #1]" in view["task_lines"]
+        assert view["counts"] == {"done": 1, "running": 1, "blocked": 1, "pending": 1}
+        assert view["summary"] == "Summary: 1 done, 1 running, 1 blocked, 1 pending"
+
 class TestFormatTaskList:
     def test_format_empty(self, engine: TaskEngine) -> None:
         assert engine.format_task_list() == "No tasks in the list"
@@ -150,7 +167,21 @@ class TestFormatTaskList:
         engine.store.create(subject="Task A", description="...")
         engine.store.create(subject="Task B", description="...", owner="alice")
         formatted = engine.format_task_list()
-        assert "Task A" in formatted
-        assert "Task B" in formatted
-        assert "alice" in formatted
+        assert "Tasks:" in formatted
+        assert "[pending] #1 Task A" in formatted
+        assert "[pending] #2 (alice) Task B" in formatted
         assert "Summary:" in formatted
+
+    def test_format_with_blocked_and_completed_states(self, engine: TaskEngine) -> None:
+        blocker = engine.store.create(subject="Blocker", description="...")
+        blocked = engine.store.create(subject="Blocked", description="...", blockedBy=[blocker.id])
+        engine.store.create(
+            subject="Running", description="...", owner="agent-1", status=TaskStatus.IN_PROGRESS
+        )
+        engine.store.create(subject="Done", description="...", status=TaskStatus.COMPLETED)
+
+        formatted = engine.format_task_list()
+        assert f"[blocked] #{blocked.id} Blocked [waiting for #{blocker.id}]" in formatted
+        assert "[running] #3 (agent-1) Running" in formatted
+        assert "[done] #4 Done" in formatted
+        assert "1 done, 1 running, 1 blocked, 1 pending" in formatted

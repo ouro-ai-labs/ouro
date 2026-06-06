@@ -20,6 +20,7 @@ from ouro.capabilities.tasks.engine import TaskEngine
 from ouro.capabilities.tasks.models import TaskStatus
 from ouro.capabilities.tasks.store import TaskStore
 from ouro.core.log import get_logger
+from ouro.core.loop import NullProgressSink
 
 if TYPE_CHECKING:
     from ouro.capabilities.builder import ComposedAgent
@@ -67,6 +68,7 @@ class SwarmCoordinator:
         builder_factory,
         heartbeat_interval: float = 30.0,
         max_idle_iterations: int = 10,
+        progress=None,
     ) -> None:
         self.store = store
         self.engine = TaskEngine(store)
@@ -74,6 +76,7 @@ class SwarmCoordinator:
         self.agents: dict[str, AgentHandle] = {}
         self.heartbeat_interval = heartbeat_interval
         self.max_idle_iterations = max_idle_iterations
+        self.progress = progress or NullProgressSink()
         self._shutdown = False
 
     # ------------------------------------------------------------------
@@ -91,6 +94,7 @@ class SwarmCoordinator:
             self.agents[agent_id] = handle
             ids.append(agent_id)
             logger.info(f"Spawned agent {agent_id}")
+            self.progress.event("swarm_agent", {"agent": agent_id, "title": "Swarm"})
         return ids
 
     async def remove_agent(self, agent_id: str) -> bool:
@@ -112,6 +116,17 @@ class SwarmCoordinator:
         idle_count = 0
         while not self._shutdown:
             status = self.get_status()
+            self.progress.event(
+                "swarm_status",
+                {
+                    "line": "Swarm status: "
+                    f"{status.completed}/{status.total_tasks} done, "
+                    f"{status.in_progress} running, "
+                    f"{status.blocked} blocked, "
+                    f"{status.pending} pending",
+                    "title": "Swarm Status",
+                },
+            )
             if status.pending == 0 and status.in_progress == 0:
                 idle_count += 1
                 if idle_count >= self.max_idle_iterations:
@@ -145,6 +160,14 @@ class SwarmCoordinator:
             if result.success:
                 handle.task_ids.append(task.id)
                 handle.last_heartbeat = time.time()
+                self.progress.event(
+                    "swarm_assignment",
+                    {
+                        "agent": handle.agent_id,
+                        "assignment": f"task #{task.id}: {task.activeForm or task.subject}",
+                        "title": "Swarm",
+                    },
+                )
                 # Fire-and-forget task execution
                 asyncio.create_task(
                     self._run_task(handle, task.id),
@@ -158,6 +181,14 @@ class SwarmCoordinator:
             return
 
         try:
+            self.progress.event(
+                "swarm_assignment",
+                {
+                    "agent": handle.agent_id,
+                    "assignment": f"task #{task_id}: {task.activeForm or task.subject}",
+                    "title": "Swarm",
+                },
+            )
             # Build the task prompt
             prompt = self._build_task_prompt(task)
 
@@ -168,10 +199,26 @@ class SwarmCoordinator:
             self.engine.complete_task(task_id)
             handle.total_tasks_completed += 1
             logger.info(f"Agent {handle.agent_id} completed task {task_id}")
+            self.progress.event(
+                "swarm_assignment",
+                {
+                    "agent": handle.agent_id,
+                    "assignment": f"completed #{task_id}: {task.subject}",
+                    "title": "Swarm",
+                },
+            )
 
         except Exception as e:
             logger.error(f"Agent {handle.agent_id} failed task {task_id}: {e}")
             handle.total_tasks_failed += 1
+            self.progress.event(
+                "swarm_assignment",
+                {
+                    "agent": handle.agent_id,
+                    "assignment": f"failed #{task_id}; returning it to the queue",
+                    "title": "Swarm",
+                },
+            )
             # Unassign so another agent can try
             self.store.unassign(task_id)
 

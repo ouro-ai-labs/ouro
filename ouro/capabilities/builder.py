@@ -271,12 +271,12 @@ class AgentBuilder:
             store_path = self.task_store_path or os.path.expanduser("~/.ouro/tasks/default.db")
             os.makedirs(os.path.dirname(store_path), exist_ok=True)
             task_store = TaskStore(store_path)
-            claim_tool = TaskClaimTool(task_store, agent_id=self.agent_id)
+            claim_tool = TaskClaimTool(task_store, agent_id=self.agent_id, progress=self.progress)
             tools.extend(
                 [
-                    TaskCreateTool(task_store),
-                    TaskUpdateTool(task_store),
-                    TaskListTool(task_store),
+                    TaskCreateTool(task_store, progress=self.progress),
+                    TaskUpdateTool(task_store, progress=self.progress),
+                    TaskListTool(task_store, progress=self.progress),
                     TaskGetTool(task_store),
                     TaskDeleteTool(task_store),
                     claim_tool,

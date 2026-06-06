@@ -246,7 +246,7 @@ def test_main_does_not_print_session_id_after_task_run(monkeypatch):
     agent.run = fake_run
 
     monkeypatch.setattr(ouro_main.Config, "validate", staticmethod(lambda: None))
-    monkeypatch.setattr(ouro_main, "create_agent", lambda model_id=None: agent)
+    monkeypatch.setattr(ouro_main, "create_agent", lambda model_id=None, **kwargs: agent)
     monkeypatch.setattr(ouro_main, "SkillsRegistry", lambda: SimpleNamespace(load=fake_load))
 
     printed: list[str] = []
@@ -278,7 +278,7 @@ def test_main_prints_session_id_after_interactive_mode(monkeypatch):
     agent.load_session = fake_load_session
 
     monkeypatch.setattr(ouro_main.Config, "validate", staticmethod(lambda: None))
-    monkeypatch.setattr(ouro_main, "create_agent", lambda model_id=None: agent)
+    monkeypatch.setattr(ouro_main, "create_agent", lambda model_id=None, **kwargs: agent)
     monkeypatch.setattr(ouro_main, "run_interactive_mode", fake_interactive_mode)
 
     ouro_main.main()

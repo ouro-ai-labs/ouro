@@ -6,6 +6,7 @@ from typing import Any
 
 from ouro.capabilities.tasks.store import TaskStore
 from ouro.capabilities.tools.base import BaseTool
+from ouro.core.loop import NullProgressSink
 
 
 class TaskCreateTool(BaseTool):
@@ -15,8 +16,9 @@ class TaskCreateTool(BaseTool):
     tasks that can be claimed by agents and have dependencies.
     """
 
-    def __init__(self, store: TaskStore):
+    def __init__(self, store: TaskStore, progress=None):
         self._store = store
+        self._progress = progress or NullProgressSink()
 
     @property
     def name(self) -> str:
@@ -95,4 +97,12 @@ The task will be created with status "pending" and can be claimed later."""
             # Update task's blockedBy
             self._store.update(task.id, blockedBy=list(blockedBy))
 
+        self._progress.event(
+            "task_status",
+            {
+                "line": f"[pending] #{task.id} {task.activeForm or task.subject}",
+                "summary": f"Created task #{task.id}: {task.subject}",
+                "title": "Task Created",
+            },
+        )
         return f"Created task #{task.id}: {task.subject}"
