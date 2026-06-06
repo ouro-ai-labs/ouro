@@ -59,6 +59,17 @@ def test_extract_provider_model_ids_uses_top_level_keys_only():
     assert ids == ["gpt-5.2-codex", "gpt-5.2-codex-spark"]
 
 
+def test_merge_model_ids_appends_additional_without_duplicates():
+    m = _load_module()
+
+    ids = m._merge_model_ids(
+        ["gpt-5.4", "gpt-5.3-instant"],
+        ("gpt-5.3-instant", "gpt-5.4-pro"),
+    )
+
+    assert ids == ["gpt-5.4", "gpt-5.3-instant", "gpt-5.4-pro"]
+
+
 def test_render_catalog_module_maps_prefix():
     m = _load_module()
 
@@ -66,6 +77,23 @@ def test_render_catalog_module_maps_prefix():
 
     assert 'PI_AI_VERSION = "0.52.12"' in rendered
     assert '"chatgpt/gpt-5.2-codex"' in rendered
+    assert "from ouro.config import Config" in rendered
+    assert "def get_bundled_oauth_provider_model_ids" in rendered
+    assert "Config.OAUTH_MODEL_DYNAMIC_REFRESH" in rendered
+
+
+def test_render_catalog_module_preserves_other_providers():
+    m = _load_module()
+
+    rendered = m._render_catalog_module(
+        "0.73.1",
+        ["gpt-5.4"],
+        {"copilot": ("github_copilot/gpt-5.5",)},
+    )
+
+    assert '"chatgpt/gpt-5.4"' in rendered
+    assert '"copilot": (' in rendered
+    assert '"github_copilot/gpt-5.5"' in rendered
 
 
 def test_filter_model_ids_for_litellm_keeps_supported_only(monkeypatch):

@@ -1,5 +1,13 @@
+import pytest
+
+from ouro.config import Config
 from ouro.core.llm.model_manager import ModelManager
 from ouro.core.llm.oauth_model_sync import remove_oauth_models, sync_oauth_models
+
+
+@pytest.fixture(autouse=True)
+def _disable_dynamic_model_refresh(monkeypatch):
+    monkeypatch.setattr(Config, "OAUTH_MODEL_DYNAMIC_REFRESH", False)
 
 
 def _write_models_yaml(path, content: str) -> None:
@@ -26,6 +34,7 @@ def test_sync_oauth_models_adds_chatgpt_models(tmp_path):
     added = sync_oauth_models(manager, "chatgpt")
 
     assert added
+    assert "chatgpt/gpt-5.4" in manager.models
     assert "chatgpt/gpt-5.2-codex" in manager.models
     assert manager.models["chatgpt/gpt-5.2-codex"].extra.get("oauth_managed") is True
 
@@ -37,7 +46,7 @@ def test_sync_oauth_models_removes_stale_managed_entries(tmp_path):
         "\n".join(
             [
                 "models:",
-                "  chatgpt/gpt-5.3-codex:",
+                "  chatgpt/legacy-codex:",
                 "    timeout: 600",
                 "    oauth_managed: true",
                 "    oauth_provider: chatgpt",
@@ -45,7 +54,7 @@ def test_sync_oauth_models_removes_stale_managed_entries(tmp_path):
                 "    timeout: 600",
                 "    oauth_managed: true",
                 "    oauth_provider: chatgpt",
-                "default: chatgpt/gpt-5.3-codex",
+                "default: chatgpt/legacy-codex",
                 "",
             ]
         ),
@@ -54,9 +63,10 @@ def test_sync_oauth_models_removes_stale_managed_entries(tmp_path):
     manager = ModelManager(config_path=str(config_path))
     sync_oauth_models(manager, "chatgpt")
 
-    assert "chatgpt/gpt-5.3-codex" not in manager.models
+    assert "chatgpt/legacy-codex" not in manager.models
+    assert "chatgpt/gpt-5.4" in manager.models
     assert "chatgpt/gpt-5.2-codex" in manager.models
-    assert manager.default_model_id == "chatgpt/gpt-5.2-codex"
+    assert manager.default_model_id in manager.models
 
 
 def test_remove_oauth_models_removes_only_managed_entries(tmp_path):

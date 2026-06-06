@@ -14,7 +14,7 @@ models:
   openai/gpt-4o:
     api_key: sk-...
 
-  chatgpt/gpt-5.2-codex:
+  chatgpt/gpt-5.4:
     timeout: 600
 
   ollama/llama2:
@@ -55,7 +55,7 @@ For `chatgpt/*` models, login with OAuth before first use:
 - Interactive: `/login` (then pick provider)
 - Logout: `ouro --logout` or `/logout`
 - After login, use `/model` to pick one of the added `chatgpt/*` models.
-- The added set comes from ouro's bundled OAuth catalog (synced from pi-ai `openai-codex` model list).
+- The added set is refreshed dynamically at login. ChatGPT models are discovered from pi-ai `openai-codex` plus ChatGPT subscription models documented by OpenAI and supported by LiteLLM; Copilot models are discovered from GitHub's supported-models docs.
 
 Login uses a browser-based OAuth (PKCE) flow with a localhost callback server, which works in workspaces that disable the OAuth device-code grant. If browser launch is blocked, ouro prints a URL you can open manually. For remote machines, you may need SSH port-forwarding to reach the localhost callback server.
 
@@ -91,6 +91,8 @@ Settings live in `~/.ouro/config` (KEY=VALUE format, auto-created with defaults)
 | `MAX_ITERATIONS` | `1000` | Maximum agent loop iterations |
 | `TOOL_TIMEOUT` | `600` | Tool execution timeout in seconds |
 | `RALPH_LOOP_MAX_ITERATIONS` | `3` | Max Ralph verification attempts |
+| `OAUTH_MODEL_DYNAMIC_REFRESH` | `true` | Refresh ChatGPT/Copilot model lists at login; set to `false` to use the bundled catalog instead |
+| `OAUTH_MODEL_REFRESH_TIMEOUT_SECONDS` | `10` | HTTP timeout for dynamic OAuth model discovery |
 
 ### Memory
 
