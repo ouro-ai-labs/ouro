@@ -81,7 +81,7 @@ def test_main_login_success(monkeypatch):
     monkeypatch.setattr(
         ouro_main,
         "sync_oauth_models",
-        lambda model_manager, provider: ["chatgpt/gpt-5.2-codex"],
+        lambda model_manager, provider: ["chatgpt/gpt-5.4"],
     )
 
     async def fake_pick(mode: str):
@@ -155,7 +155,7 @@ def test_main_logout_success(monkeypatch):
     monkeypatch.setattr(
         ouro_main,
         "remove_oauth_models",
-        lambda model_manager, provider: ["chatgpt/gpt-5.2-codex"],
+        lambda model_manager, provider: ["chatgpt/gpt-5.4"],
     )
 
     async def fake_pick(mode: str):

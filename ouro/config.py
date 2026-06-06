@@ -29,6 +29,11 @@ MAX_ITERATIONS=1000
 # Commit / PR attribution: append "Co-Authored-By: ouro" to commits and
 # "Generated with ouro" to PR bodies the agent authors. Set to false to disable.
 # ATTRIBUTION_ENABLED=true
+
+# OAuth model discovery: refresh ChatGPT/Copilot model lists at login and fall
+# back to the bundled offline catalog if discovery fails.
+# OAUTH_MODEL_DYNAMIC_REFRESH=true
+# OAUTH_MODEL_REFRESH_TIMEOUT_SECONDS=10
 """
 
 
@@ -89,6 +94,12 @@ class Config:
 
     # Commit / PR attribution (append ouro trailers to commits/PRs)
     ATTRIBUTION_ENABLED = _cfg.get("ATTRIBUTION_ENABLED", "true").lower() == "true"
+
+    # OAuth model discovery
+    OAUTH_MODEL_DYNAMIC_REFRESH = _cfg.get("OAUTH_MODEL_DYNAMIC_REFRESH", "true").lower() == "true"
+    OAUTH_MODEL_REFRESH_TIMEOUT_SECONDS = float(
+        _cfg.get("OAUTH_MODEL_REFRESH_TIMEOUT_SECONDS", "10")
+    )
 
     # Ralph Loop (outer verification loop)
     RALPH_LOOP_MAX_ITERATIONS = int(_cfg.get("RALPH_LOOP_MAX_ITERATIONS", "3"))

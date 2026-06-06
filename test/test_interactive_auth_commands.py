@@ -170,7 +170,7 @@ async def test_handle_login_syncs_models(monkeypatch):
     monkeypatch.setattr(session, "_pick_auth_provider", fake_pick)
     monkeypatch.setattr(interactive, "login_auth_provider", fake_login)
     monkeypatch.setattr(
-        interactive, "sync_oauth_models", lambda mm, provider: ["chatgpt/gpt-5.2-codex"]
+        interactive, "sync_oauth_models", lambda mm, provider: ["chatgpt/gpt-5.4"]
     )  # noqa: ARG005
     monkeypatch.setattr(interactive.terminal_ui, "print_info", lambda msg: infos.append(msg))
     monkeypatch.setattr(interactive.terminal_ui, "console", console)

@@ -2,36 +2,35 @@
 
 This file is intentionally deterministic and runtime-offline.
 
-To refresh the chatgpt provider from pi-ai's latest published model registry, run:
+To refresh from pi-ai's latest published model registry, run:
 
     python scripts/update_oauth_model_catalog.py
-
-The copilot provider list is curated manually from GitHub's supported-models
-reference. Refresh from:
-    https://docs.github.com/en/copilot/reference/ai-models/supported-models
-Only chat-mode models are included; `/responses`-mode codex variants are omitted
-because the adapter routes through LiteLLM's `acompletion` endpoint.
 """
 
 from __future__ import annotations
 
-PI_AI_VERSION = "0.52.12"
+from ouro.config import Config
+from ouro.core.llm.oauth_model_discovery import discover_oauth_provider_model_ids
+
+PI_AI_VERSION = "0.73.1"
 PI_AI_PROVIDER_ID = "openai-codex"
 
-# Synced from pi-ai openai-codex provider model IDs, filtered to those supported by
-# the pinned LiteLLM chatgpt provider, and mapped to ouro's chatgpt/* namespace.
-# Copilot entries target LiteLLM's built-in `github_copilot/*` namespace and cover
-# the chat-capable models exposed to Copilot subscribers.
+# ChatGPT entries are synced from pi-ai openai-codex provider model IDs,
+# filtered to those supported by the installed LiteLLM chatgpt provider.
+# Other OAuth provider entries are preserved from the existing catalog.
 OAUTH_PROVIDER_MODEL_IDS: dict[str, tuple[str, ...]] = {
     "chatgpt": (
-        "chatgpt/gpt-5.1",
         "chatgpt/gpt-5.1-codex-max",
         "chatgpt/gpt-5.1-codex-mini",
         "chatgpt/gpt-5.2",
         "chatgpt/gpt-5.2-codex",
+        "chatgpt/gpt-5.3-codex",
+        "chatgpt/gpt-5.3-codex-spark",
+        "chatgpt/gpt-5.4",
+        "chatgpt/gpt-5.3-instant",
+        "chatgpt/gpt-5.4-pro",
     ),
     "copilot": (
-        # Anthropic (GA)
         "github_copilot/claude-opus-4.8",
         "github_copilot/claude-opus-4.7",
         "github_copilot/claude-opus-4.6",
@@ -39,23 +38,30 @@ OAUTH_PROVIDER_MODEL_IDS: dict[str, tuple[str, ...]] = {
         "github_copilot/claude-sonnet-4.6",
         "github_copilot/claude-sonnet-4.5",
         "github_copilot/claude-haiku-4.5",
-        # OpenAI (GA)
         "github_copilot/gpt-5.5",
         "github_copilot/gpt-5.4",
         "github_copilot/gpt-5.4-mini",
         "github_copilot/gpt-5.3-codex",
-        # Google (GA + preview)
         "github_copilot/gemini-2.5-pro",
         "github_copilot/gemini-3.1-pro",
         "github_copilot/gemini-3.5-flash",
-        # Microsoft (GA)
         "github_copilot/mai-code-1-flash",
     ),
 }
 
 
-def get_oauth_provider_model_ids(provider: str) -> tuple[str, ...]:
+def _dynamic_refresh_enabled() -> bool:
+    return bool(Config.OAUTH_MODEL_DYNAMIC_REFRESH)
+
+
+def get_bundled_oauth_provider_model_ids(provider: str) -> tuple[str, ...]:
     try:
         return OAUTH_PROVIDER_MODEL_IDS[provider]
     except KeyError as e:
         raise ValueError(f"Unsupported provider: {provider}") from e
+
+
+def get_oauth_provider_model_ids(provider: str, *, dynamic: bool = True) -> tuple[str, ...]:
+    if dynamic and _dynamic_refresh_enabled():
+        return discover_oauth_provider_model_ids(provider)
+    return get_bundled_oauth_provider_model_ids(provider)
