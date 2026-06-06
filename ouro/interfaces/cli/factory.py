@@ -82,9 +82,7 @@ def create_agent(
     )
 
     progress_sink = (
-        JsonProgressSink(stream=progress_stream)
-        if progress_format == "json"
-        else TuiProgressSink()
+        JsonProgressSink(stream=progress_stream) if progress_format == "json" else TuiProgressSink()
     )
 
     tools = [

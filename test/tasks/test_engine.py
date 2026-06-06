@@ -159,6 +159,7 @@ class TestTaskListView:
         assert view["counts"] == {"done": 1, "running": 1, "blocked": 1, "pending": 1}
         assert view["summary"] == "Summary: 1 done, 1 running, 1 blocked, 1 pending"
 
+
 class TestFormatTaskList:
     def test_format_empty(self, engine: TaskEngine) -> None:
         assert engine.format_task_list() == "No tasks in the list"

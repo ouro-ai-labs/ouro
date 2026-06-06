@@ -121,8 +121,10 @@ class TuiProgressSink:
             if lines:
                 lines.append("")
             lines.append("Assignments:")
-            for agent in sorted(self._swarm_assignments):
-                lines.append(f"- {agent}: {self._swarm_assignments[agent]}")
+            lines.extend(
+                f"- {agent}: {self._swarm_assignments[agent]}"
+                for agent in sorted(self._swarm_assignments)
+            )
         if self._swarm_status_line:
             if lines:
                 lines.append("")

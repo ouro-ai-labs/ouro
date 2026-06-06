@@ -62,7 +62,6 @@ class TestTaskCreateTool:
         assert blocker is not None
         assert any(t.id == "2" for t in tools["store"].list_all() if t.id in blocker.blocks)
 
-
     async def test_create_emits_task_status_event(self, tools: dict) -> None:
         await tools["create"].execute(subject="Fix bug", description="Fix auth")
         assert tools["events"][-1] == (
@@ -88,6 +87,7 @@ class TestTaskClaimTool:
                 "title": "Task Claimed",
             },
         )
+
 
 class TestTaskUpdateTool:
     async def test_update_status(self, tools: dict) -> None:
@@ -122,7 +122,6 @@ class TestTaskUpdateTool:
         assert "Error" in result
         assert "not found" in result
 
-
     async def test_update_emits_task_status_event(self, tools: dict) -> None:
         task = tools["store"].create(subject="Test", description="...")
         await tools["update"].execute(taskId=task.id, status="completed", owner="alice")
@@ -134,6 +133,7 @@ class TestTaskUpdateTool:
                 "title": "Task Updated",
             },
         )
+
 
 class TestTaskListTool:
     async def test_list_empty(self, tools: dict) -> None:
@@ -147,7 +147,6 @@ class TestTaskListTool:
         assert "Task A" in result
         assert "Task B" in result
         assert "Summary:" in result
-
 
     async def test_list_emits_task_list_event(self, tools: dict) -> None:
         tools["store"].create(subject="Task A", description="...")
@@ -176,7 +175,9 @@ class TestTaskProgressEvents:
         calls: list[tuple[list[str], str | None, str]] = []
         monkeypatch.setattr(
             "ouro.interfaces.tui.tui_progress.terminal_ui.print_task_summary",
-            lambda task_lines, summary=None, title="Tasks": calls.append((task_lines, summary, title)),
+            lambda task_lines, summary=None, title="Tasks": calls.append(
+                (task_lines, summary, title)
+            ),
         )
 
         sink = TuiProgressSink()
@@ -189,11 +190,14 @@ class TestTaskProgressEvents:
             },
         )
 
-        assert calls == [(
-            ["[running] #1 Implement feature"],
-            "Summary: 0 done, 1 running, 0 blocked, 0 pending",
-            "Task Update",
-        )]
+        assert calls == [
+            (
+                ["[running] #1 Implement feature"],
+                "Summary: 0 done, 1 running, 0 blocked, 0 pending",
+                "Task Update",
+            )
+        ]
+
 
 class TestTaskGetTool:
     async def test_get_existing(self, tools: dict) -> None:

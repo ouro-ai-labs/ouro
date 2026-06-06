@@ -17,12 +17,16 @@ def test_info_renders_task_list_with_summary(monkeypatch):
     )
 
     sink = TuiProgressSink()
-    sink.info("Tasks:\n[pending] #1 Task A\n[running] #2 Task B\n\nSummary: 0 done, 1 running, 0 blocked, 1 pending")
+    sink.info(
+        "Tasks:\n[pending] #1 Task A\n[running] #2 Task B\n\nSummary: 0 done, 1 running, 0 blocked, 1 pending"
+    )
 
-    assert calls == [(
-        ["[pending] #1 Task A", "[running] #2 Task B"],
-        "Summary: 0 done, 1 running, 0 blocked, 1 pending",
-    )]
+    assert calls == [
+        (
+            ["[pending] #1 Task A", "[running] #2 Task B"],
+            "Summary: 0 done, 1 running, 0 blocked, 1 pending",
+        )
+    ]
     assert infos == []
 
 
@@ -43,10 +47,12 @@ def test_event_renders_task_list_with_summary(monkeypatch):
         },
     )
 
-    assert calls == [(
-        ["[pending] #1 Task A", "[running] #2 Task B"],
-        "Summary: 0 done, 1 running, 0 blocked, 1 pending",
-    )]
+    assert calls == [
+        (
+            ["[pending] #1 Task A", "[running] #2 Task B"],
+            "Summary: 0 done, 1 running, 0 blocked, 1 pending",
+        )
+    ]
 
 
 def test_event_renders_swarm_runtime(monkeypatch):
@@ -62,7 +68,9 @@ def test_event_renders_swarm_runtime(monkeypatch):
     )
 
     sink = TuiProgressSink()
-    sink.event("swarm_header", {"line": "Swarm selected: complexity=0.82, subtasks=2", "title": "Swarm"})
+    sink.event(
+        "swarm_header", {"line": "Swarm selected: complexity=0.82, subtasks=2", "title": "Swarm"}
+    )
     sink.event("swarm_reset", {"keep_headers": True})
     sink.event("swarm_plan_item", {"line": "#1 Inspect rendering", "title": "Swarm Plan"})
     sink.event("swarm_plan_item", {"line": "#2 Update output", "title": "Swarm Plan"})

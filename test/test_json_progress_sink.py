@@ -29,6 +29,10 @@ def test_json_progress_sink_emits_tool_and_answer_records():
     sink.final_answer("done")
 
     lines = [json.loads(line) for line in stream.getvalue().splitlines()]
-    assert lines[0] == {"type": "tool_call", "name": "read_file", "arguments": {"file_path": "a.py"}}
+    assert lines[0] == {
+        "type": "tool_call",
+        "name": "read_file",
+        "arguments": {"file_path": "a.py"},
+    }
     assert lines[1] == {"type": "tool_result", "result": "ok"}
     assert lines[2] == {"type": "final_answer", "text": "done"}

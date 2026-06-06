@@ -371,7 +371,9 @@ def print_info(message: str) -> None:
     console.print(f"[{colors.primary}]ℹ {rich_escape(message)}[/{colors.primary}]")
 
 
-def print_task_summary(task_lines: list[str], summary: str | None = None, title: str = "Tasks") -> None:
+def print_task_summary(
+    task_lines: list[str], summary: str | None = None, title: str = "Tasks"
+) -> None:
     """Print a task summary panel.
 
     Args:
@@ -382,7 +384,9 @@ def print_task_summary(task_lines: list[str], summary: str | None = None, title:
     colors = _get_colors()
     content_lines = task_lines or [f"[{colors.text_muted}]No tasks[/{colors.text_muted}]"]
     if summary:
-        content_lines.extend(["", f"[{colors.text_muted}]{rich_escape(summary)}[/{colors.text_muted}]"])
+        content_lines.extend(
+            ["", f"[{colors.text_muted}]{rich_escape(summary)}[/{colors.text_muted}]"]
+        )
 
     console.print(
         Panel(
@@ -398,7 +402,11 @@ def print_task_summary(task_lines: list[str], summary: str | None = None, title:
 def print_swarm_summary(lines: list[str], title: str = "Swarm") -> None:
     """Print a swarm summary panel."""
     colors = _get_colors()
-    content = "\n".join(lines) if lines else f"[{colors.text_muted}]No swarm activity[/{colors.text_muted}]"
+    content = (
+        "\n".join(lines)
+        if lines
+        else f"[{colors.text_muted}]No swarm activity[/{colors.text_muted}]"
+    )
     console.print(
         Panel(
             content,
@@ -408,6 +416,7 @@ def print_swarm_summary(lines: list[str], title: str = "Swarm") -> None:
             padding=(0, 1),
         )
     )
+
 
 def print_log_location(log_file: str) -> None:
     """Print log file location.

@@ -47,12 +47,15 @@ No parameters required."""
     def execute_structured(self) -> dict[str, Any]:
         """Return a structured task-list event payload for UI/event sinks."""
         view = self._engine.get_task_list_view()
+        task_lines = view["task_lines"] if isinstance(view.get("task_lines"), list) else []
+        summary = view["summary"] if isinstance(view.get("summary"), str) else None
+        counts = view["counts"] if isinstance(view.get("counts"), dict) else {}
         return {
             "kind": "task_list",
             "payload": {
-                "task_lines": list(view.get("task_lines", [])),
-                "summary": view.get("summary"),
-                "counts": view.get("counts", {}),
+                "task_lines": task_lines,
+                "summary": summary,
+                "counts": counts,
             },
         }
 
