@@ -7,6 +7,7 @@ from typing import Any
 from ouro.capabilities.tasks.engine import TaskEngine
 from ouro.capabilities.tasks.store import TaskStore
 from ouro.capabilities.tools.base import BaseTool
+from ouro.core.loop import NullProgressSink
 
 
 class TaskListTool(BaseTool):
@@ -18,8 +19,9 @@ class TaskListTool(BaseTool):
 
     readonly = True
 
-    def __init__(self, store: TaskStore):
+    def __init__(self, store: TaskStore, progress=None):
         self._engine = TaskEngine(store)
+        self._progress = progress or NullProgressSink()
 
     @property
     def name(self) -> str:
@@ -42,5 +44,22 @@ No parameters required."""
     def parameters(self) -> dict[str, Any]:
         return {}
 
+    def execute_structured(self) -> dict[str, Any]:
+        """Return a structured task-list event payload for UI/event sinks."""
+        view = self._engine.get_task_list_view()
+        task_lines = view["task_lines"] if isinstance(view.get("task_lines"), list) else []
+        summary = view["summary"] if isinstance(view.get("summary"), str) else None
+        counts = view["counts"] if isinstance(view.get("counts"), dict) else {}
+        return {
+            "kind": "task_list",
+            "payload": {
+                "task_lines": task_lines,
+                "summary": summary,
+                "counts": counts,
+            },
+        }
+
     async def execute(self, **kwargs: Any) -> str:
+        structured = self.execute_structured()
+        self._progress.event(structured["kind"], structured["payload"])
         return self._engine.format_task_list()

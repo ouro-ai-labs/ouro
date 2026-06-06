@@ -153,8 +153,49 @@ class TaskEngine:
             t for t in all_tasks if t.blockedBy and not all(b in completed_ids for b in t.blockedBy)
         ]
 
+    def get_task_list_view(self, tasks: list[Task] | None = None) -> dict[str, object]:
+        """Return a structured task-list view for UI/event sinks."""
+        if tasks is None:
+            tasks = self.store.list_all()
+
+        if not tasks:
+            return {"task_lines": [], "summary": "No tasks in the list", "counts": {}}
+
+        all_tasks = {t.id: t for t in self.store.list_all()}
+        completed_ids = {t.id for t in all_tasks.values() if t.status == TaskStatus.COMPLETED}
+        derived_counts = {"done": 0, "running": 0, "blocked": 0, "pending": 0}
+        task_lines: list[str] = []
+
+        for task in tasks:
+            blockers = [b for b in task.blockedBy if b not in completed_ids]
+            if task.status == TaskStatus.COMPLETED:
+                state = "done"
+            elif task.status == TaskStatus.IN_PROGRESS:
+                state = "running"
+            elif blockers:
+                state = "blocked"
+            else:
+                state = "pending"
+            derived_counts[state] += 1
+
+            owner_str = f" ({task.owner})" if task.owner else ""
+            blocked_str = (
+                f" [waiting for {', '.join(f'#{b}' for b in blockers)}]" if blockers else ""
+            )
+            display = task.activeForm or task.subject
+            task_lines.append(f"[{state}] #{task.id}{owner_str} {display}{blocked_str}")
+
+        summary = (
+            "Summary: "
+            f"{derived_counts['done']} done, "
+            f"{derived_counts['running']} running, "
+            f"{derived_counts['blocked']} blocked, "
+            f"{derived_counts['pending']} pending"
+        )
+        return {"task_lines": task_lines, "summary": summary, "counts": derived_counts}
+
     def format_task_list(self, tasks: list[Task] | None = None) -> str:
-        """Format tasks for display, similar to TodoList.format_list()."""
+        """Format tasks for display with user-friendly derived statuses."""
         if tasks is None:
             tasks = self.store.list_all()
 
@@ -164,24 +205,34 @@ class TaskEngine:
         all_tasks = {t.id: t for t in self.store.list_all()}
         completed_ids = {t.id for t in all_tasks.values() if t.status == TaskStatus.COMPLETED}
 
-        lines = ["Current Task List:"]
+        lines = ["Tasks:"]
+        derived_counts = {"done": 0, "running": 0, "blocked": 0, "pending": 0}
+
         for task in tasks:
-            owner_str = f" ({task.owner})" if task.owner else ""
             blockers = [b for b in task.blockedBy if b not in completed_ids]
+            if task.status == TaskStatus.COMPLETED:
+                state = "done"
+            elif task.status == TaskStatus.IN_PROGRESS:
+                state = "running"
+            elif blockers:
+                state = "blocked"
+            else:
+                state = "pending"
+            derived_counts[state] += 1
+
+            owner_str = f" ({task.owner})" if task.owner else ""
             blocked_str = (
-                f" [blocked by {', '.join(f'#{b}' for b in blockers)}]" if blockers else ""
+                f" [waiting for {', '.join(f'#{b}' for b in blockers)}]" if blockers else ""
             )
-
             display = task.activeForm or task.subject
-            lines.append(f"#{task.id} [{task.status.value}]{owner_str} {display}{blocked_str}")
-
-        # Summary
-        pending = sum(1 for t in tasks if t.status == TaskStatus.PENDING)
-        in_progress = sum(1 for t in tasks if t.status == TaskStatus.IN_PROGRESS)
-        completed = sum(1 for t in tasks if t.status == TaskStatus.COMPLETED)
+            lines.append(f"[{state}] #{task.id}{owner_str} {display}{blocked_str}")
 
         lines.append(
-            f"\nSummary: {completed} completed, {in_progress} in progress, {pending} pending"
+            "\nSummary: "
+            f"{derived_counts['done']} done, "
+            f"{derived_counts['running']} running, "
+            f"{derived_counts['blocked']} blocked, "
+            f"{derived_counts['pending']} pending"
         )
 
         return "\n".join(lines)

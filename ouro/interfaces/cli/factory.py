@@ -22,6 +22,7 @@ from ouro.capabilities.tools.builtins.web_search import WebSearchTool
 from ouro.config import Config
 from ouro.core.llm import LiteLLMAdapter, ModelManager
 from ouro.interfaces.tui import terminal_ui
+from ouro.interfaces.tui.json_progress import JsonProgressSink
 from ouro.interfaces.tui.tui_progress import TuiProgressSink
 
 
@@ -29,6 +30,8 @@ def create_agent(
     model_id: str | None = None,
     sessions_dir: str | None = None,
     memory_dir: str | None = None,
+    progress_format: str = "tui",
+    progress_stream=None,
 ) -> ComposedAgent:
     """Factory function to create a fully wired ComposedAgent.
 
@@ -78,6 +81,10 @@ def create_agent(
         timeout=current_profile.timeout,
     )
 
+    progress_sink = (
+        JsonProgressSink(stream=progress_stream) if progress_format == "json" else TuiProgressSink()
+    )
+
     tools = [
         FileReadTool(),
         FileWriteTool(),
@@ -94,7 +101,7 @@ def create_agent(
         AgentBuilder()
         .with_llm(llm, model_manager=model_manager)
         .with_max_iterations(Config.MAX_ITERATIONS)
-        .with_progress_sink(TuiProgressSink())
+        .with_progress_sink(progress_sink)
         .with_memory(sessions_dir=sessions_dir, memory_dir=memory_dir)
         .with_tools(tools)
     )

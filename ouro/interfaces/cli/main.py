@@ -140,6 +140,11 @@ def main():
         default="default",
         help="Run-scoped reasoning level (LiteLLM/OpenAI-style). Use 'default' to omit the parameter, or 'off' as an alias for 'none'.",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit machine-readable JSON progress events in one-shot task mode.",
+    )
 
     args = parser.parse_args()
 
@@ -233,8 +238,14 @@ def main():
 
     # Create agent with optional model selection. If we're going into interactive mode and
     # models aren't configured yet, enter a setup session first.
+    progress_format = "json" if args.json else "tui"
+    progress_stream = __import__("sys").stdout if args.json else None
     try:
-        agent = create_agent(model_id=args.model)
+        agent = create_agent(
+            model_id=args.model,
+            progress_format=progress_format,
+            progress_stream=progress_stream,
+        )
     except ValueError as e:
         if args.task:
             terminal_ui.print_error(str(e), title="Model Configuration Error")
@@ -250,7 +261,11 @@ def main():
             return
 
         # Retry after setup.
-        agent = create_agent(model_id=args.model)
+        agent = create_agent(
+            model_id=args.model,
+            progress_format=progress_format,
+            progress_stream=progress_stream,
+        )
 
     async def _run() -> None:
         # Apply run-scoped reasoning control (affects primary task calls only).
@@ -277,8 +292,9 @@ def main():
         except Exception as e:
             terminal_ui.print_warning(f"Failed to load skills registry: {e}")
 
-        # Quiet mode: suppress all Rich UI output, print raw result only
-        terminal_ui.console = Console(quiet=True)
+        # Quiet mode: suppress Rich UI output when using plain text one-shot mode.
+        if not args.json:
+            terminal_ui.console = Console(quiet=True)
 
         # Re-enable verification if requested at runtime — the default agent
         # is built without VerificationHook for interactive use, so for

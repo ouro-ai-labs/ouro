@@ -6,6 +6,7 @@ from typing import Any
 
 from ouro.capabilities.tasks.store import TaskStore
 from ouro.capabilities.tools.base import BaseTool
+from ouro.core.loop import NullProgressSink
 
 
 class TaskClaimTool(BaseTool):
@@ -15,9 +16,10 @@ class TaskClaimTool(BaseTool):
     The claim is atomic — if another agent already claimed it, you will be told.
     """
 
-    def __init__(self, store: TaskStore, agent_id: str | None = None):
+    def __init__(self, store: TaskStore, agent_id: str | None = None, progress=None):
         self._store = store
         self._agent_id = agent_id
+        self._progress = progress or NullProgressSink()
 
     def set_agent_id(self, agent_id: str) -> None:
         """Late-bind the agent identity (used by AgentBuilder)."""
@@ -72,6 +74,15 @@ Returns:
 
         if result.success:
             assert result.task is not None
+            display = result.task.activeForm or result.task.subject
+            self._progress.event(
+                "task_status",
+                {
+                    "line": f"[in_progress] #{taskId} ({owner}) {display}",
+                    "summary": f"Claimed task #{taskId}: {result.task.subject}",
+                    "title": "Task Claimed",
+                },
+            )
             return f"Claimed task #{taskId}: {result.task.subject}"
 
         # Failure cases

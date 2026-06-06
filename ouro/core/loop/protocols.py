@@ -42,6 +42,7 @@ class _NullSpinner:
 @runtime_checkable
 class ProgressSink(Protocol):
     def info(self, msg: str) -> None: ...
+    def event(self, kind: str, payload: dict[str, Any]) -> None: ...
     def thinking(self, text: str) -> None: ...
     def assistant_message(self, content: Any) -> None: ...
     def tool_call(self, name: str, arguments: dict[str, Any]) -> None: ...
@@ -55,6 +56,9 @@ class ProgressSink(Protocol):
 
 class NullProgressSink:
     def info(self, msg: str) -> None:
+        pass
+
+    def event(self, kind: str, payload: dict[str, Any]) -> None:
         pass
 
     def thinking(self, text: str) -> None:

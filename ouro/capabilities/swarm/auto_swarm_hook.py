@@ -39,6 +39,7 @@ class AutoSwarmHook:
             return
 
         logger.info(f"AutoSwarm: Analyzing task complexity: {task[:100]}...")
+        ctx.progress.info("Analyzing task complexity for possible swarm execution...")
         analysis = await self.analyzer.analyze(task)
 
         logger.info(
@@ -50,7 +51,15 @@ class AutoSwarmHook:
             logger.info("AutoSwarm: Task is simple enough for single-agent execution")
             return
 
-        logger.info(f"AutoSwarm: Decomposing into {len(analysis.subtasks or [])} subtasks")
+        subtasks = analysis.subtasks or []
+        ctx.progress.event(
+            "swarm_header",
+            {
+                "line": f"Swarm selected: complexity={analysis.complexity_score:.2f}, subtasks={len(subtasks)}",
+                "title": "Swarm",
+            },
+        )
+        logger.info(f"AutoSwarm: Decomposing into {len(subtasks)} subtasks")
 
         import tempfile
         from pathlib import Path
@@ -58,7 +67,12 @@ class AutoSwarmHook:
         db_path = Path(tempfile.gettempdir()) / f"ouro-swarm-{id(task)}.db"
         store = TaskStore(str(db_path))
 
-        for subtask in analysis.subtasks or []:
+        ctx.progress.event("swarm_reset", {"keep_headers": True})
+        for idx, subtask in enumerate(subtasks, start=1):
+            ctx.progress.event(
+                "swarm_plan_item",
+                {"line": f"#{idx} {subtask['subject']}", "title": "Swarm Plan"},
+            )
             store.create(
                 subject=subtask["subject"],
                 description=subtask["description"],
@@ -69,16 +83,31 @@ class AutoSwarmHook:
             store,
             self.builder_factory,
             heartbeat_interval=5.0,
+            progress=ctx.progress,
         )
 
-        num_agents = min(len(analysis.subtasks or []), self.max_agents)
+        num_agents = min(len(subtasks), self.max_agents)
         await coordinator.spawn_agents(n=num_agents)
 
+        ctx.progress.event(
+            "swarm_header",
+            {"line": f"Starting swarm with {num_agents} agent(s)...", "title": "Swarm"},
+        )
         logger.info(f"AutoSwarm: Running {num_agents} agents...")
         await coordinator.run_until_done()
 
         status = coordinator.get_status()
         tasks = store.list_all()
+
+        ctx.progress.event(
+            "swarm_status",
+            {
+                "line": "Swarm complete: "
+                f"{status.completed}/{status.total_tasks} tasks done, "
+                f"{status.in_progress} running, {status.blocked} blocked",
+                "title": "Swarm Result",
+            },
+        )
 
         result_parts = [
             "# Swarm Execution Complete\n",
