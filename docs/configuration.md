@@ -14,7 +14,7 @@ models:
   openai/gpt-4o:
     api_key: sk-...
 
-  chatgpt/gpt-5.4:
+  openai-codex/gpt-5.5:
     timeout: 600
 
   ollama/llama2:
@@ -24,7 +24,7 @@ default: anthropic/claude-3-5-sonnet-20241022
 current: anthropic/claude-3-5-sonnet-20241022
 ```
 
-The model ID (key under `models`) uses the LiteLLM `provider/model` format. See [LiteLLM Providers](https://docs.litellm.ai/docs/providers) for supported providers.
+The model ID (key under `models`) uses the `provider/model` format. Most providers route through LiteLLM; ChatGPT subscription Codex models use ouro's `openai-codex/*` adapter.
 
 ### Model Fields
 
@@ -35,7 +35,7 @@ The model ID (key under `models`) uses the LiteLLM `provider/model` format. See 
 | `timeout` | No | Request timeout in seconds |
 | `drop_params` | No | Drop unsupported params silently |
 
-*Not required for local models (e.g., Ollama) or `chatgpt/*` subscription models.
+*Not required for local models (e.g., Ollama) or `openai-codex/*` subscription models.
 
 ### Model Management
 
@@ -49,23 +49,23 @@ The model ID (key under `models`) uses the LiteLLM `provider/model` format. See 
 
 ### ChatGPT / Codex Subscription Login
 
-For `chatgpt/*` models, login with OAuth before first use:
+For `openai-codex/*` models, login with OAuth before first use:
 
 - CLI: `ouro --login` (then pick provider)
 - Interactive: `/login` (then pick provider)
 - Logout: `ouro --logout` or `/logout`
-- After login, use `/model` to pick one of the added `chatgpt/*` models.
-- The added set is refreshed dynamically at login. ChatGPT models are discovered from pi-ai `openai-codex` plus ChatGPT subscription models documented by OpenAI and supported by LiteLLM; Copilot models are discovered from GitHub's supported-models docs.
+- After login, use `/model` to pick one of the added `openai-codex/*` models.
+- The added set is refreshed dynamically at login. ChatGPT models are discovered from pi-ai `openai-codex` plus ChatGPT subscription models documented by OpenAI; Copilot models are discovered from GitHub's supported-models docs.
 
 Login uses a browser-based OAuth (PKCE) flow with a localhost callback server, which works in workspaces that disable the OAuth device-code grant. If browser launch is blocked, ouro prints a URL you can open manually. For remote machines, you may need SSH port-forwarding to reach the localhost callback server.
 
-Credentials are stored under `~/.ouro/auth/chatgpt/` (LiteLLM-compatible `auth.json`).
+Credentials are stored under `~/.ouro/auth/chatgpt/`.
 
 Advanced environment overrides (rarely needed; defaults work for most users):
 
 | Env var | Default | Notes |
 |--------|---------|------|
-| `CHATGPT_TOKEN_DIR` | `~/.ouro/auth/chatgpt/` | Where `auth.json` is stored (also used by LiteLLM). |
+| `CHATGPT_TOKEN_DIR` | `~/.ouro/auth/chatgpt/` | Where `auth.json` is stored. |
 | `CHATGPT_AUTH_FILE` | `auth.json` | Override the auth filename under `CHATGPT_TOKEN_DIR`. |
 | `OURO_NO_BROWSER` | unset | Set to `1` to disable auto-opening the browser (URL is still printed). |
 | `OURO_CHATGPT_OAUTH_TIMEOUT_SECONDS` | `600` | How long to wait for the localhost callback before prompting for manual paste. |

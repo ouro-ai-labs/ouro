@@ -36,7 +36,7 @@ current: openai/gpt-4o
 
 See [LiteLLM Providers](https://docs.litellm.ai/docs/providers) for the full list. For advanced model settings, see [Configuration](configuration.md).
 
-> **Note:** Bot mode does not support OAuth (`chatgpt/*`) models yet. Use API-key-based providers.
+> **Note:** Bot mode does not support OAuth (`openai-codex/*`) models yet. Use API-key-based providers.
 
 ## Quick Start
 

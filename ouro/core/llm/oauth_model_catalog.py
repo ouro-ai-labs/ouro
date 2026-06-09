@@ -15,20 +15,21 @@ from ouro.core.llm.oauth_model_discovery import discover_oauth_provider_model_id
 PI_AI_VERSION = "0.73.1"
 PI_AI_PROVIDER_ID = "openai-codex"
 
-# ChatGPT entries are synced from pi-ai openai-codex provider model IDs,
-# filtered to those supported by the installed LiteLLM chatgpt provider.
+# ChatGPT entries are synced from pi-ai openai-codex provider model IDs.
 # Other OAuth provider entries are preserved from the existing catalog.
 OAUTH_PROVIDER_MODEL_IDS: dict[str, tuple[str, ...]] = {
     "chatgpt": (
-        "chatgpt/gpt-5.1-codex-max",
-        "chatgpt/gpt-5.1-codex-mini",
-        "chatgpt/gpt-5.2",
-        "chatgpt/gpt-5.2-codex",
-        "chatgpt/gpt-5.3-codex",
-        "chatgpt/gpt-5.3-codex-spark",
-        "chatgpt/gpt-5.4",
-        "chatgpt/gpt-5.3-instant",
-        "chatgpt/gpt-5.4-pro",
+        "openai-codex/gpt-5.5",
+        "openai-codex/gpt-5.5-pro",
+        "openai-codex/gpt-5.4",
+        "openai-codex/gpt-5.4-pro",
+        "openai-codex/gpt-5.3-instant",
+        "openai-codex/gpt-5.3-codex",
+        "openai-codex/gpt-5.3-codex-spark",
+        "openai-codex/gpt-5.2",
+        "openai-codex/gpt-5.2-codex",
+        "openai-codex/gpt-5.1-codex-max",
+        "openai-codex/gpt-5.1-codex-mini",
     ),
     "copilot": (
         "github_copilot/claude-opus-4.8",

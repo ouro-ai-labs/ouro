@@ -1,6 +1,3 @@
-import sys
-from types import SimpleNamespace
-
 import ouro.core.llm.oauth_model_discovery as discovery
 
 
@@ -25,26 +22,15 @@ def test_copilot_markdown_extracts_model_ids():
     ]
 
 
-def test_chatgpt_litellm_filter_includes_official_additions(monkeypatch):
-    monkeypatch.setitem(
-        sys.modules,
-        "litellm",
-        SimpleNamespace(
-            chatgpt_models={
-                "chatgpt/gpt-5.4",
-                "chatgpt/gpt-5.3-instant",
-                "chatgpt/gpt-5.4-pro",
-            }
-        ),
-    )
-
+def test_chatgpt_model_merge_includes_official_additions():
     model_ids = discovery._merge_model_ids(
         ["gpt-5.4"],
         discovery.OFFICIAL_CHATGPT_SUBSCRIPTION_MODEL_IDS,
     )
 
-    assert discovery._filter_chatgpt_model_ids_for_litellm(model_ids) == [
+    assert model_ids == [
         "gpt-5.4",
+        "gpt-5.5-pro",
         "gpt-5.3-instant",
         "gpt-5.4-pro",
     ]

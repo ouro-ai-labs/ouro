@@ -7,14 +7,15 @@ from ouro.core.llm.oauth_model_catalog import (
 )
 
 
-def test_chatgpt_catalog_includes_latest_subscription_models():
+def test_chatgpt_catalog_includes_latest_subscription_models(monkeypatch):
+    monkeypatch.setattr(catalog.Config, "OAUTH_MODEL_DYNAMIC_REFRESH", False)
     model_ids = get_oauth_provider_model_ids("chatgpt")
 
-    assert "chatgpt/gpt-5.3-instant" in model_ids
-    assert "chatgpt/gpt-5.4" in model_ids
-    assert "chatgpt/gpt-5.4-pro" in model_ids
-    assert "chatgpt/gpt-5.2" in model_ids
-    assert "chatgpt/gpt-5.2-codex" in model_ids
+    assert "openai-codex/gpt-5.5" in model_ids
+    assert "openai-codex/gpt-5.5-pro" in model_ids
+    assert "openai-codex/gpt-5.4" in model_ids
+    assert "openai-codex/gpt-5.4-pro" in model_ids
+    assert "openai-codex/gpt-5.2-codex" in model_ids
 
 
 def test_copilot_catalog_includes_expected_models():
@@ -38,10 +39,10 @@ def test_catalog_uses_dynamic_models_when_available(monkeypatch):
     monkeypatch.setattr(
         catalog,
         "discover_oauth_provider_model_ids",
-        lambda provider: (f"{provider}/latest",),
+        lambda provider: ("openai-codex/latest",),
     )
 
-    assert get_oauth_provider_model_ids("chatgpt") == ("chatgpt/latest",)
+    assert get_oauth_provider_model_ids("chatgpt") == ("openai-codex/latest",)
 
 
 def test_catalog_can_disable_dynamic_refresh(monkeypatch):

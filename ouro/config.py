@@ -30,8 +30,8 @@ MAX_ITERATIONS=1000
 # "Generated with ouro" to PR bodies the agent authors. Set to false to disable.
 # ATTRIBUTION_ENABLED=true
 
-# OAuth model discovery: refresh ChatGPT/Copilot model lists at login and fall
-# back to the bundled offline catalog if discovery fails.
+# OAuth model discovery: refresh ChatGPT/Copilot model lists at login. When
+# enabled, discovery failures fail login model sync instead of using stale data.
 # OAUTH_MODEL_DYNAMIC_REFRESH=true
 # OAUTH_MODEL_REFRESH_TIMEOUT_SECONDS=10
 """
