@@ -20,7 +20,7 @@ from ouro.capabilities.tools.builtins.smart_edit import SmartEditTool
 from ouro.capabilities.tools.builtins.web_fetch import WebFetchTool
 from ouro.capabilities.tools.builtins.web_search import WebSearchTool
 from ouro.config import Config
-from ouro.core.llm import LiteLLMAdapter, ModelManager
+from ouro.core.llm import ModelManager, create_llm_adapter
 from ouro.interfaces.tui import terminal_ui
 from ouro.interfaces.tui.json_progress import JsonProgressSink
 from ouro.interfaces.tui.tui_progress import TuiProgressSink
@@ -73,7 +73,7 @@ def create_agent(
     if not is_valid:
         raise ValueError(error_msg)
 
-    llm = LiteLLMAdapter(
+    llm = create_llm_adapter(
         model=current_profile.model_id,
         api_key=current_profile.api_key,
         api_base=current_profile.api_base,

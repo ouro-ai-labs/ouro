@@ -20,7 +20,7 @@ import httpx
 from ouro.core.log import get_logger
 
 from .content_utils import extract_text
-from .message_types import LLMMessage, LLMResponse, StopReason, ToolCallBlock
+from .message_types import LLMMessage, LLMResponse, StopReason, ToolCall, ToolCallBlock, ToolResult
 from .retry import with_retry
 
 logger = get_logger(__name__)
@@ -193,18 +193,39 @@ class OpenAICodexAdapter:
     def extract_text(self, response: LLMResponse) -> str:
         return response.content or ""
 
-    def extract_tool_calls(self, response: LLMResponse):
-        from .litellm_adapter import LiteLLMAdapter
+    def extract_tool_calls(self, response: LLMResponse) -> list[ToolCall]:
+        if not response.tool_calls:
+            return []
 
-        return LiteLLMAdapter(self.model).extract_tool_calls(response)
+        tool_calls: list[ToolCall] = []
+        for tc in response.tool_calls:
+            try:
+                arguments = json.loads(tc["function"]["arguments"])
+            except (json.JSONDecodeError, KeyError):
+                arguments = {}
+
+            tool_calls.append(
+                ToolCall(
+                    id=tc["id"],
+                    name=tc["function"]["name"],
+                    arguments=arguments,
+                )
+            )
+        return tool_calls
 
     def extract_thinking(self, response: LLMResponse) -> str | None:
         return response.thinking
 
-    def format_tool_results(self, results):
-        from .litellm_adapter import LiteLLMAdapter
-
-        return LiteLLMAdapter(self.model).format_tool_results(results)
+    def format_tool_results(self, results: list[ToolResult]) -> list[LLMMessage]:
+        return [
+            LLMMessage(
+                role="tool",
+                content=result.content,
+                tool_call_id=result.tool_call_id,
+                name=result.name,
+            )
+            for result in results
+        ]
 
     @property
     def supports_tools(self) -> bool:

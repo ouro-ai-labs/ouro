@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 if TYPE_CHECKING:
-    from ouro.core.llm import LiteLLMAdapter
+    from ouro.core.llm import LLMAdapter
 
 
 class CompactionManager:
@@ -34,7 +34,7 @@ class CompactionManager:
     on lists passed in by callers (e.g. ``MemoryManager``).
     """
 
-    def __init__(self, llm: LiteLLMAdapter) -> None:
+    def __init__(self, llm: LLMAdapter) -> None:
         self.llm = llm
         self.compressor = WorkingMemoryCompressor(llm)
 
