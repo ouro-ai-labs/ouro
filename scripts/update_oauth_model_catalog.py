@@ -2,7 +2,7 @@
 """Update OAuth model catalog from published pi-ai package.
 
 This script fetches @mariozechner/pi-ai from npm, extracts `dist/models.generated.js`,
-reads the `openai-codex` provider model IDs, maps them to `chatgpt/*`, and rewrites
+reads the `openai-codex` provider model IDs, maps them to `openai-codex/*`, and rewrites
 `llm/oauth_model_catalog.py`.
 """
 
@@ -20,12 +20,14 @@ NPM_PKG = "@mariozechner/pi-ai"
 NPM_REGISTRY = "https://registry.npmjs.org"
 PI_PROVIDER_ID = "openai-codex"
 OURO_PROVIDER_ID = "chatgpt"
+OURO_MODEL_PROVIDER_ID = "openai-codex"
 DIST_MODELS_PATH_SUFFIX = "package/dist/models.generated.js"
 
 # pi-ai's openai-codex registry tracks Codex-backed subscription models. These
 # additional ChatGPT subscription models are listed in OpenAI's ChatGPT model
-# availability docs and are kept only when the installed LiteLLM supports them.
+# availability docs.
 OFFICIAL_CHATGPT_SUBSCRIPTION_MODEL_IDS = (
+    "gpt-5.5-pro",
     "gpt-5.3-instant",
     "gpt-5.4-pro",
 )
@@ -197,7 +199,7 @@ def _render_catalog_module(
     model_ids: list[str],
     preserved_provider_model_ids: dict[str, tuple[str, ...]] | None = None,
 ) -> str:
-    chatgpt_ids = [f"{OURO_PROVIDER_ID}/{mid}" for mid in model_ids]
+    chatgpt_ids = [f"{OURO_MODEL_PROVIDER_ID}/{mid}" for mid in model_ids]
     provider_model_ids = dict(preserved_provider_model_ids or {})
     provider_model_ids[OURO_PROVIDER_ID] = tuple(chatgpt_ids)
 
@@ -219,8 +221,7 @@ def _render_catalog_module(
         f'PI_AI_VERSION = "{pi_ai_version}"',
         f'PI_AI_PROVIDER_ID = "{PI_PROVIDER_ID}"',
         "",
-        "# ChatGPT entries are synced from pi-ai openai-codex provider model IDs,",
-        "# filtered to those supported by the installed LiteLLM chatgpt provider.",
+        "# ChatGPT entries are synced from pi-ai openai-codex provider model IDs.",
         "# Other OAuth provider entries are preserved from the existing catalog.",
         "OAUTH_PROVIDER_MODEL_IDS: dict[str, tuple[str, ...]] = {",
     ]
@@ -260,22 +261,6 @@ def _render_catalog_module(
     return "\n".join(lines)
 
 
-def _filter_model_ids_for_litellm(model_ids: list[str]) -> list[str]:
-    """Filter pi-ai model IDs down to those supported by the installed LiteLLM."""
-    try:
-        import litellm  # type: ignore
-    except Exception:
-        return model_ids
-
-    supported = getattr(litellm, "chatgpt_models", None)
-    if not isinstance(supported, (set, list, tuple)):
-        return model_ids
-
-    supported_ids = {str(x) for x in supported}
-    filtered = [mid for mid in model_ids if f"{OURO_PROVIDER_ID}/{mid}" in supported_ids]
-    return filtered
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pi-ai-version", help="Pin specific @mariozechner/pi-ai version")
@@ -295,11 +280,8 @@ def main() -> None:
         raise RuntimeError("No model IDs extracted from openai-codex provider block")
 
     model_ids = _merge_model_ids(model_ids, OFFICIAL_CHATGPT_SUBSCRIPTION_MODEL_IDS)
-    model_ids = _filter_model_ids_for_litellm(model_ids)
     if not model_ids:
-        raise RuntimeError(
-            "No compatible ChatGPT model IDs found for the installed LiteLLM version."
-        )
+        raise RuntimeError("No ChatGPT subscription model IDs found.")
     output = Path(args.output)
     existing_provider_model_ids = _load_existing_provider_model_ids(output)
     content = _render_catalog_module(version, model_ids, existing_provider_model_ids)

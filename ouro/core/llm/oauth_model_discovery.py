@@ -14,7 +14,7 @@ from ouro.config import Config
 NPM_PKG = "@mariozechner/pi-ai"
 NPM_REGISTRY = "https://registry.npmjs.org"
 PI_PROVIDER_ID = "openai-codex"
-OURO_CHATGPT_PROVIDER_ID = "chatgpt"
+OURO_CHATGPT_PROVIDER_ID = "openai-codex"
 PI_DIST_MODELS_PATH_SUFFIX = "package/dist/models.generated.js"
 GITHUB_COPILOT_MODELS_MARKDOWN_URL = (
     "https://docs.github.com/api/article/body"
@@ -22,6 +22,7 @@ GITHUB_COPILOT_MODELS_MARKDOWN_URL = (
 )
 
 OFFICIAL_CHATGPT_SUBSCRIPTION_MODEL_IDS = (
+    "gpt-5.5-pro",
     "gpt-5.3-instant",
     "gpt-5.4-pro",
 )
@@ -144,20 +145,6 @@ def _extract_pi_provider_model_ids(provider_block: str) -> list[str]:
     return out
 
 
-def _filter_chatgpt_model_ids_for_litellm(model_ids: list[str]) -> list[str]:
-    try:
-        import litellm  # type: ignore
-    except Exception:
-        return model_ids
-
-    supported = getattr(litellm, "chatgpt_models", None)
-    if not isinstance(supported, (set, list, tuple)):
-        return model_ids
-
-    supported_ids = {str(x) for x in supported}
-    return [mid for mid in model_ids if f"{OURO_CHATGPT_PROVIDER_ID}/{mid}" in supported_ids]
-
-
 def discover_chatgpt_model_ids() -> tuple[str, ...]:
     """Discover current ChatGPT subscription model IDs."""
     latest = json.loads(_http_text(f"{NPM_REGISTRY}/{NPM_PKG}/latest"))
@@ -181,7 +168,6 @@ def discover_chatgpt_model_ids() -> tuple[str, ...]:
     provider_block = _extract_pi_provider_block(models_js, PI_PROVIDER_ID)
     model_ids = _extract_pi_provider_model_ids(provider_block)
     model_ids = _merge_model_ids(model_ids, OFFICIAL_CHATGPT_SUBSCRIPTION_MODEL_IDS)
-    model_ids = _filter_chatgpt_model_ids_for_litellm(model_ids)
     if not model_ids:
         raise RuntimeError("No compatible ChatGPT subscription models discovered")
     return tuple(f"{OURO_CHATGPT_PROVIDER_ID}/{mid}" for mid in model_ids)

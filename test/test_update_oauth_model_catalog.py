@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
-import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 
 def _load_module():
@@ -76,7 +74,7 @@ def test_render_catalog_module_maps_prefix():
     rendered = m._render_catalog_module("0.52.12", ["gpt-5.2-codex"])
 
     assert 'PI_AI_VERSION = "0.52.12"' in rendered
-    assert '"chatgpt/gpt-5.2-codex"' in rendered
+    assert '"openai-codex/gpt-5.2-codex"' in rendered
     assert "from ouro.config import Config" in rendered
     assert "def get_bundled_oauth_provider_model_ids" in rendered
     assert "Config.OAUTH_MODEL_DYNAMIC_REFRESH" in rendered
@@ -91,32 +89,15 @@ def test_render_catalog_module_preserves_other_providers():
         {"copilot": ("github_copilot/gpt-5.5",)},
     )
 
-    assert '"chatgpt/gpt-5.4"' in rendered
+    assert '"openai-codex/gpt-5.4"' in rendered
     assert '"copilot": (' in rendered
     assert '"github_copilot/gpt-5.5"' in rendered
 
 
-def test_filter_model_ids_for_litellm_keeps_supported_only(monkeypatch):
+def test_render_catalog_module_keeps_chatgpt_as_auth_provider_key():
     m = _load_module()
-    monkeypatch.setitem(
-        sys.modules,
-        "litellm",
-        SimpleNamespace(chatgpt_models={"chatgpt/gpt-5.2-codex"}),
-    )
 
-    result = m._filter_model_ids_for_litellm(["gpt-5.2-codex", "gpt-5.3-codex"])
+    rendered = m._render_catalog_module("0.73.1", ["gpt-5.5"])
 
-    assert result == ["gpt-5.2-codex"]
-
-
-def test_filter_model_ids_for_litellm_can_return_empty(monkeypatch):
-    m = _load_module()
-    monkeypatch.setitem(
-        sys.modules,
-        "litellm",
-        SimpleNamespace(chatgpt_models={"chatgpt/gpt-5.2-codex"}),
-    )
-
-    result = m._filter_model_ids_for_litellm(["gpt-5.3-codex"])
-
-    assert result == []
+    assert '"chatgpt": (' in rendered
+    assert '"openai-codex/gpt-5.5"' in rendered
