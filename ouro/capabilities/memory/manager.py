@@ -34,7 +34,7 @@ from .token_tracker import TokenTracker
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from ouro.core.llm import LiteLLMAdapter
+    from ouro.core.llm import LLMAdapter
 
 
 class MemoryManager:
@@ -42,7 +42,7 @@ class MemoryManager:
 
     def __init__(
         self,
-        llm: LiteLLMAdapter,
+        llm: LLMAdapter,
         session_id: str | None = None,
         sessions_dir: str | None = None,
         memory_dir: str | None = None,
@@ -82,7 +82,7 @@ class MemoryManager:
     async def from_session(
         cls,
         session_id: str,
-        llm: LiteLLMAdapter,
+        llm: LLMAdapter,
         sessions_dir: str | None = None,
         memory_dir: str | None = None,
         progress: ProgressSink | None = None,

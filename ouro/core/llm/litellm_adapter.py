@@ -55,7 +55,7 @@ class LiteLLMAdapter:
         self.drop_params = kwargs.pop("drop_params", True)
         self.timeout = kwargs.pop("timeout", 600)
 
-        if self.provider == "chatgpt" or self.provider == "openai-codex":
+        if self.provider == "chatgpt":
             from .chatgpt_auth import configure_chatgpt_auth_env
 
             configure_chatgpt_auth_env()
@@ -197,15 +197,6 @@ class LiteLLMAdapter:
         **kwargs,
     ) -> LLMResponse:
         """Async LLM call via LiteLLM with automatic retry."""
-        if self.provider == "openai-codex":
-            from .openai_codex_adapter import OpenAICodexAdapter
-
-            return await OpenAICodexAdapter(
-                self.model,
-                api_base=self.api_base,
-                timeout=self.timeout,
-            ).call_async(messages, tools=tools, max_tokens=max_tokens, **kwargs)
-
         await self._ensure_provider_ready()
         litellm_messages, call_params = self._build_call_params(
             messages=messages,

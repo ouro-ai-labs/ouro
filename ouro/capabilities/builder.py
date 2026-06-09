@@ -19,9 +19,10 @@ from dataclasses import dataclass, field
 from typing import Any, Iterable, Protocol
 
 from ouro.core.llm import (
-    LiteLLMAdapter,
+    LLMAdapter,
     LLMMessage,
     ModelManager,
+    create_llm_adapter,
     display_reasoning_effort,
 )
 from ouro.core.log import get_logger
@@ -93,7 +94,7 @@ class AgentBuilder:
     fully wired `ComposedAgent`.
     """
 
-    llm: LiteLLMAdapter | None = None
+    llm: LLMAdapter | None = None
     model_manager: ModelManager | None = None
     tools: list[BaseTool] = field(default_factory=list)
     max_iterations: int = 1000
@@ -122,7 +123,7 @@ class AgentBuilder:
     # ---- LLM ----------------------------------------------------------------
 
     def with_llm(
-        self, llm: LiteLLMAdapter, *, model_manager: ModelManager | None = None
+        self, llm: LLMAdapter, *, model_manager: ModelManager | None = None
     ) -> AgentBuilder:
         self.llm = llm
         self.model_manager = model_manager
@@ -415,7 +416,7 @@ class ComposedAgent:
         self,
         *,
         core: Agent,
-        llm: LiteLLMAdapter,
+        llm: LLMAdapter,
         model_manager: ModelManager | None,
         tool_executor: ToolExecutor,
         todo_list: TodoList,
@@ -629,7 +630,7 @@ class ComposedAgent:
         if not new_profile:
             logger.error(f"Failed to switch to model '{model_id}'")
             return False
-        new_llm = LiteLLMAdapter(
+        new_llm = create_llm_adapter(
             model=new_profile.model_id,
             api_key=new_profile.api_key,
             api_base=new_profile.api_base,

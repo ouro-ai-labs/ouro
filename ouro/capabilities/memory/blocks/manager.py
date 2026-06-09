@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from ouro.core.llm import LiteLLMAdapter
+    from ouro.core.llm import LLMAdapter
 
 
 # Default blocks shipped with ouro. Users can add their own by writing a file
@@ -49,7 +49,7 @@ class _Block:
     tokens: int
 
 
-def _count_tokens(text: str, llm: LiteLLMAdapter | None) -> int:
+def _count_tokens(text: str, llm: LLMAdapter | None) -> int:
     """Token count via litellm with a safe fallback heuristic."""
     if not text:
         return 0
@@ -70,7 +70,7 @@ def _count_tokens(text: str, llm: LiteLLMAdapter | None) -> int:
     return max(1, len(text) // 3)
 
 
-def _fifo_truncate(existing: str, addition: str, budget: int, llm: LiteLLMAdapter | None) -> str:
+def _fifo_truncate(existing: str, addition: str, budget: int, llm: LLMAdapter | None) -> str:
     """Drop oldest paragraphs from *existing* until *existing + addition* fits the budget.
 
     Splits on blank lines so we trim whole "entries" instead of mid-sentence.
@@ -128,7 +128,7 @@ class MemoryBlockManager:
 
     def __init__(
         self,
-        llm: LiteLLMAdapter | None = None,
+        llm: LLMAdapter | None = None,
         memory_dir: str | None = None,
         block_budgets: dict[str, int] | None = None,
     ) -> None:

@@ -14,7 +14,7 @@ from .types import CompressedMemory, CompressionStrategy
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from ouro.core.llm import LiteLLMAdapter
+    from ouro.core.llm import LLMAdapter
 
 
 class WorkingMemoryCompressor:
@@ -68,7 +68,7 @@ Original messages ({count} messages, ~{tokens} tokens):
         "will be kept verbatim and don't need to be in your summary."
     )
 
-    def __init__(self, llm: "LiteLLMAdapter"):
+    def __init__(self, llm: "LLMAdapter"):
         """Initialize compressor.
 
         Args:

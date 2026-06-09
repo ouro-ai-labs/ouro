@@ -2,6 +2,8 @@
 
 # Import new types from message_types (primary source)
 # Import compatibility utilities
+# Import adapters
+from .adapter import LLMAdapter, create_llm_adapter
 from .compat import ensure_new_format, migrate_messages, normalize_stop_reason
 
 # Import utilities
@@ -11,8 +13,6 @@ from .content_utils import (
     extract_tool_calls_from_content,
     message_to_dict,
 )
-
-# Import adapter
 from .litellm_adapter import LiteLLMAdapter
 from .message_types import (
     FunctionCall,
@@ -42,7 +42,9 @@ __all__ = [
     "StopReason",
     "ToolOutput",
     # Adapter
+    "LLMAdapter",
     "LiteLLMAdapter",
+    "create_llm_adapter",
     # Model Manager
     "ModelManager",
     "ModelProfile",
