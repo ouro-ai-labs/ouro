@@ -25,7 +25,24 @@ class JsonProgressSink:
                 flush()
 
     def emit(self, event: ProgressEvent) -> None:
-        self._emit({"kind": event.kind, "payload": event.payload})
+        record: dict[str, Any] = {"kind": event.kind, "payload": event.payload}
+        if not event.source.is_empty:
+            source = {
+                key: value
+                for key, value in {
+                    "agent_id": event.source.agent_id,
+                    "parent_agent_id": event.source.parent_agent_id,
+                    "root_agent_id": event.source.root_agent_id,
+                    "run_id": event.source.run_id,
+                    "depth": event.source.depth,
+                    "role": event.source.role,
+                }.items()
+                if value is not None and value != 0
+            }
+            if event.source.depth == 0 and "depth" not in source:
+                source["depth"] = 0
+            record["source"] = source
+        self._emit(record)
 
     def spinner(self, label: str, title: str | None = None) -> AbstractAsyncContextManager[Any]:
         return self._null.spinner(label, title)

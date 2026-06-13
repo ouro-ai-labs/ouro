@@ -28,11 +28,13 @@ from ouro.core.llm import (
 from ouro.core.log import get_logger
 from ouro.core.loop import (
     Agent,
+    EventSource,
     Hook,
     MessageListContext,
     NullProgressSink,
     ProgressSink,
     Rule,
+    ScopedProgressSink,
 )
 
 from .compaction.hook import CompactionHook
@@ -81,6 +83,26 @@ class ImageInput(Protocol):
 logger = get_logger(__name__)
 
 
+@dataclass(frozen=True)
+class AgentIdentity:
+    agent_id: str
+    parent_agent_id: str | None = None
+    root_agent_id: str | None = None
+    run_id: str | None = None
+    depth: int = 0
+    role: str | None = None
+
+    def to_event_source(self) -> EventSource:
+        return EventSource(
+            agent_id=self.agent_id,
+            parent_agent_id=self.parent_agent_id,
+            root_agent_id=self.root_agent_id or self.agent_id,
+            run_id=self.run_id,
+            depth=self.depth,
+            role=self.role,
+        )
+
+
 # ---------------------------------------------------------------------------
 # AgentBuilder
 # ---------------------------------------------------------------------------
@@ -119,6 +141,11 @@ class AgentBuilder:
     enable_agent_team: bool = False
     task_store_path: str | None = None
     agent_id: str | None = None
+    parent_agent_id: str | None = None
+    root_agent_id: str | None = None
+    progress_run_id: str | None = None
+    progress_depth: int = 0
+    progress_role: str | None = None
 
     # ---- LLM ----------------------------------------------------------------
 
@@ -208,6 +235,24 @@ class AgentBuilder:
         self.agent_id = agent_id
         return self
 
+    def with_progress_identity(
+        self,
+        *,
+        agent_id: str,
+        parent_agent_id: str | None = None,
+        root_agent_id: str | None = None,
+        run_id: str | None = None,
+        depth: int = 0,
+        role: str | None = None,
+    ) -> AgentBuilder:
+        self.agent_id = agent_id
+        self.parent_agent_id = parent_agent_id
+        self.root_agent_id = root_agent_id
+        self.progress_run_id = run_id
+        self.progress_depth = depth
+        self.progress_role = role
+        return self
+
     def without_agent_team(self) -> AgentBuilder:
         """Explicitly disable agent team (default)."""
         self.enable_agent_team = False
@@ -240,6 +285,18 @@ class AgentBuilder:
 
     # ---- Build --------------------------------------------------------------
 
+    def _progress_identity(self) -> AgentIdentity | None:
+        if self.agent_id is None:
+            return None
+        return AgentIdentity(
+            agent_id=self.agent_id,
+            parent_agent_id=self.parent_agent_id,
+            root_agent_id=self.root_agent_id,
+            run_id=self.progress_run_id,
+            depth=self.progress_depth,
+            role=self.progress_role,
+        )
+
     def build(self) -> ComposedAgent:
         if self.llm is None:
             raise ValueError("AgentBuilder requires .with_llm(...) before .build()")
@@ -253,6 +310,12 @@ class AgentBuilder:
         #   - Use TodoTool (legacy)
         #   - MultiTaskTool can be added manually via with_tool()
         use_v2_mode = self.enable_agent_team
+        progress_identity = self._progress_identity()
+        progress_sink = (
+            ScopedProgressSink(self.progress, progress_identity.to_event_source())
+            if progress_identity is not None
+            else self.progress
+        )
 
         todo_list = TodoList()
         tools: list[BaseTool] = list(self.tools)
@@ -272,12 +335,12 @@ class AgentBuilder:
             store_path = self.task_store_path or os.path.expanduser("~/.ouro/tasks/default.db")
             os.makedirs(os.path.dirname(store_path), exist_ok=True)
             task_store = TaskStore(store_path)
-            claim_tool = TaskClaimTool(task_store, agent_id=self.agent_id, progress=self.progress)
+            claim_tool = TaskClaimTool(task_store, agent_id=self.agent_id, progress=progress_sink)
             tools.extend(
                 [
-                    TaskCreateTool(task_store, progress=self.progress),
-                    TaskUpdateTool(task_store, progress=self.progress),
-                    TaskListTool(task_store, progress=self.progress),
+                    TaskCreateTool(task_store, progress=progress_sink),
+                    TaskUpdateTool(task_store, progress=progress_sink),
+                    TaskListTool(task_store, progress=progress_sink),
                     TaskGetTool(task_store),
                     TaskDeleteTool(task_store),
                     claim_tool,
@@ -298,7 +361,7 @@ class AgentBuilder:
                 self.llm,
                 sessions_dir=self.sessions_dir,
                 memory_dir=self.memory_dir,
-                progress=self.progress,
+                progress=progress_sink,
             )
             memory.set_todo_context_provider(_make_todo_context_provider(todo_list))
             hooks.append(CompactionHook(memory.compaction))
@@ -311,22 +374,34 @@ class AgentBuilder:
                     self.llm,
                     max_iterations=self.verification_max_iterations,
                     verifier=self.verifier,
-                    progress=self.progress,
+                    progress=progress_sink,
                 )
             )
 
         # Auto-swarm hook (active when agent team is enabled).
         if self.enable_agent_team and self.llm is not None:
             llm = self.llm  # capture for closure
+            parent_identity = progress_identity
 
             def builder_factory(agent_id: str):
-                return (
+                builder = (
                     AgentBuilder()
                     .with_llm(llm)
                     .with_agent_team(enabled=True, agent_id=agent_id)
                     .without_memory()
                     .with_max_iterations(self.max_iterations)
+                    .with_progress_sink(self.progress)
                 )
+                if parent_identity is not None:
+                    builder = builder.with_progress_identity(
+                        agent_id=agent_id,
+                        parent_agent_id=parent_identity.agent_id,
+                        root_agent_id=parent_identity.root_agent_id or parent_identity.agent_id,
+                        run_id=parent_identity.run_id,
+                        depth=parent_identity.depth + 1,
+                        role="worker",
+                    )
+                return builder
 
             hooks.append(
                 AutoSwarmHook(
@@ -354,7 +429,7 @@ class AgentBuilder:
             tools=tool_executor,
             hooks=hooks,
             max_iterations=self.max_iterations,
-            progress=self.progress,
+            progress=progress_sink,
             usage_callback=(memory.token_tracker.record_usage if memory is not None else None),
             rules=rules,
         )
@@ -369,7 +444,7 @@ class AgentBuilder:
             skills_registry=self.skills_registry,
             soul_section=self.soul_section,
             system_prompt=self.system_prompt,
-            progress=self.progress,
+            progress=progress_sink,
             sessions_dir=self.sessions_dir,
             memory_dir=self.memory_dir,
             task_store=task_store,

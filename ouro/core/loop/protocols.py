@@ -8,7 +8,7 @@ implementing these structural Protocols.
 from __future__ import annotations
 
 from contextlib import AbstractAsyncContextManager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
@@ -49,9 +49,24 @@ ProgressEventKind = Literal[
 
 
 @dataclass(frozen=True)
+class EventSource:
+    agent_id: str | None = None
+    parent_agent_id: str | None = None
+    root_agent_id: str | None = None
+    run_id: str | None = None
+    depth: int = 0
+    role: str | None = None
+
+    @property
+    def is_empty(self) -> bool:
+        return self == EventSource()
+
+
+@dataclass(frozen=True)
 class ProgressEvent:
     kind: ProgressEventKind
     payload: dict[str, Any] = field(default_factory=dict)
+    source: EventSource = field(default_factory=EventSource)
 
 
 class _NullSpinner:
@@ -67,6 +82,23 @@ class ProgressSink(Protocol):
     def emit(self, event: ProgressEvent) -> None: ...
     def spinner(self, label: str, title: str | None = None) -> AbstractAsyncContextManager[Any]: ...
     def on_session_loaded(self, messages: list[Any]) -> None: ...
+
+
+class ScopedProgressSink:
+    def __init__(self, base: ProgressSink, source: EventSource) -> None:
+        self._base = base
+        self._source = source
+
+    def emit(self, event: ProgressEvent) -> None:
+        if event.source.is_empty:
+            event = replace(event, source=self._source)
+        self._base.emit(event)
+
+    def spinner(self, label: str, title: str | None = None) -> AbstractAsyncContextManager[Any]:
+        return self._base.spinner(label, title)
+
+    def on_session_loaded(self, messages: list[Any]) -> None:
+        self._base.on_session_loaded(messages)
 
 
 class NullProgressSink:
