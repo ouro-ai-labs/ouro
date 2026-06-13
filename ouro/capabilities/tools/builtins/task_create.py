@@ -6,7 +6,7 @@ from typing import Any
 
 from ouro.capabilities.tasks.store import TaskStore
 from ouro.capabilities.tools.base import BaseTool
-from ouro.core.loop import NullProgressSink
+from ouro.core.loop import NullProgressSink, ProgressEvent
 
 
 class TaskCreateTool(BaseTool):
@@ -97,12 +97,14 @@ The task will be created with status "pending" and can be claimed later."""
             # Update task's blockedBy
             self._store.update(task.id, blockedBy=list(blockedBy))
 
-        self._progress.event(
-            "task_status",
-            {
-                "line": f"[pending] #{task.id} {task.activeForm or task.subject}",
-                "summary": f"Created task #{task.id}: {task.subject}",
-                "title": "Task Created",
-            },
+        self._progress.emit(
+            ProgressEvent(
+                kind="task_status",
+                payload={
+                    "line": f"[pending] #{task.id} {task.activeForm or task.subject}",
+                    "summary": f"Created task #{task.id}: {task.subject}",
+                    "title": "Task Created",
+                },
+            )
         )
         return f"Created task #{task.id}: {task.subject}"

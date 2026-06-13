@@ -10,7 +10,13 @@ from __future__ import annotations
 
 from ouro.core.llm import LLMMessage, LLMResponse
 from ouro.core.log import get_logger
-from ouro.core.loop.protocols import ContinueDecision, LoopContext, NullProgressSink, ProgressSink
+from ouro.core.loop.protocols import (
+    ContinueDecision,
+    LoopContext,
+    NullProgressSink,
+    ProgressEvent,
+    ProgressSink,
+)
 
 from .verifier import LLMVerifier, VerificationResult, Verifier
 
@@ -48,8 +54,13 @@ class VerificationHook:
 
         self._outer_iteration += 1
         if self._outer_iteration >= self._max_iterations:
-            ctx.progress.unfinished_answer(
-                f"Verification skipped (max iterations {self._max_iterations} reached)."
+            ctx.progress.emit(
+                ProgressEvent(
+                    kind="unfinished_answer",
+                    payload={
+                        "text": f"Verification skipped (max iterations {self._max_iterations} reached)."
+                    },
+                )
             )
             return ContinueDecision.stop()
 
@@ -78,8 +89,16 @@ class VerificationHook:
         self._previous_results.append(verification)
 
         if verification.complete:
-            ctx.progress.info(
-                f"✓ Verification passed (attempt {self._outer_iteration}/{self._max_iterations}): {verification.reason}"
+            ctx.progress.emit(
+                ProgressEvent(
+                    kind="verification_status",
+                    payload={
+                        "status": "passed",
+                        "attempt": self._outer_iteration,
+                        "max_attempts": self._max_iterations,
+                        "reason": verification.reason,
+                    },
+                )
             )
             return ContinueDecision.stop()
 
@@ -88,8 +107,16 @@ class VerificationHook:
             f"Feedback: {verification.reason}\n\n"
             f"Please address the feedback and provide a complete answer."
         )
-        ctx.progress.unfinished_answer(final)
-        ctx.progress.info(
-            f"⟳ Verification feedback (attempt {self._outer_iteration}/{self._max_iterations}): {verification.reason}"
+        ctx.progress.emit(ProgressEvent(kind="unfinished_answer", payload={"text": final}))
+        ctx.progress.emit(
+            ProgressEvent(
+                kind="verification_status",
+                payload={
+                    "status": "failed",
+                    "attempt": self._outer_iteration,
+                    "max_attempts": self._max_iterations,
+                    "reason": verification.reason,
+                },
+            )
         )
         return ContinueDecision.retry_with_feedback(LLMMessage(role="user", content=feedback))

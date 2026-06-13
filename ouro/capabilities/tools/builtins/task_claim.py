@@ -6,7 +6,7 @@ from typing import Any
 
 from ouro.capabilities.tasks.store import TaskStore
 from ouro.capabilities.tools.base import BaseTool
-from ouro.core.loop import NullProgressSink
+from ouro.core.loop import NullProgressSink, ProgressEvent
 
 
 class TaskClaimTool(BaseTool):
@@ -75,13 +75,15 @@ Returns:
         if result.success:
             assert result.task is not None
             display = result.task.activeForm or result.task.subject
-            self._progress.event(
-                "task_status",
-                {
-                    "line": f"[in_progress] #{taskId} ({owner}) {display}",
-                    "summary": f"Claimed task #{taskId}: {result.task.subject}",
-                    "title": "Task Claimed",
-                },
+            self._progress.emit(
+                ProgressEvent(
+                    kind="task_status",
+                    payload={
+                        "line": f"[in_progress] #{taskId} ({owner}) {display}",
+                        "summary": f"Claimed task #{taskId}: {result.task.subject}",
+                        "title": "Task Claimed",
+                    },
+                )
             )
             return f"Claimed task #{taskId}: {result.task.subject}"
 

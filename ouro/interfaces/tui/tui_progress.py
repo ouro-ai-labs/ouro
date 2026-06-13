@@ -11,6 +11,7 @@ from __future__ import annotations
 from contextlib import AbstractAsyncContextManager
 from typing import Any
 
+from ouro.core.loop import ProgressEvent
 from ouro.interfaces.tui import terminal_ui
 from ouro.interfaces.tui.progress import AsyncSpinner
 
@@ -25,116 +26,68 @@ class TuiProgressSink:
         self._swarm_header_lines: list[str] = []
         self._swarm_status_line: str | None = None
 
-    def info(self, msg: str) -> None:
-        if not msg:
+    def emit(self, event: ProgressEvent) -> None:
+        kind = event.kind
+        payload = event.payload
+
+        if kind == "info":
+            message = payload.get("message")
+            if isinstance(message, str) and message:
+                terminal_ui.print_info(message)
             return
 
-        if msg.startswith("Tasks:\n"):
-            self._render_task_list(msg)
+        if kind == "thinking":
+            text = payload.get("text")
+            if isinstance(text, str) and text:
+                terminal_ui.print_thinking(text)
             return
 
-        if msg == "Swarm plan:":
-            self._reset_swarm_state(keep_headers=True)
+        if kind == "assistant_message":
+            content = payload.get("text", payload.get("content"))
+            if content is not None:
+                terminal_ui.print_assistant_message(content)
             return
 
-        if msg.startswith("  #"):
-            self._swarm_plan_lines.append(msg.strip())
-            self._render_swarm_runtime("Swarm Plan")
+        if kind == "tool_call":
+            name = payload.get("name")
+            arguments = payload.get("arguments")
+            if isinstance(name, str) and isinstance(arguments, dict):
+                terminal_ui.print_tool_call(name, arguments)
             return
 
-        if msg.startswith("Swarm selected:") or msg.startswith("Starting swarm with "):
-            self._swarm_header_lines.append(msg)
-            self._render_swarm_runtime()
+        if kind == "tool_result":
+            result = payload.get("text")
+            if isinstance(result, str):
+                terminal_ui.print_tool_result(result)
             return
 
-        if msg.startswith("Swarm agent ready:"):
-            agent = msg.removeprefix("Swarm agent ready:").strip()
-            if agent and agent not in self._swarm_agents:
-                self._swarm_agents.append(agent)
-            self._render_swarm_runtime()
+        if kind == "tool_blocked":
+            name = payload.get("name")
+            arguments = payload.get("arguments")
+            reason = payload.get("reason")
+            if isinstance(name, str) and isinstance(arguments, dict) and isinstance(reason, str):
+                terminal_ui.print_tool_blocked(name, arguments, reason)
             return
 
-        if " claimed task #" in msg:
-            agent, task = msg.split(" claimed task #", 1)
-            self._swarm_assignments[agent.strip()] = f"task #{task.strip()}"
-            self._render_swarm_runtime()
+        if kind == "final_answer":
+            # The interactive shell renders the returned final answer itself;
+            # no additional marker is needed.
             return
 
-        if " is working on task #" in msg:
-            agent, task = msg.split(" is working on task #", 1)
-            self._swarm_assignments[agent.strip()] = f"task #{task.strip()}"
-            self._render_swarm_runtime()
+        if kind == "unfinished_answer":
+            text = payload.get("text")
+            if isinstance(text, str):
+                terminal_ui.print_unfinished_answer(text)
             return
 
-        if " completed task #" in msg:
-            agent, task = msg.split(" completed task #", 1)
-            self._swarm_assignments[agent.strip()] = f"completed #{task.strip()}"
-            self._render_swarm_runtime()
-            return
-
-        if " failed task #" in msg:
-            agent, task = msg.split(" failed task #", 1)
-            self._swarm_assignments[agent.strip()] = f"failed #{task.strip()}"
-            self._render_swarm_runtime()
-            return
-
-        if msg.startswith("Swarm status:"):
-            self._swarm_status_line = msg
-            self._render_swarm_runtime("Swarm Status")
-            return
-
-        if msg.startswith("Swarm complete:"):
-            self._swarm_status_line = msg
-            self._render_swarm_runtime("Swarm Result")
-            return
-
-        terminal_ui.print_info(msg)
-
-    def _render_task_list(self, msg: str) -> None:
-        lines = msg.splitlines()
-        task_lines = [line for line in lines[1:] if line and not line.startswith("Summary:")]
-        summary = next((line for line in lines if line.startswith("Summary:")), None)
-        terminal_ui.print_task_summary(task_lines, summary=summary)
-
-    def _reset_swarm_state(self, keep_headers: bool = False) -> None:
-        self._swarm_plan_lines = []
-        self._swarm_agents = []
-        self._swarm_assignments = {}
-        self._swarm_status_line = None
-        if not keep_headers:
-            self._swarm_header_lines = []
-
-    def _render_swarm_runtime(self, title: str = "Swarm") -> None:
-        lines: list[str] = []
-        if self._swarm_header_lines:
-            lines.extend(self._swarm_header_lines)
-        if self._swarm_plan_lines:
-            if lines:
-                lines.append("")
-            lines.append("Plan:")
-            lines.extend(self._swarm_plan_lines)
-        if self._swarm_agents:
-            if lines:
-                lines.append("")
-            lines.append(f"Agents: {', '.join(self._swarm_agents)}")
-        if self._swarm_assignments:
-            if lines:
-                lines.append("")
-            lines.append("Assignments:")
-            lines.extend(
-                f"- {agent}: {self._swarm_assignments[agent]}"
-                for agent in sorted(self._swarm_assignments)
-            )
-        if self._swarm_status_line:
-            if lines:
-                lines.append("")
-            lines.append(self._swarm_status_line)
-        terminal_ui.print_swarm_summary(lines, title=title)
-
-    def event(self, kind: str, payload: dict[str, Any]) -> None:
         if kind == "task_list":
-            task_lines = list(payload.get("task_lines", []))
+            task_lines = payload.get("task_lines")
             summary = payload.get("summary")
+            if not isinstance(task_lines, list) or not all(
+                isinstance(line, str) for line in task_lines
+            ):
+                terminal_ui.print_info(f"[{kind}] {payload}")
+                return
             terminal_ui.print_task_summary(task_lines, summary=summary)
             return
 
@@ -147,6 +100,22 @@ class TuiProgressSink:
                 summary=summary,
                 title=payload.get("title", "Task Update"),
             )
+            return
+
+        if kind == "verification_status":
+            status = payload.get("status")
+            attempt = payload.get("attempt")
+            max_attempts = payload.get("max_attempts")
+            reason = payload.get("reason")
+            if (
+                all(isinstance(value, int) for value in (attempt, max_attempts))
+                and isinstance(status, str)
+                and isinstance(reason, str)
+            ):
+                prefix = "✓" if status == "passed" else "⟳"
+                terminal_ui.print_info(
+                    f"{prefix} Verification {status} (attempt {attempt}/{max_attempts}): {reason}"
+                )
             return
 
         if kind == "swarm_reset":
@@ -191,28 +160,40 @@ class TuiProgressSink:
 
         terminal_ui.print_info(f"[{kind}] {payload}")
 
-    def thinking(self, text: str) -> None:
-        terminal_ui.print_thinking(text)
+    def _reset_swarm_state(self, keep_headers: bool = False) -> None:
+        self._swarm_plan_lines = []
+        self._swarm_agents = []
+        self._swarm_assignments = {}
+        self._swarm_status_line = None
+        if not keep_headers:
+            self._swarm_header_lines = []
 
-    def assistant_message(self, content: Any) -> None:
-        terminal_ui.print_assistant_message(content)
-
-    def tool_call(self, name: str, arguments: dict[str, Any]) -> None:
-        terminal_ui.print_tool_call(name, arguments)
-
-    def tool_result(self, result: str) -> None:
-        terminal_ui.print_tool_result(result)
-
-    def tool_blocked(self, name: str, arguments: dict[str, Any], reason: str) -> None:
-        terminal_ui.print_tool_blocked(name, arguments, reason)
-
-    def final_answer(self, text: str) -> None:
-        # The interactive shell renders the returned final answer itself;
-        # no additional marker is needed.
-        pass
-
-    def unfinished_answer(self, text: str) -> None:
-        terminal_ui.print_unfinished_answer(text)
+    def _render_swarm_runtime(self, title: str = "Swarm") -> None:
+        lines: list[str] = []
+        if self._swarm_header_lines:
+            lines.extend(self._swarm_header_lines)
+        if self._swarm_plan_lines:
+            if lines:
+                lines.append("")
+            lines.append("Plan:")
+            lines.extend(self._swarm_plan_lines)
+        if self._swarm_agents:
+            if lines:
+                lines.append("")
+            lines.append(f"Agents: {', '.join(self._swarm_agents)}")
+        if self._swarm_assignments:
+            if lines:
+                lines.append("")
+            lines.append("Assignments:")
+            lines.extend(
+                f"- {agent}: {self._swarm_assignments[agent]}"
+                for agent in sorted(self._swarm_assignments)
+            )
+        if self._swarm_status_line:
+            if lines:
+                lines.append("")
+            lines.append(self._swarm_status_line)
+        terminal_ui.print_swarm_summary(lines, title=title)
 
     def spinner(self, label: str, title: str | None = None) -> AbstractAsyncContextManager[Any]:
         return AsyncSpinner(terminal_ui.console, label, title=title or "Working")

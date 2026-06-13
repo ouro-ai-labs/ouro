@@ -7,6 +7,7 @@ from ouro.capabilities.swarm.coordinator import SwarmCoordinator
 from ouro.capabilities.tasks.store import TaskStore
 from ouro.core.llm import LLMMessage
 from ouro.core.log import get_logger
+from ouro.core.loop import ProgressEvent
 
 logger = get_logger(__name__)
 
@@ -39,7 +40,12 @@ class AutoSwarmHook:
             return
 
         logger.info(f"AutoSwarm: Analyzing task complexity: {task[:100]}...")
-        ctx.progress.info("Analyzing task complexity for possible swarm execution...")
+        ctx.progress.emit(
+            ProgressEvent(
+                kind="info",
+                payload={"message": "Analyzing task complexity for possible swarm execution..."},
+            )
+        )
         analysis = await self.analyzer.analyze(task)
 
         logger.info(
@@ -52,12 +58,14 @@ class AutoSwarmHook:
             return
 
         subtasks = analysis.subtasks or []
-        ctx.progress.event(
-            "swarm_header",
-            {
-                "line": f"Swarm selected: complexity={analysis.complexity_score:.2f}, subtasks={len(subtasks)}",
-                "title": "Swarm",
-            },
+        ctx.progress.emit(
+            ProgressEvent(
+                kind="swarm_header",
+                payload={
+                    "line": f"Swarm selected: complexity={analysis.complexity_score:.2f}, subtasks={len(subtasks)}",
+                    "title": "Swarm",
+                },
+            )
         )
         logger.info(f"AutoSwarm: Decomposing into {len(subtasks)} subtasks")
 
@@ -67,11 +75,13 @@ class AutoSwarmHook:
         db_path = Path(tempfile.gettempdir()) / f"ouro-swarm-{id(task)}.db"
         store = TaskStore(str(db_path))
 
-        ctx.progress.event("swarm_reset", {"keep_headers": True})
+        ctx.progress.emit(ProgressEvent(kind="swarm_reset", payload={"keep_headers": True}))
         for idx, subtask in enumerate(subtasks, start=1):
-            ctx.progress.event(
-                "swarm_plan_item",
-                {"line": f"#{idx} {subtask['subject']}", "title": "Swarm Plan"},
+            ctx.progress.emit(
+                ProgressEvent(
+                    kind="swarm_plan_item",
+                    payload={"line": f"#{idx} {subtask['subject']}", "title": "Swarm Plan"},
+                )
             )
             store.create(
                 subject=subtask["subject"],
@@ -89,9 +99,11 @@ class AutoSwarmHook:
         num_agents = min(len(subtasks), self.max_agents)
         await coordinator.spawn_agents(n=num_agents)
 
-        ctx.progress.event(
-            "swarm_header",
-            {"line": f"Starting swarm with {num_agents} agent(s)...", "title": "Swarm"},
+        ctx.progress.emit(
+            ProgressEvent(
+                kind="swarm_header",
+                payload={"line": f"Starting swarm with {num_agents} agent(s)...", "title": "Swarm"},
+            )
         )
         logger.info(f"AutoSwarm: Running {num_agents} agents...")
         await coordinator.run_until_done()
@@ -99,14 +111,16 @@ class AutoSwarmHook:
         status = coordinator.get_status()
         tasks = store.list_all()
 
-        ctx.progress.event(
-            "swarm_status",
-            {
-                "line": "Swarm complete: "
-                f"{status.completed}/{status.total_tasks} tasks done, "
-                f"{status.in_progress} running, {status.blocked} blocked",
-                "title": "Swarm Result",
-            },
+        ctx.progress.emit(
+            ProgressEvent(
+                kind="swarm_status",
+                payload={
+                    "line": "Swarm complete: "
+                    f"{status.completed}/{status.total_tasks} tasks done, "
+                    f"{status.in_progress} running, {status.blocked} blocked",
+                    "title": "Swarm Result",
+                },
+            )
         )
 
         result_parts = [

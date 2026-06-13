@@ -7,7 +7,7 @@ from typing import Any
 from ouro.capabilities.tasks.models import TaskStatus
 from ouro.capabilities.tasks.store import TaskStore
 from ouro.capabilities.tools.base import BaseTool
-from ouro.core.loop import NullProgressSink
+from ouro.core.loop import NullProgressSink, ProgressEvent
 
 
 class TaskUpdateTool(BaseTool):
@@ -214,12 +214,14 @@ EXAMPLES:
         if updated.owner:
             line += f" ({updated.owner})"
         line += f" {display}"
-        self._progress.event(
-            "task_status",
-            {
-                "line": line,
-                "summary": f"Updated task #{taskId}: {changes or 'fields updated'}",
-                "title": "Task Updated",
-            },
+        self._progress.emit(
+            ProgressEvent(
+                kind="task_status",
+                payload={
+                    "line": line,
+                    "summary": f"Updated task #{taskId}: {changes or 'fields updated'}",
+                    "title": "Task Updated",
+                },
+            )
         )
         return f"Updated task #{taskId}: {changes or 'fields updated'}"

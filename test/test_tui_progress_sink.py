@@ -1,61 +1,57 @@
 from __future__ import annotations
 
+from ouro.core.loop import ProgressEvent
 from ouro.interfaces.tui.tui_progress import TuiProgressSink
 
 
-def test_info_renders_task_list_with_summary(monkeypatch):
+def test_emit_renders_task_list_with_summary(monkeypatch):
     calls: list[tuple[list[str], str | None]] = []
-    infos: list[str] = []
 
     monkeypatch.setattr(
         "ouro.interfaces.tui.tui_progress.terminal_ui.print_task_summary",
         lambda task_lines, summary=None, title="Tasks": calls.append((task_lines, summary)),
     )
+
+    sink = TuiProgressSink()
+    sink.emit(
+        ProgressEvent(
+            kind="task_list",
+            payload={
+                "task_lines": ["[pending] #1 Task A", "[running] #2 Task B"],
+                "summary": "Summary: 0 done, 1 running, 0 blocked, 1 pending",
+            },
+        )
+    )
+
+    assert calls == [
+        (
+            ["[pending] #1 Task A", "[running] #2 Task B"],
+            "Summary: 0 done, 1 running, 0 blocked, 1 pending",
+        )
+    ]
+
+
+def test_emit_falls_back_for_invalid_task_list_payload(monkeypatch):
+    infos: list[str] = []
+    calls: list[tuple[list[str], str | None]] = []
+
     monkeypatch.setattr(
         "ouro.interfaces.tui.tui_progress.terminal_ui.print_info",
         lambda msg: infos.append(msg),
     )
-
-    sink = TuiProgressSink()
-    sink.info(
-        "Tasks:\n[pending] #1 Task A\n[running] #2 Task B\n\nSummary: 0 done, 1 running, 0 blocked, 1 pending"
-    )
-
-    assert calls == [
-        (
-            ["[pending] #1 Task A", "[running] #2 Task B"],
-            "Summary: 0 done, 1 running, 0 blocked, 1 pending",
-        )
-    ]
-    assert infos == []
-
-
-def test_event_renders_task_list_with_summary(monkeypatch):
-    calls: list[tuple[list[str], str | None]] = []
-
     monkeypatch.setattr(
         "ouro.interfaces.tui.tui_progress.terminal_ui.print_task_summary",
         lambda task_lines, summary=None, title="Tasks": calls.append((task_lines, summary)),
     )
 
     sink = TuiProgressSink()
-    sink.event(
-        "task_list",
-        {
-            "task_lines": ["[pending] #1 Task A", "[running] #2 Task B"],
-            "summary": "Summary: 0 done, 1 running, 0 blocked, 1 pending",
-        },
-    )
+    sink.emit(ProgressEvent(kind="task_list", payload={"task_lines": "oops", "summary": "bad"}))
 
-    assert calls == [
-        (
-            ["[pending] #1 Task A", "[running] #2 Task B"],
-            "Summary: 0 done, 1 running, 0 blocked, 1 pending",
-        )
-    ]
+    assert calls == []
+    assert infos == ["[task_list] {'task_lines': 'oops', 'summary': 'bad'}"]
 
 
-def test_event_renders_swarm_runtime(monkeypatch):
+def test_emit_renders_swarm_runtime(monkeypatch):
     swarm_calls: list[tuple[list[str], str]] = []
 
     monkeypatch.setattr(
@@ -68,21 +64,50 @@ def test_event_renders_swarm_runtime(monkeypatch):
     )
 
     sink = TuiProgressSink()
-    sink.event(
-        "swarm_header", {"line": "Swarm selected: complexity=0.82, subtasks=2", "title": "Swarm"}
+    sink.emit(
+        ProgressEvent(
+            kind="swarm_header",
+            payload={"line": "Swarm selected: complexity=0.82, subtasks=2", "title": "Swarm"},
+        )
     )
-    sink.event("swarm_reset", {"keep_headers": True})
-    sink.event("swarm_plan_item", {"line": "#1 Inspect rendering", "title": "Swarm Plan"})
-    sink.event("swarm_plan_item", {"line": "#2 Update output", "title": "Swarm Plan"})
-    sink.event("swarm_header", {"line": "Starting swarm with 2 agent(s)...", "title": "Swarm"})
-    sink.event("swarm_agent", {"agent": "agent-1", "title": "Swarm"})
-    sink.event(
-        "swarm_assignment",
-        {"agent": "agent-1", "assignment": "task #1: Inspect rendering", "title": "Swarm"},
+    sink.emit(ProgressEvent(kind="swarm_reset", payload={"keep_headers": True}))
+    sink.emit(
+        ProgressEvent(
+            kind="swarm_plan_item",
+            payload={"line": "#1 Inspect rendering", "title": "Swarm Plan"},
+        )
     )
-    sink.event(
-        "swarm_status",
-        {"line": "Swarm complete: 2/2 tasks done, 0 running, 0 blocked", "title": "Swarm Result"},
+    sink.emit(
+        ProgressEvent(
+            kind="swarm_plan_item",
+            payload={"line": "#2 Update output", "title": "Swarm Plan"},
+        )
+    )
+    sink.emit(
+        ProgressEvent(
+            kind="swarm_header",
+            payload={"line": "Starting swarm with 2 agent(s)...", "title": "Swarm"},
+        )
+    )
+    sink.emit(ProgressEvent(kind="swarm_agent", payload={"agent": "agent-1", "title": "Swarm"}))
+    sink.emit(
+        ProgressEvent(
+            kind="swarm_assignment",
+            payload={
+                "agent": "agent-1",
+                "assignment": "task #1: Inspect rendering",
+                "title": "Swarm",
+            },
+        )
+    )
+    sink.emit(
+        ProgressEvent(
+            kind="swarm_status",
+            payload={
+                "line": "Swarm complete: 2/2 tasks done, 0 running, 0 blocked",
+                "title": "Swarm Result",
+            },
+        )
     )
 
     assert swarm_calls[-1] == (
@@ -105,7 +130,7 @@ def test_event_renders_swarm_runtime(monkeypatch):
     )
 
 
-def test_info_falls_back_to_plain_info(monkeypatch):
+def test_emit_info_falls_back_to_plain_info(monkeypatch):
     infos: list[str] = []
 
     monkeypatch.setattr(
@@ -114,6 +139,6 @@ def test_info_falls_back_to_plain_info(monkeypatch):
     )
 
     sink = TuiProgressSink()
-    sink.info("hello world")
+    sink.emit(ProgressEvent(kind="info", payload={"message": "hello world"}))
 
     assert infos == ["hello world"]

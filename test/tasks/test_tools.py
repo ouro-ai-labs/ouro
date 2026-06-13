@@ -14,6 +14,7 @@ from ouro.capabilities.tools.builtins.task_delete import TaskDeleteTool
 from ouro.capabilities.tools.builtins.task_get import TaskGetTool
 from ouro.capabilities.tools.builtins.task_list import TaskListTool
 from ouro.capabilities.tools.builtins.task_update import TaskUpdateTool
+from ouro.core.loop import ProgressEvent
 
 
 @pytest.fixture
@@ -21,11 +22,11 @@ async def tools():
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "tasks.db"
         store = TaskStore(db_path)
-        events: list[tuple[str, dict]] = []
+        events: list[ProgressEvent] = []
 
         class _Progress:
-            def event(self, kind: str, payload: dict) -> None:
-                events.append((kind, payload))
+            def emit(self, event: ProgressEvent) -> None:
+                events.append(event)
 
         progress = _Progress()
         yield {
@@ -64,9 +65,9 @@ class TestTaskCreateTool:
 
     async def test_create_emits_task_status_event(self, tools: dict) -> None:
         await tools["create"].execute(subject="Fix bug", description="Fix auth")
-        assert tools["events"][-1] == (
-            "task_status",
-            {
+        assert tools["events"][-1] == ProgressEvent(
+            kind="task_status",
+            payload={
                 "line": "[pending] #1 Fix bug",
                 "summary": "Created task #1: Fix bug",
                 "title": "Task Created",
@@ -79,9 +80,9 @@ class TestTaskClaimTool:
         task = tools["store"].create(subject="Claim me", description="...")
         result = await tools["claim"].execute(taskId=task.id)
         assert "Claimed task #1" in result
-        assert tools["events"][-1] == (
-            "task_status",
-            {
+        assert tools["events"][-1] == ProgressEvent(
+            kind="task_status",
+            payload={
                 "line": "[in_progress] #1 (agent-1) Claim me",
                 "summary": "Claimed task #1: Claim me",
                 "title": "Task Claimed",
@@ -125,9 +126,9 @@ class TestTaskUpdateTool:
     async def test_update_emits_task_status_event(self, tools: dict) -> None:
         task = tools["store"].create(subject="Test", description="...")
         await tools["update"].execute(taskId=task.id, status="completed", owner="alice")
-        assert tools["events"][-1] == (
-            "task_status",
-            {
+        assert tools["events"][-1] == ProgressEvent(
+            kind="task_status",
+            payload={
                 "line": "[completed] #1 (alice) Test",
                 "summary": "Updated task #1: status=completed, owner=alice",
                 "title": "Task Updated",
@@ -151,9 +152,9 @@ class TestTaskListTool:
     async def test_list_emits_task_list_event(self, tools: dict) -> None:
         tools["store"].create(subject="Task A", description="...")
         await tools["list"].execute()
-        assert tools["events"][-1] == (
-            "task_list",
-            {
+        assert tools["events"][-1] == ProgressEvent(
+            kind="task_list",
+            payload={
                 "task_lines": ["[pending] #1 Task A"],
                 "summary": "Summary: 0 done, 0 running, 0 blocked, 1 pending",
                 "counts": {"done": 0, "running": 0, "blocked": 0, "pending": 1},
@@ -181,13 +182,15 @@ class TestTaskProgressEvents:
         )
 
         sink = TuiProgressSink()
-        sink.event(
-            "task_status",
-            {
-                "line": "[running] #1 Implement feature",
-                "summary": "Summary: 0 done, 1 running, 0 blocked, 0 pending",
-                "title": "Task Update",
-            },
+        sink.emit(
+            ProgressEvent(
+                kind="task_status",
+                payload={
+                    "line": "[running] #1 Implement feature",
+                    "summary": "Summary: 0 done, 1 running, 0 blocked, 0 pending",
+                    "title": "Task Update",
+                },
+            )
         )
 
         assert calls == [
