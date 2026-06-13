@@ -102,6 +102,11 @@ def create_agent(
         .with_llm(llm, model_manager=model_manager)
         .with_max_iterations(Config.MAX_ITERATIONS)
         .with_progress_sink(progress_sink)
+        .with_progress_identity(
+            agent_id="root",
+            root_agent_id="root",
+            role="root",
+        )
         .with_memory(sessions_dir=sessions_dir, memory_dir=memory_dir)
         .with_tools(tools)
     )

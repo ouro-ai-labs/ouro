@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import json
 
-from ouro.core.loop import ProgressEvent
+from ouro.core.loop import EventSource, ProgressEvent
 from ouro.interfaces.tui.json_progress import JsonProgressSink
 
 
@@ -32,6 +32,28 @@ def test_json_progress_sink_emits_records_from_progress_events():
         },
         {"kind": "tool_result", "payload": {"text": "ok"}},
         {"kind": "final_answer", "payload": {"text": "done"}},
+    ]
+
+
+def test_json_progress_sink_emits_event_source_metadata():
+    stream = io.StringIO()
+    sink = JsonProgressSink(stream=stream)
+
+    sink.emit(
+        ProgressEvent(
+            kind="info",
+            payload={"message": "hello"},
+            source=EventSource(agent_id="agent-1", root_agent_id="root", depth=1),
+        )
+    )
+
+    lines = [json.loads(line) for line in stream.getvalue().splitlines()]
+    assert lines == [
+        {
+            "kind": "info",
+            "payload": {"message": "hello"},
+            "source": {"agent_id": "agent-1", "root_agent_id": "root", "depth": 1},
+        }
     ]
 
 
