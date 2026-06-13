@@ -26,25 +26,34 @@ class TuiProgressSink:
         self._swarm_header_lines: list[str] = []
         self._swarm_status_line: str | None = None
 
+    def _format_source_prefix(self, event: ProgressEvent) -> str:
+        agent_id = event.source.agent_id
+        if not agent_id or agent_id == "root":
+            return ""
+        return f"[{agent_id}] "
+
     def emit(self, event: ProgressEvent) -> None:
         kind = event.kind
         payload = event.payload
+        prefix = self._format_source_prefix(event)
 
         if kind == "info":
             message = payload.get("message")
             if isinstance(message, str) and message:
-                terminal_ui.print_info(message)
+                terminal_ui.print_info(f"{prefix}{message}")
             return
 
         if kind == "thinking":
             text = payload.get("text")
             if isinstance(text, str) and text:
-                terminal_ui.print_thinking(text)
+                terminal_ui.print_thinking(f"{prefix}{text}")
             return
 
         if kind == "assistant_message":
             content = payload.get("text", payload.get("content"))
             if content is not None:
+                if isinstance(content, str):
+                    content = f"{prefix}{content}"
                 terminal_ui.print_assistant_message(content)
             return
 
@@ -52,13 +61,13 @@ class TuiProgressSink:
             name = payload.get("name")
             arguments = payload.get("arguments")
             if isinstance(name, str) and isinstance(arguments, dict):
-                terminal_ui.print_tool_call(name, arguments)
+                terminal_ui.print_tool_call(f"{prefix}{name}", arguments)
             return
 
         if kind == "tool_result":
             result = payload.get("text")
             if isinstance(result, str):
-                terminal_ui.print_tool_result(result)
+                terminal_ui.print_tool_result(f"{prefix}{result}")
             return
 
         if kind == "tool_blocked":
@@ -66,7 +75,7 @@ class TuiProgressSink:
             arguments = payload.get("arguments")
             reason = payload.get("reason")
             if isinstance(name, str) and isinstance(arguments, dict) and isinstance(reason, str):
-                terminal_ui.print_tool_blocked(name, arguments, reason)
+                terminal_ui.print_tool_blocked(f"{prefix}{name}", arguments, reason)
             return
 
         if kind == "final_answer":
