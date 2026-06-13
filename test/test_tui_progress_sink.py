@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ouro.core.loop import ProgressEvent
+from ouro.core.loop import EventSource, ProgressEvent
 from ouro.interfaces.tui.tui_progress import TuiProgressSink
 
 
@@ -128,6 +128,66 @@ def test_emit_renders_swarm_runtime(monkeypatch):
         ],
         "Swarm Result",
     )
+
+
+def test_emit_info_prefixes_subagent_source(monkeypatch):
+    infos: list[str] = []
+
+    monkeypatch.setattr(
+        "ouro.interfaces.tui.tui_progress.terminal_ui.print_info",
+        lambda msg: infos.append(msg),
+    )
+
+    sink = TuiProgressSink()
+    sink.emit(
+        ProgressEvent(
+            kind="info",
+            payload={"message": "hello world"},
+            source=EventSource(agent_id="agent-2", root_agent_id="root", depth=1),
+        )
+    )
+
+    assert infos == ["[agent-2] hello world"]
+
+
+def test_emit_tool_call_prefixes_subagent_source(monkeypatch):
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    monkeypatch.setattr(
+        "ouro.interfaces.tui.tui_progress.terminal_ui.print_tool_call",
+        lambda name, arguments: calls.append((name, arguments)),
+    )
+
+    sink = TuiProgressSink()
+    sink.emit(
+        ProgressEvent(
+            kind="tool_call",
+            payload={"name": "read_file", "arguments": {"file_path": "a.py"}},
+            source=EventSource(agent_id="agent-2", root_agent_id="root", depth=1),
+        )
+    )
+
+    assert calls == [("[agent-2] read_file", {"file_path": "a.py"})]
+
+
+def test_emit_info_keeps_root_source_unprefixed(monkeypatch):
+    infos: list[str] = []
+
+    monkeypatch.setattr(
+        "ouro.interfaces.tui.tui_progress.terminal_ui.print_info",
+        lambda msg: infos.append(msg),
+    )
+
+    sink = TuiProgressSink()
+    sink.emit(
+        ProgressEvent(
+            kind="info",
+            payload={"message": "hello world"},
+            source=EventSource(agent_id="root", root_agent_id="root", role="root"),
+        )
+    )
+
+    assert infos == ["hello world"]
 
 
 def test_emit_info_falls_back_to_plain_info(monkeypatch):
