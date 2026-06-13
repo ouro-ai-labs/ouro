@@ -23,6 +23,8 @@ from .protocols import (
     Hook,
     LoopContext,
     NullProgressSink,
+    ProgressEvent,
+    ProgressEventKind,
     ProgressSink,
     ToolRegistry,
 )
@@ -38,6 +40,8 @@ __all__ = [
     "Hook",
     "LoopContext",
     "NullProgressSink",
+    "ProgressEvent",
+    "ProgressEventKind",
     "ProgressSink",
     "ToolRegistry",
     "Rule",

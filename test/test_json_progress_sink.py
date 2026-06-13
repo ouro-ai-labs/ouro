@@ -3,36 +3,43 @@ from __future__ import annotations
 import io
 import json
 
+from ouro.core.loop import ProgressEvent
 from ouro.interfaces.tui.json_progress import JsonProgressSink
 
 
-def test_json_progress_sink_emits_info_and_event_records():
+def test_json_progress_sink_emits_records_from_progress_events():
     stream = io.StringIO()
     sink = JsonProgressSink(stream=stream)
 
-    sink.info("hello")
-    sink.event("swarm_status", {"line": "Swarm status: 1/2 done"})
+    sink.emit(ProgressEvent(kind="info", payload={"message": "hello"}))
+    sink.emit(ProgressEvent(kind="swarm_status", payload={"line": "Swarm status: 1/2 done"}))
+    sink.emit(
+        ProgressEvent(
+            kind="tool_call",
+            payload={"name": "read_file", "arguments": {"file_path": "a.py"}},
+        )
+    )
+    sink.emit(ProgressEvent(kind="tool_result", payload={"text": "ok"}))
+    sink.emit(ProgressEvent(kind="final_answer", payload={"text": "done"}))
 
     lines = [json.loads(line) for line in stream.getvalue().splitlines()]
     assert lines == [
-        {"type": "info", "message": "hello"},
-        {"type": "event", "kind": "swarm_status", "payload": {"line": "Swarm status: 1/2 done"}},
+        {"kind": "info", "payload": {"message": "hello"}},
+        {"kind": "swarm_status", "payload": {"line": "Swarm status: 1/2 done"}},
+        {
+            "kind": "tool_call",
+            "payload": {"name": "read_file", "arguments": {"file_path": "a.py"}},
+        },
+        {"kind": "tool_result", "payload": {"text": "ok"}},
+        {"kind": "final_answer", "payload": {"text": "done"}},
     ]
 
 
-def test_json_progress_sink_emits_tool_and_answer_records():
+def test_json_progress_sink_emits_session_loaded_record():
     stream = io.StringIO()
     sink = JsonProgressSink(stream=stream)
 
-    sink.tool_call("read_file", {"file_path": "a.py"})
-    sink.tool_result("ok")
-    sink.final_answer("done")
+    sink.on_session_loaded([object(), object()])
 
     lines = [json.loads(line) for line in stream.getvalue().splitlines()]
-    assert lines[0] == {
-        "type": "tool_call",
-        "name": "read_file",
-        "arguments": {"file_path": "a.py"},
-    }
-    assert lines[1] == {"type": "tool_result", "result": "ok"}
-    assert lines[2] == {"type": "final_answer", "text": "done"}
+    assert lines == [{"kind": "session_loaded", "payload": {"count": 2}}]

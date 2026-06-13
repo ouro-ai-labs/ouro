@@ -7,7 +7,7 @@ from typing import Any
 from ouro.capabilities.tasks.engine import TaskEngine
 from ouro.capabilities.tasks.store import TaskStore
 from ouro.capabilities.tools.base import BaseTool
-from ouro.core.loop import NullProgressSink
+from ouro.core.loop import NullProgressSink, ProgressEvent
 
 
 class TaskListTool(BaseTool):
@@ -61,5 +61,5 @@ No parameters required."""
 
     async def execute(self, **kwargs: Any) -> str:
         structured = self.execute_structured()
-        self._progress.event(structured["kind"], structured["payload"])
+        self._progress.emit(ProgressEvent(kind=structured["kind"], payload=structured["payload"]))
         return self._engine.format_task_list()

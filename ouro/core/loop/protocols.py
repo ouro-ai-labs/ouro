@@ -10,12 +10,7 @@ from __future__ import annotations
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Protocol,
-    runtime_checkable,
-)
+from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from ouro.core.llm import LLMMessage, LLMResponse, ToolOutput
@@ -31,6 +26,34 @@ class ToolRegistry(Protocol):
     async def execute_tool_call(self, name: str, arguments: dict[str, Any]) -> ToolOutput: ...
 
 
+ProgressEventKind = Literal[
+    "info",
+    "thinking",
+    "assistant_message",
+    "tool_call",
+    "tool_result",
+    "tool_blocked",
+    "task_list",
+    "task_status",
+    "swarm_reset",
+    "swarm_header",
+    "swarm_plan_item",
+    "swarm_agent",
+    "swarm_assignment",
+    "swarm_status",
+    "verification_status",
+    "final_answer",
+    "unfinished_answer",
+    "session_loaded",
+]
+
+
+@dataclass(frozen=True)
+class ProgressEvent:
+    kind: ProgressEventKind
+    payload: dict[str, Any] = field(default_factory=dict)
+
+
 class _NullSpinner:
     async def __aenter__(self) -> _NullSpinner:
         return self
@@ -41,45 +64,13 @@ class _NullSpinner:
 
 @runtime_checkable
 class ProgressSink(Protocol):
-    def info(self, msg: str) -> None: ...
-    def event(self, kind: str, payload: dict[str, Any]) -> None: ...
-    def thinking(self, text: str) -> None: ...
-    def assistant_message(self, content: Any) -> None: ...
-    def tool_call(self, name: str, arguments: dict[str, Any]) -> None: ...
-    def tool_result(self, result: str) -> None: ...
-    def tool_blocked(self, name: str, arguments: dict[str, Any], reason: str) -> None: ...
-    def final_answer(self, text: str) -> None: ...
-    def unfinished_answer(self, text: str) -> None: ...
+    def emit(self, event: ProgressEvent) -> None: ...
     def spinner(self, label: str, title: str | None = None) -> AbstractAsyncContextManager[Any]: ...
     def on_session_loaded(self, messages: list[Any]) -> None: ...
 
 
 class NullProgressSink:
-    def info(self, msg: str) -> None:
-        pass
-
-    def event(self, kind: str, payload: dict[str, Any]) -> None:
-        pass
-
-    def thinking(self, text: str) -> None:
-        pass
-
-    def assistant_message(self, content: Any) -> None:
-        pass
-
-    def tool_call(self, name: str, arguments: dict[str, Any]) -> None:
-        pass
-
-    def tool_result(self, result: str) -> None:
-        pass
-
-    def tool_blocked(self, name: str, arguments: dict[str, Any], reason: str) -> None:
-        pass
-
-    def final_answer(self, text: str) -> None:
-        pass
-
-    def unfinished_answer(self, text: str) -> None:
+    def emit(self, event: ProgressEvent) -> None:
         pass
 
     def spinner(self, label: str, title: str | None = None) -> AbstractAsyncContextManager[Any]:

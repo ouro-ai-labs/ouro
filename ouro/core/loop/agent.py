@@ -23,6 +23,7 @@ from .protocols import (
     Hook,
     LoopContext,
     NullProgressSink,
+    ProgressEvent,
     ProgressSink,
     ToolRegistry,
 )
@@ -123,7 +124,7 @@ class Agent:
             if extract_thinking is not None:
                 thinking = extract_thinking(response)
                 if thinking:
-                    self.progress.thinking(thinking)
+                    self.progress.emit(ProgressEvent(kind="thinking", payload={"text": thinking}))
 
             if response.stop_reason == StopReason.STOP:
                 # Persist the assistant's final reply into the loop's
@@ -134,7 +135,9 @@ class Agent:
                 final_answer = self.llm.extract_text(response)
                 cont = await self._aggregate_continue(ctx, messages, response, finished=True)
                 if cont.kind == ContinueKind.STOP:
-                    self.progress.final_answer(final_answer)
+                    self.progress.emit(
+                        ProgressEvent(kind="final_answer", payload={"text": final_answer})
+                    )
                     return final_answer
                 if cont.kind == ContinueKind.RETRY:
                     for fb in cont.feedback_messages:
@@ -144,7 +147,12 @@ class Agent:
 
             if response.stop_reason == StopReason.TOOL_CALLS:
                 if response.content:
-                    self.progress.assistant_message(response.content)
+                    self.progress.emit(
+                        ProgressEvent(
+                            kind="assistant_message",
+                            payload={"text": response.content},
+                        )
+                    )
 
                 tool_calls = self.llm.extract_tool_calls(response)
                 if not tool_calls:
@@ -163,7 +171,16 @@ class Agent:
                     blocked = self._rules_before(ctx, tool_calls)
                     for tc in tool_calls:
                         if tc.id in blocked:
-                            self.progress.tool_blocked(tc.name, tc.arguments, blocked[tc.id])
+                            self.progress.emit(
+                                ProgressEvent(
+                                    kind="tool_blocked",
+                                    payload={
+                                        "name": tc.name,
+                                        "arguments": tc.arguments,
+                                        "reason": blocked[tc.id],
+                                    },
+                                )
+                            )
                     remaining = [tc for tc in tool_calls if tc.id not in blocked]
 
                     contents: dict[str, str] = dict(blocked)
@@ -213,7 +230,9 @@ class Agent:
                     len(partial),
                 )
                 final_answer = partial or f"[truncated at max_tokens={self.max_tokens_per_call}]"
-                self.progress.unfinished_answer(final_answer)
+                self.progress.emit(
+                    ProgressEvent(kind="unfinished_answer", payload={"text": final_answer})
+                )
                 return final_answer
 
             # Unknown / unexpected stop_reason — terminate instead of
@@ -349,10 +368,15 @@ class Agent:
     ) -> list[ToolResult]:
         results: list[ToolResult] = []
         for tc in tool_calls:
-            self.progress.tool_call(tc.name, tc.arguments)
+            self.progress.emit(
+                ProgressEvent(
+                    kind="tool_call",
+                    payload={"name": tc.name, "arguments": tc.arguments},
+                )
+            )
             async with self.progress.spinner(f"Executing {tc.name}...", title="Working"):
                 output = await self.tools.execute_tool_call(tc.name, tc.arguments)
-            self.progress.tool_result(str(output))
+            self.progress.emit(ProgressEvent(kind="tool_result", payload={"text": output.content}))
             results.append(
                 ToolResult(
                     tool_call_id=tc.id,
@@ -367,7 +391,12 @@ class Agent:
         self, ctx: RunStatistic, tool_calls: list[ToolCall]
     ) -> list[ToolResult]:
         for tc in tool_calls:
-            self.progress.tool_call(tc.name, tc.arguments)
+            self.progress.emit(
+                ProgressEvent(
+                    kind="tool_call",
+                    payload={"name": tc.name, "arguments": tc.arguments},
+                )
+            )
 
         outputs: list[ToolOutput | None] = [None] * len(tool_calls)
 
@@ -386,7 +415,7 @@ class Agent:
         for i, tc in enumerate(tool_calls):
             out = outputs[i]
             content = out.content if out is not None else ""
-            self.progress.tool_result(content)
+            self.progress.emit(ProgressEvent(kind="tool_result", payload={"text": content}))
             results.append(
                 ToolResult(
                     tool_call_id=tc.id,

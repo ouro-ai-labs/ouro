@@ -6,7 +6,7 @@ import json
 from contextlib import AbstractAsyncContextManager
 from typing import Any
 
-from ouro.core.loop import NullProgressSink
+from ouro.core.loop import NullProgressSink, ProgressEvent
 
 
 class JsonProgressSink:
@@ -24,42 +24,11 @@ class JsonProgressSink:
             if callable(flush):
                 flush()
 
-    def info(self, msg: str) -> None:
-        self._emit({"type": "info", "message": msg})
-
-    def event(self, kind: str, payload: dict[str, Any]) -> None:
-        self._emit({"type": "event", "kind": kind, "payload": payload})
-
-    def thinking(self, text: str) -> None:
-        self._emit({"type": "thinking", "text": text})
-
-    def assistant_message(self, content: Any) -> None:
-        self._emit({"type": "assistant_message", "content": content})
-
-    def tool_call(self, name: str, arguments: dict[str, Any]) -> None:
-        self._emit({"type": "tool_call", "name": name, "arguments": arguments})
-
-    def tool_result(self, result: str) -> None:
-        self._emit({"type": "tool_result", "result": result})
-
-    def tool_blocked(self, name: str, arguments: dict[str, Any], reason: str) -> None:
-        self._emit(
-            {
-                "type": "tool_blocked",
-                "name": name,
-                "arguments": arguments,
-                "reason": reason,
-            }
-        )
-
-    def final_answer(self, text: str) -> None:
-        self._emit({"type": "final_answer", "text": text})
-
-    def unfinished_answer(self, text: str) -> None:
-        self._emit({"type": "unfinished_answer", "text": text})
+    def emit(self, event: ProgressEvent) -> None:
+        self._emit({"kind": event.kind, "payload": event.payload})
 
     def spinner(self, label: str, title: str | None = None) -> AbstractAsyncContextManager[Any]:
         return self._null.spinner(label, title)
 
     def on_session_loaded(self, messages: list[Any]) -> None:
-        self._emit({"type": "session_loaded", "count": len(messages)})
+        self.emit(ProgressEvent(kind="session_loaded", payload={"count": len(messages)}))
