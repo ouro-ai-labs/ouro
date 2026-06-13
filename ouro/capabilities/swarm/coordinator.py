@@ -200,8 +200,12 @@ class SwarmCoordinator:
             # Build the task prompt
             prompt = self._build_task_prompt(task)
 
-            # Run the agent
-            await handle.agent.run(prompt)
+            # Run the agent and persist the worker result for synthesis.
+            result = await handle.agent.run(prompt)
+            metadata = dict(task.metadata)
+            metadata["result"] = result
+            metadata["worker_agent_id"] = handle.agent_id
+            self.store.update(task_id, metadata=metadata)
 
             # Mark complete
             self.engine.complete_task(task_id)
@@ -220,6 +224,12 @@ class SwarmCoordinator:
 
         except Exception as e:
             logger.error(f"Agent {handle.agent_id} failed task {task_id}: {e}")
+            failure_task = self.store.get(task_id)
+            if failure_task is not None:
+                metadata = dict(failure_task.metadata)
+                metadata["error"] = str(e)
+                metadata["worker_agent_id"] = handle.agent_id
+                self.store.update(task_id, metadata=metadata)
             handle.total_tasks_failed += 1
             self.progress.emit(
                 ProgressEvent(

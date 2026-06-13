@@ -1,14 +1,22 @@
-"""Agent Swarm — multi-agent task coordination.
+"""Agent swarm planning and runtime helpers.
 
-Phase 2 introduces a SwarmCoordinator that manages a pool of agents
-working from a shared TaskStore. Agents claim tasks atomically, work
-on them, and mark them complete. The coordinator handles agent lifecycle
-(task assignment, health checks, recovery) and provides a unified
-interface for swarm operations.
+The swarm package now separates routing, planning, runtime scheduling,
+and result synthesis. Task V2 remains the source of truth for all swarm
+execution state.
 """
 
 from .analyzer import TaskAnalyzer
-from .auto_swarm_hook import AutoSwarmHook
 from .coordinator import SwarmCoordinator
+from .dispatcher import SwarmExecutionDispatcher
+from .planner import TaskPlanner
+from .runtime import SwarmRuntime
+from .synthesizer import TaskGraphSynthesizer
 
-__all__ = ["SwarmCoordinator", "TaskAnalyzer", "AutoSwarmHook"]
+__all__ = [
+    "SwarmCoordinator",
+    "SwarmExecutionDispatcher",
+    "SwarmRuntime",
+    "TaskAnalyzer",
+    "TaskPlanner",
+    "TaskGraphSynthesizer",
+]

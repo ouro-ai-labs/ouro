@@ -24,40 +24,42 @@ class FakeLLM:
 
 
 class TestTaskAnalyzer:
-    async def test_simple_task_not_decomposed(self) -> None:
-        response = '{"should_decompose": false, "complexity_score": 0.1, "reasoning": "Simple task", "subtasks": null}'
+    async def test_simple_task_not_routed_to_swarm(self) -> None:
+        response = (
+            '{"should_use_swarm": false, "complexity_score": 0.1, "reasoning": "Simple task"}'
+        )
         analyzer = TaskAnalyzer(FakeLLM(response))
         analysis = await analyzer.analyze("Calculate 1+1")
 
-        assert analysis.should_decompose is False
+        assert analysis.should_use_swarm is False
         assert analysis.complexity_score == 0.1
-        assert analysis.subtasks is None
 
-    async def test_complex_task_decomposed(self) -> None:
-        response = '{"should_decompose": true, "complexity_score": 0.8, "reasoning": "Complex system", "subtasks": [{"subject": "Task 1", "description": "Desc 1"}]}'
+    async def test_complex_task_routed_to_swarm(self) -> None:
+        response = (
+            '{"should_use_swarm": true, "complexity_score": 0.8, "reasoning": "Complex system"}'
+        )
         analyzer = TaskAnalyzer(FakeLLM(response))
         analysis = await analyzer.analyze("Build auth system")
 
-        assert analysis.should_decompose is True
+        assert analysis.should_use_swarm is True
         assert analysis.complexity_score == 0.8
-        assert len(analysis.subtasks) == 1
 
     async def test_should_use_swarm(self) -> None:
-        response = '{"should_decompose": true, "complexity_score": 0.8, "reasoning": "Complex", "subtasks": []}'
+        response = '{"should_use_swarm": true, "complexity_score": 0.8, "reasoning": "Complex"}'
         analyzer = TaskAnalyzer(FakeLLM(response))
         analysis = await analyzer.analyze("Build auth system")
 
         assert analyzer.should_use_swarm(analysis) is True
 
     async def test_should_not_use_swarm_low_score(self) -> None:
-        response = '{"should_decompose": true, "complexity_score": 0.3, "reasoning": "Medium", "subtasks": []}'
+        response = '{"should_use_swarm": true, "complexity_score": 0.3, "reasoning": "Medium"}'
         analyzer = TaskAnalyzer(FakeLLM(response))
         analysis = await analyzer.analyze("Medium task")
 
         assert analyzer.should_use_swarm(analysis) is False
 
-    async def test_should_not_use_swarm_not_decomposable(self) -> None:
-        response = '{"should_decompose": false, "complexity_score": 0.9, "reasoning": "Complex but atomic", "subtasks": null}'
+    async def test_should_not_use_swarm_not_marked_complex(self) -> None:
+        response = '{"should_use_swarm": false, "complexity_score": 0.9, "reasoning": "Complex but atomic"}'
         analyzer = TaskAnalyzer(FakeLLM(response))
         analysis = await analyzer.analyze("Atomic complex task")
 
@@ -68,5 +70,5 @@ class TestTaskAnalyzer:
         analyzer = TaskAnalyzer(FakeLLM(response))
         analysis = await analyzer.analyze("Any task")
 
-        assert analysis.should_decompose is False
+        assert analysis.should_use_swarm is False
         assert analysis.complexity_score == 0.5

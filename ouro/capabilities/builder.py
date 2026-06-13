@@ -47,8 +47,13 @@ from .rules import NestedAgentsMdRule, ReadBeforeWriteRule
 from .skills.registry import SkillsRegistry
 from .skills.render import render_skills_section
 
-# Auto Swarm
-from .swarm.auto_swarm_hook import AutoSwarmHook
+# Swarm execution
+from .swarm.analyzer import TaskAnalyzer
+from .swarm.coordinator import SwarmCoordinator
+from .swarm.dispatcher import SwarmExecutionDispatcher
+from .swarm.planner import TaskPlanner
+from .swarm.runtime import SwarmRuntime
+from .swarm.synthesizer import TaskGraphSynthesizer
 
 # Task V2 (Phase 1 — opt-in)
 from .tasks.store import TaskStore
@@ -130,6 +135,7 @@ class AgentBuilder:
     verification_max_iterations: int = 0  # 0 disables verification
     progress: ProgressSink = field(default_factory=NullProgressSink)
     extra_hooks: list[Hook] = field(default_factory=list)
+    dispatcher_factory: Any | None = None
     # Deterministic per-tool-call rules. ReadBeforeWriteRule and
     # NestedAgentsMdRule are on by default; `extra_rules` run after them.
     # See `ouro.capabilities.rules`.
@@ -265,6 +271,10 @@ class AgentBuilder:
         self.progress = progress
         return self
 
+    def with_dispatcher_factory(self, factory) -> AgentBuilder:
+        self.dispatcher_factory = factory
+        return self
+
     def with_hook(self, hook: Hook) -> AgentBuilder:
         self.extra_hooks.append(hook)
         return self
@@ -378,39 +388,6 @@ class AgentBuilder:
                 )
             )
 
-        # Auto-swarm hook (active when agent swarm is enabled).
-        if self.enable_agent_swarm and self.llm is not None:
-            llm = self.llm  # capture for closure
-            parent_identity = progress_identity
-
-            def builder_factory(agent_id: str):
-                builder = (
-                    AgentBuilder()
-                    .with_llm(llm)
-                    .with_agent_swarm(enabled=True, agent_id=agent_id)
-                    .without_memory()
-                    .with_max_iterations(self.max_iterations)
-                    .with_progress_sink(self.progress)
-                )
-                if parent_identity is not None:
-                    builder = builder.with_progress_identity(
-                        agent_id=agent_id,
-                        parent_agent_id=parent_identity.agent_id,
-                        root_agent_id=parent_identity.root_agent_id or parent_identity.agent_id,
-                        run_id=parent_identity.run_id,
-                        depth=parent_identity.depth + 1,
-                        role="worker",
-                    )
-                return builder
-
-            hooks.append(
-                AutoSwarmHook(
-                    llm=llm,
-                    builder_factory=builder_factory,
-                    enabled=True,
-                )
-            )
-
         # Caller-provided extras run after first-party hooks.
         hooks.extend(self.extra_hooks)
 
@@ -434,6 +411,45 @@ class AgentBuilder:
             rules=rules,
         )
 
+        dispatcher_factory = self.dispatcher_factory
+        if dispatcher_factory is None and self.enable_agent_swarm and task_store is not None:
+            llm = self.llm
+            max_iterations = self.max_iterations
+            progress = self.progress
+            store_path = str(task_store._db_path)
+
+            def default_dispatcher_factory(single_agent_runner):
+                analyzer = TaskAnalyzer(llm)
+                planner = TaskPlanner(llm)
+
+                def worker_builder_factory(agent_id: str):
+                    return (
+                        AgentBuilder()
+                        .with_llm(llm)
+                        .with_agent_swarm(enabled=True, store_path=store_path, agent_id=agent_id)
+                        .without_memory()
+                        .with_max_iterations(max_iterations)
+                    )
+
+                coordinator = SwarmCoordinator(
+                    task_store,
+                    worker_builder_factory,
+                    heartbeat_interval=5.0,
+                    progress=progress,
+                )
+                runtime = SwarmRuntime(coordinator)
+                synthesizer = TaskGraphSynthesizer()
+                return SwarmExecutionDispatcher(
+                    analyzer=analyzer,
+                    planner=planner,
+                    store_factory=lambda: task_store,
+                    runtime=runtime,
+                    synthesizer=synthesizer,
+                    single_agent_runner=single_agent_runner,
+                )
+
+            dispatcher_factory = default_dispatcher_factory
+
         return ComposedAgent(
             core=core,
             llm=self.llm,
@@ -448,6 +464,8 @@ class AgentBuilder:
             sessions_dir=self.sessions_dir,
             memory_dir=self.memory_dir,
             task_store=task_store,
+            enable_agent_team=self.enable_agent_swarm,
+            dispatcher_factory=dispatcher_factory,
         )
 
 
@@ -503,6 +521,8 @@ class ComposedAgent:
         sessions_dir: str | None,
         memory_dir: str | None,
         task_store: TaskStore | None = None,
+        enable_agent_team: bool = False,
+        dispatcher_factory=None,
     ) -> None:
         self._core = core
         self.llm = llm
@@ -518,6 +538,10 @@ class ComposedAgent:
         self._sessions_dir = sessions_dir
         self._memory_dir = memory_dir
         self.task_store = task_store
+        self._enable_agent_team = enable_agent_team
+        self._dispatcher = (
+            dispatcher_factory(self._run_single_agent) if dispatcher_factory else None
+        )
         # Persistent conversation state across multi-turn runs.  System
         # messages stay fixed after the first turn; detached messages
         # accumulate user / assistant / tool exchanges.  The core loop
@@ -532,6 +556,24 @@ class ComposedAgent:
     # ---- main entry ---------------------------------------------------------
 
     async def run(
+        self,
+        task: str,
+        *,
+        verify: bool = False,
+        images: Sequence[ImageInput] | None = None,
+    ) -> str:
+        if self._dispatcher is not None:
+            if verify and not self._has_verification_hook():
+                logger.warning(
+                    "ComposedAgent.run(verify=True) but no VerificationHook is "
+                    "wired — pass .with_verification() to AgentBuilder. Falling "
+                    "back to plain ReAct loop."
+                )
+            return await self._dispatcher.run(task)
+
+        return await self._run_single_agent(task, verify=verify, images=images)
+
+    async def _run_single_agent(
         self,
         task: str,
         *,
