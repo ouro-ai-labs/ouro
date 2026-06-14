@@ -16,6 +16,7 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from ouro.capabilities.swarm.result_schema import coerce_task_result
 from ouro.capabilities.tasks.engine import TaskEngine
 from ouro.capabilities.tasks.models import TaskStatus
 from ouro.capabilities.tasks.store import TaskStore
@@ -202,8 +203,9 @@ class SwarmCoordinator:
 
             # Run the agent and persist the worker result for synthesis.
             result = await handle.agent.run(prompt)
+            structured = coerce_task_result(result)
             metadata = dict(task.metadata)
-            metadata["result"] = result
+            metadata["result"] = structured.to_metadata()
             metadata["worker_agent_id"] = handle.agent_id
             self.store.update(task_id, metadata=metadata)
 

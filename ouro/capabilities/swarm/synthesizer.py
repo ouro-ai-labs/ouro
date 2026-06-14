@@ -24,7 +24,14 @@ class TaskGraphSynthesizer:
             worker_suffix = f" ({worker})" if worker else ""
             lines.append(f"- [{item.status.value}] {item.subject}{worker_suffix}")
             result = item.metadata.get("result")
-            if result:
+            if isinstance(result, dict):
+                summary = result.get("summary")
+                if summary:
+                    lines.append(f"  Result: {summary}")
+                artifacts = result.get("artifacts") or []
+                if artifacts:
+                    lines.append(f"  Artifacts: {', '.join(artifacts)}")
+            elif result:
                 lines.append(f"  Result: {result}")
             error = item.metadata.get("error")
             if error:

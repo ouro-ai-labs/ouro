@@ -19,12 +19,21 @@ async def test_synthesizer_includes_worker_results() -> None:
         store.update(
             first.id,
             status=TaskStatus.COMPLETED,
-            metadata={"worker_agent_id": "agent-1", "result": "Found the target module"},
+            metadata={
+                "worker_agent_id": "agent-1",
+                "result": {
+                    "summary": "Found the target module",
+                    "artifacts": ["ouro/capabilities/swarm/analyzer.py"],
+                },
+            },
         )
         store.update(
             second.id,
             status=TaskStatus.COMPLETED,
-            metadata={"worker_agent_id": "agent-2", "result": "Applied the code change"},
+            metadata={
+                "worker_agent_id": "agent-2",
+                "result": {"summary": "Applied the code change"},
+            },
         )
         plan = TaskPlan(
             summary="Inspect then implement",
@@ -42,5 +51,6 @@ async def test_synthesizer_includes_worker_results() -> None:
 
     assert "Task completion: 2/2 completed" in result
     assert "Result: Found the target module" in result
+    assert "Artifacts: ouro/capabilities/swarm/analyzer.py" in result
     assert "Result: Applied the code change" in result
     assert "agent-1" in result
