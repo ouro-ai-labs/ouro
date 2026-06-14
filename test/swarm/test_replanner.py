@@ -41,3 +41,40 @@ def test_replanner_adds_followup_tasks_after_completion() -> None:
     assert tasks[1].subject == "Implement follow-up"
     assert tasks[1].activeForm == "Implementing follow-up"
     assert tasks[1].metadata["priority"] == "high"
+
+
+def test_replanner_skips_duplicate_followups() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = TaskStore(Path(tmpdir) / "tasks.db")
+        task = store.create(subject="Inspect", description="Inspect the repo")
+        store.update(
+            task.id,
+            status=TaskStatus.COMPLETED,
+            metadata={
+                "result": {
+                    "summary": "Found extra work",
+                    "followup_tasks": [
+                        {
+                            "subject": "Implement follow-up",
+                            "description": "Handle the newly discovered change",
+                            "activeForm": "Implementing follow-up",
+                        },
+                        {
+                            "subject": "Implement follow-up",
+                            "description": "Handle the newly discovered change",
+                            "activeForm": "Implementing follow-up",
+                        },
+                    ],
+                }
+            },
+        )
+
+        outcome = SwarmReplanner().apply_followups(completed_task_id=task.id, store=store)
+        second = SwarmReplanner().apply_followups(completed_task_id=task.id, store=store)
+        tasks = store.list_all()
+
+    assert len(outcome.created_task_ids) == 1
+    assert outcome.skipped_duplicates == 1
+    assert second.created_task_ids == []
+    assert second.skipped_duplicates >= 1
+    assert len(tasks) == 2

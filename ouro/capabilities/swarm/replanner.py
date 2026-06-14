@@ -12,6 +12,7 @@ from ouro.capabilities.tasks.store import TaskStore
 @dataclass
 class ReplanOutcome:
     created_task_ids: list[str]
+    skipped_duplicates: int = 0
 
 
 class SwarmReplanner:
@@ -29,7 +30,15 @@ class SwarmReplanner:
         followups = result.get("followup_tasks") or []
         normalized = parse_followup_tasks([item for item in followups if isinstance(item, dict)])
         created: list[str] = []
+        skipped_duplicates = 0
         for item in normalized:
+            if self._would_duplicate_followup(
+                completed_task_id=completed_task_id,
+                planned=item,
+                store=store,
+            ):
+                skipped_duplicates += 1
+                continue
             created_task = store.create(
                 subject=item.subject,
                 description=item.description,
@@ -38,7 +47,28 @@ class SwarmReplanner:
                 metadata={"generated_by": completed_task_id, **item.metadata},
             )
             created.append(created_task.id)
-        return ReplanOutcome(created_task_ids=created)
+        return ReplanOutcome(created_task_ids=created, skipped_duplicates=skipped_duplicates)
+
+    def _would_duplicate_followup(
+        self,
+        *,
+        completed_task_id: str,
+        planned: PlannedTask,
+        store: TaskStore,
+    ) -> bool:
+        for existing in store.list_all():
+            if existing.id == completed_task_id:
+                continue
+            if existing.subject != planned.subject:
+                continue
+            if existing.description != planned.description:
+                continue
+            generated_by = existing.metadata.get("generated_by")
+            if generated_by == completed_task_id:
+                return True
+            if completed_task_id in existing.blockedBy:
+                return True
+        return False
 
 
 def parse_followup_tasks(items: list[dict[str, Any]]) -> list[PlannedTask]:
