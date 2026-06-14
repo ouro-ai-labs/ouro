@@ -61,7 +61,7 @@ def coordinator(store: TaskStore):
         return (
             AgentBuilder()
             .with_llm(fake_llm)
-            .with_agent_team(enabled=True, store_path=str(store._db_path), agent_id=agent_id)
+            .with_agent_swarm(enabled=True, store_path=str(store._db_path), agent_id=agent_id)
             .without_memory()
         )
 
