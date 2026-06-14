@@ -27,16 +27,15 @@ class SwarmReplanner:
             return ReplanOutcome(created_task_ids=[])
 
         followups = result.get("followup_tasks") or []
+        normalized = parse_followup_tasks([item for item in followups if isinstance(item, dict)])
         created: list[str] = []
-        for item in followups:
-            if not isinstance(item, dict):
-                continue
+        for item in normalized:
             created_task = store.create(
-                subject=item.get("subject", "Follow-up task"),
-                description=item.get("description", "Generated follow-up task"),
-                activeForm=item.get("activeForm"),
+                subject=item.subject,
+                description=item.description,
+                activeForm=item.activeForm,
                 blockedBy=[completed_task_id],
-                metadata={"generated_by": completed_task_id, **dict(item.get("metadata", {}))},
+                metadata={"generated_by": completed_task_id, **item.metadata},
             )
             created.append(created_task.id)
         return ReplanOutcome(created_task_ids=created)
@@ -46,14 +45,15 @@ def parse_followup_tasks(items: list[dict[str, Any]]) -> list[PlannedTask]:
     """Normalize follow-up task payloads into the planner's task shape."""
     planned: list[PlannedTask] = []
     for index, item in enumerate(items, start=1):
+        metadata = dict(item.get("metadata", {}))
         planned.append(
             PlannedTask(
                 local_id=item.get("local_id", f"followup-{index}"),
-                subject=item.get("subject", "Follow-up task"),
-                description=item.get("description", "Generated follow-up task"),
-                activeForm=item.get("activeForm"),
-                blockedBy=list(item.get("blockedBy", [])),
-                metadata=dict(item.get("metadata", {})),
+                subject=str(item.get("subject", "Follow-up task")),
+                description=str(item.get("description", "Generated follow-up task")),
+                activeForm=str(item.get("activeForm", "Following up on discovered work")),
+                blockedBy=[],
+                metadata=metadata,
             )
         )
     return planned

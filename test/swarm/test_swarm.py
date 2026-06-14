@@ -88,37 +88,49 @@ class TestSwarmCoordinator:
         assert result is False
 
     async def test_task_assignment(self, coordinator: SwarmCoordinator, store: TaskStore) -> None:
-        # Create a task
         store.create(subject="Test task", description="A simple test task")
-
-        # Spawn an agent
         await coordinator.spawn_agents(n=1)
-
-        # Run one iteration of assignment
         await coordinator._assign_tasks()
 
-        # Task should be claimed
         task = store.get("1")
         assert task is not None
         assert task.owner == "agent-1"
         assert task.status == TaskStatus.IN_PROGRESS
 
     async def test_task_completion(self, coordinator: SwarmCoordinator, store: TaskStore) -> None:
-        # Create a task
         store.create(subject="Test task", description="A simple test task")
-
-        # Spawn an agent
         await coordinator.spawn_agents(n=1)
-
-        # Run the task
         await coordinator._assign_tasks()
-        # Wait for task to complete
         await asyncio.sleep(0.5)
 
-        # Task should be completed
         task = store.get("1")
         assert task is not None
         assert task.status == TaskStatus.COMPLETED
+
+    async def test_task_completion_persists_structured_json_result(self, store: TaskStore) -> None:
+        def builder_factory(agent_id: str):
+            fake_llm = FakeLLM(
+                responses=[
+                    '{"summary": "Implemented the change", "artifacts": ["test/swarm/test_swarm.py"], "followup_tasks": []}'
+                ]
+            )
+            return (
+                AgentBuilder()
+                .with_llm(fake_llm)
+                .with_agent_team(enabled=True, store_path=str(store._db_path), agent_id=agent_id)
+                .without_memory()
+            )
+
+        custom = SwarmCoordinator(store, builder_factory, heartbeat_interval=0.1)
+        store.create(subject="Test task", description="A simple test task")
+        await custom.spawn_agents(n=1)
+        await custom._assign_tasks()
+        await asyncio.sleep(0.5)
+
+        task = store.get("1")
+        assert task is not None
+        assert task.metadata["result"]["summary"] == "Implemented the change"
+        assert task.metadata["result"]["artifacts"] == ["test/swarm/test_swarm.py"]
 
     async def test_get_status(self, coordinator: SwarmCoordinator, store: TaskStore) -> None:
         store.create(subject="Task 1", description="...")
@@ -139,18 +151,12 @@ class TestSwarmCoordinator:
     ) -> None:
         store.create(subject="Test task", description="...")
         await coordinator.spawn_agents(n=1)
-
-        # Manually claim a task
         store.claim("1", "agent-1")
         coordinator.agents["agent-1"].task_ids.append("1")
-
-        # Simulate stale agent (heartbeat far in the past)
         coordinator.agents["agent-1"].last_heartbeat = 0
 
-        # Run health check
         await coordinator._health_check()
 
-        # Task should be unassigned
         task = store.get("1")
         assert task is not None
         assert task.owner is None
@@ -162,17 +168,13 @@ class TestSwarmCoordinator:
         store.create(subject="Task 2", description="...")
 
         await coordinator.spawn_agents(n=2)
-
-        # Reduce sleep interval for faster test
         coordinator.heartbeat_interval = 0.1
 
-        # Run until all tasks complete (with timeout)
         try:
             await asyncio.wait_for(coordinator.run_until_done(), timeout=5.0)
         except asyncio.TimeoutError:
             coordinator.shutdown()
             raise
 
-        # All tasks should be completed
         tasks = store.list_all()
         assert all(t.status == TaskStatus.COMPLETED for t in tasks)

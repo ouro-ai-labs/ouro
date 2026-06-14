@@ -25,6 +25,7 @@ def test_replanner_adds_followup_tasks_after_completion() -> None:
                             "subject": "Implement follow-up",
                             "description": "Handle the newly discovered change",
                             "activeForm": "Implementing follow-up",
+                            "metadata": {"priority": "high"},
                         }
                     ],
                 }
@@ -38,3 +39,5 @@ def test_replanner_adds_followup_tasks_after_completion() -> None:
     assert len(tasks) == 2
     assert tasks[1].blockedBy == [task.id]
     assert tasks[1].subject == "Implement follow-up"
+    assert tasks[1].activeForm == "Implementing follow-up"
+    assert tasks[1].metadata["priority"] == "high"
