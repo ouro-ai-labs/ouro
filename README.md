@@ -35,9 +35,9 @@ Ouro is organized into three layers with strict downward-only imports:
 
 ## Features
 
-### 🤖 Agent Team — Multi-Agent Swarm with Persistent Tasks
+### 🤖 Agent Swarm — Multi-Agent Swarm with Persistent Tasks
 
-The flagship feature. Enable with `ENABLE_AGENT_TEAM=true` in `~/.ouro/config`.
+The flagship feature. Enable with `ENABLE_AGENT_SWARM=true` in `~/.ouro/config`.
 
 - **Persistent Task Store** — SQLite-backed tasks with dependency graphs (`task_create`, `task_claim`, `task_update`, `task_list`, `task_get`, `task_delete`)
 - **Atomic Task Claiming** — Agents race to claim available tasks; one agent, one in-progress task

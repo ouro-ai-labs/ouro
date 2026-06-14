@@ -111,16 +111,16 @@ def create_agent(
         .with_tools(tools)
     )
 
-    # Agent Team / Task V2: persistent task store + multi-agent coordination.
+    # Agent Swarm / Task V2: persistent task store + multi-agent coordination.
     # When enabled, replaces TodoTool and MultiTaskTool with task_create,
     # task_claim, task_update, task_list, task_get, task_delete tools.
-    if Config.ENABLE_AGENT_TEAM:
-        builder = builder.with_agent_team(enabled=True)
+    if Config.ENABLE_AGENT_SWARM:
+        builder = builder.with_agent_swarm(enabled=True)
 
     agent = builder.build()
 
-    # MultiTaskTool is only added when Agent Team is disabled (legacy mode).
-    if not Config.ENABLE_AGENT_TEAM:
+    # MultiTaskTool is only added when Agent Swarm is disabled (legacy mode).
+    if not Config.ENABLE_AGENT_SWARM:
         multi = MultiTaskTool(agent)
         agent.tool_executor.add_tool(multi)
 
