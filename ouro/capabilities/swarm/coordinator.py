@@ -16,6 +16,7 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from ouro.capabilities.swarm.result_schema import coerce_task_result
 from ouro.capabilities.tasks.engine import TaskEngine
 from ouro.capabilities.tasks.models import TaskStatus
 from ouro.capabilities.tasks.store import TaskStore
@@ -200,8 +201,13 @@ class SwarmCoordinator:
             # Build the task prompt
             prompt = self._build_task_prompt(task)
 
-            # Run the agent
-            await handle.agent.run(prompt)
+            # Run the agent and persist the worker result for synthesis.
+            result = await handle.agent.run(prompt)
+            structured = coerce_task_result(result)
+            metadata = dict(task.metadata)
+            metadata["result"] = structured.to_metadata()
+            metadata["worker_agent_id"] = handle.agent_id
+            self.store.update(task_id, metadata=metadata)
 
             # Mark complete
             self.engine.complete_task(task_id)
@@ -220,6 +226,12 @@ class SwarmCoordinator:
 
         except Exception as e:
             logger.error(f"Agent {handle.agent_id} failed task {task_id}: {e}")
+            failure_task = self.store.get(task_id)
+            if failure_task is not None:
+                metadata = dict(failure_task.metadata)
+                metadata["error"] = str(e)
+                metadata["worker_agent_id"] = handle.agent_id
+                self.store.update(task_id, metadata=metadata)
             handle.total_tasks_failed += 1
             self.progress.emit(
                 ProgressEvent(
