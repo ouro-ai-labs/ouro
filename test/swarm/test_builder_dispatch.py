@@ -1,4 +1,4 @@
-"""Builder-level tests for dispatcher-backed agent-team execution."""
+"""Builder-level tests for dispatcher-backed agent-swarm execution."""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ async def test_agent_team_run_uses_dispatcher_factory() -> None:
     agent = (
         AgentBuilder()
         .with_llm(FakeLLM())
-        .with_agent_team(enabled=True)
+        .with_agent_swarm(enabled=True)
         .without_memory()
         .with_dispatcher_factory(dispatcher_factory)
         .build()
