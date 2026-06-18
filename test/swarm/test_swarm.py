@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import tempfile
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
@@ -45,6 +46,24 @@ class FakeLLM:
     @property
     def supports_tools(self) -> bool:
         return True
+
+
+class NonSwarmingAgent:
+    def __init__(self, response: str = "Done"):
+        self.response = response
+        self.calls: list[str] = []
+
+    async def run(self, task: str) -> str:
+        self.calls.append(task)
+        return self.response
+
+
+class BuilderStub:
+    def __init__(self, agent):
+        self._agent = agent
+
+    def build(self):
+        return self._agent
 
 
 @pytest.fixture
@@ -146,16 +165,20 @@ class TestSwarmCoordinator:
         assert status.completed == 0
         assert len(status.available_agents) == 2
 
-    async def test_health_check_recovery(
+    async def test_health_check_recovers_cancelled_task(
         self, coordinator: SwarmCoordinator, store: TaskStore
     ) -> None:
         store.create(subject="Test task", description="...")
         await coordinator.spawn_agents(n=1)
         store.claim("1", "agent-1")
         coordinator.agents["agent-1"].task_ids.append("1")
-        coordinator.agents["agent-1"].last_heartbeat = 0
+        task_handle = asyncio.create_task(asyncio.sleep(1))
+        coordinator.agents["agent-1"].running_tasks["1"] = task_handle
+        task_handle.cancel()
+        with suppress(asyncio.CancelledError):
+            await task_handle
 
-        await coordinator._health_check()
+        await coordinator._reconcile_running_tasks()
 
         task = store.get("1")
         assert task is not None
@@ -178,3 +201,137 @@ class TestSwarmCoordinator:
 
         tasks = store.list_all()
         assert all(t.status == TaskStatus.COMPLETED for t in tasks)
+
+
+async def test_coordinator_cleanup_is_idempotent_after_stale_recovery(store: TaskStore) -> None:
+    agent = NonSwarmingAgent()
+
+    def builder_factory(agent_id: str):
+        return BuilderStub(agent)
+
+    coordinator = SwarmCoordinator(store, builder_factory, heartbeat_interval=0.01)
+    store.create(subject="Test task", description="...")
+    await coordinator.spawn_agents(n=1)
+    handle = coordinator.agents["agent-1"]
+    handle.task_ids.append("1")
+    task_handle = asyncio.create_task(asyncio.sleep(0))
+    await task_handle
+    handle.running_tasks["1"] = task_handle
+
+    await coordinator._reconcile_running_tasks()
+    await coordinator._run_task(handle, "1")
+
+    assert handle.task_ids == []
+
+
+async def test_worker_agent_can_run_without_recursive_swarm(store: TaskStore) -> None:
+    agent = NonSwarmingAgent(response="worker-complete")
+
+    def builder_factory(agent_id: str):
+        return BuilderStub(agent)
+
+    coordinator = SwarmCoordinator(store, builder_factory, heartbeat_interval=0.1)
+    store.create(subject="Test task", description="A simple test task")
+    await coordinator.spawn_agents(n=1)
+    await coordinator._assign_tasks()
+    await asyncio.sleep(0.1)
+
+    task = store.get("1")
+    assert task is not None
+    assert task.status == TaskStatus.COMPLETED
+    assert task.metadata["result"]["summary"] == "worker-complete"
+    assert len(agent.calls) == 1
+
+
+async def test_health_check_ignores_active_running_task(store: TaskStore) -> None:
+    agent = NonSwarmingAgent(response="worker-complete")
+
+    def builder_factory(agent_id: str):
+        return BuilderStub(agent)
+
+    coordinator = SwarmCoordinator(store, builder_factory, heartbeat_interval=0.01)
+    store.create(subject="Test task", description="...")
+    await coordinator.spawn_agents(n=1)
+    handle = coordinator.agents["agent-1"]
+    handle.task_ids.append("1")
+    active = asyncio.create_task(asyncio.sleep(0.2))
+    handle.running_tasks["1"] = active
+
+    await coordinator._reconcile_running_tasks()
+
+    task = store.get("1")
+    assert task is not None
+    assert task.status == TaskStatus.PENDING
+    assert "1" in handle.task_ids
+    active.cancel()
+    with suppress(asyncio.CancelledError):
+        await active
+
+
+async def test_shutdown_cancels_running_tasks_cleanly(store: TaskStore) -> None:
+    gate = asyncio.Event()
+
+    class BlockingAgent:
+        async def run(self, task: str) -> str:
+            await gate.wait()
+            return "done"
+
+    def builder_factory(agent_id: str):
+        return BuilderStub(BlockingAgent())
+
+    coordinator = SwarmCoordinator(store, builder_factory, heartbeat_interval=0.1)
+    store.create(subject="Test task", description="...")
+    await coordinator.spawn_agents(n=1)
+    await coordinator._assign_tasks()
+
+    handle = coordinator.agents["agent-1"]
+    assert "1" in handle.running_tasks
+
+    await coordinator.shutdown()
+
+    task = store.get("1")
+    assert task is not None
+    assert task.status == TaskStatus.PENDING
+    assert task.owner is None
+    assert handle.running_tasks == {}
+    assert handle.task_ids == []
+
+
+async def test_composed_agent_shutdown_delegates_to_dispatcher_runtime() -> None:
+    from ouro.capabilities.builder import AgentBuilder
+
+    class FakeLLMForShutdown(FakeLLM):
+        pass
+
+    class RuntimeStub:
+        def __init__(self):
+            self.calls = 0
+
+        async def shutdown(self) -> None:
+            self.calls += 1
+
+    class DispatcherStub:
+        def __init__(self, runtime):
+            self.runtime = runtime
+
+        async def run(self, task: str) -> str:
+            return task
+
+    runtime = RuntimeStub()
+
+    def dispatcher_factory(single_agent_runner):
+        del single_agent_runner
+        return DispatcherStub(runtime)
+
+    agent = (
+        AgentBuilder()
+        .with_llm(FakeLLMForShutdown())
+        .with_agent_swarm(enabled=True)
+        .without_memory()
+        .with_dispatcher_factory(dispatcher_factory)
+        .build()
+    )
+
+    await agent.shutdown()
+
+    assert runtime.calls == 1

@@ -149,6 +149,16 @@ class InteractiveSession:
         """Handle Ctrl+S - show quick stats."""
         self._show_stats()
 
+    async def _shutdown_agent(self) -> None:
+        """Let the agent clean up in-flight swarm work after interruption."""
+        shutdown = getattr(self.agent, "shutdown", None)
+        if shutdown is None:
+            return
+        try:
+            await shutdown()
+        except Exception:
+            terminal_ui.print_warning("Agent shutdown cleanup encountered an error.")
+
     def _show_help(self) -> None:
         """Display help message with available commands."""
         colors = Theme.get_colors()
@@ -497,6 +507,7 @@ class InteractiveSession:
                 self.status_bar.show()
 
         except asyncio.CancelledError:
+            await self._shutdown_agent()
             terminal_ui.console.print(
                 f"\n[bold {colors.warning}]Task interrupted by user.[/bold {colors.warning}]\n"
             )
@@ -875,6 +886,7 @@ class InteractiveSession:
                         self.status_bar.show()
 
                 except asyncio.CancelledError:
+                    await self._shutdown_agent()
                     terminal_ui.console.print(
                         f"\n[bold {colors.warning}]Task interrupted by user.[/bold {colors.warning}]\n"
                     )
