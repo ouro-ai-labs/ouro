@@ -4,7 +4,7 @@ Manages a pool of agents working from a shared TaskStore. Each agent
 claims tasks atomically, works on them via the core loop, and marks
 them complete. The coordinator handles:
 
-- Agent lifecycle (spawn, health check, recovery)
+- Agent lifecycle (spawn, task reconciliation, recovery)
 - Task assignment (claim → work → complete)
 - Swarm-level queries (progress, bottlenecks, available agents)
 """
@@ -12,7 +12,7 @@ them complete. The coordinator handles:
 from __future__ import annotations
 
 import asyncio
-import time
+from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -36,7 +36,7 @@ class AgentHandle:
     agent_id: str
     agent: ComposedAgent
     task_ids: list[str] = field(default_factory=list)
-    last_heartbeat: float = field(default_factory=time.time)
+    running_tasks: dict[str, asyncio.Task[None]] = field(default_factory=dict)
     total_tasks_completed: int = 0
     total_tasks_failed: int = 0
 
@@ -143,8 +143,8 @@ class SwarmCoordinator:
             # Try to assign available tasks to idle agents
             await self._assign_tasks()
 
-            # Health check
-            await self._health_check()
+            # Reconcile tracked worker tasks
+            await self._reconcile_running_tasks()
 
             await asyncio.sleep(min(self.heartbeat_interval, 1.0))
 
@@ -164,7 +164,6 @@ class SwarmCoordinator:
             result = self.store.claim(task.id, handle.agent_id)
             if result.success:
                 handle.task_ids.append(task.id)
-                handle.last_heartbeat = time.time()
                 self.progress.emit(
                     ProgressEvent(
                         kind="swarm_assignment",
@@ -176,10 +175,11 @@ class SwarmCoordinator:
                     )
                 )
                 # Fire-and-forget task execution
-                asyncio.create_task(
+                running = asyncio.create_task(
                     self._run_task(handle, task.id),
                     name=f"swarm-task-{task.id}",
                 )
+                handle.running_tasks[task.id] = running
 
     async def _run_task(self, handle: AgentHandle, task_id: str) -> None:
         """Execute a single task and mark it complete."""
@@ -247,8 +247,9 @@ class SwarmCoordinator:
             self.store.unassign(task_id)
 
         finally:
-            handle.task_ids.remove(task_id)
-            handle.last_heartbeat = time.time()
+            handle.running_tasks.pop(task_id, None)
+            if task_id in handle.task_ids:
+                handle.task_ids.remove(task_id)
 
     def _build_task_prompt(self, task) -> str:
         """Build a prompt for the agent to execute a task."""
@@ -264,21 +265,31 @@ class SwarmCoordinator:
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
-    # Health check
+    # Running task reconciliation
     # ------------------------------------------------------------------
 
-    async def _health_check(self) -> None:
-        """Check agent health and recover stale agents."""
-        now = time.time()
-        stale_threshold = self.heartbeat_interval * 3
-
+    async def _reconcile_running_tasks(self) -> None:
+        """Recover tasks from completed, cancelled, or failed task handles."""
         for handle in list(self.agents.values()):
-            if now - handle.last_heartbeat > stale_threshold:
-                logger.warning(f"Agent {handle.agent_id} stale — recovering tasks")
-                for task_id in list(handle.task_ids):
+            for task_id, running in list(handle.running_tasks.items()):
+                if not running.done():
+                    continue
+                if running.cancelled():
+                    logger.warning(f"Agent {handle.agent_id} task {task_id} cancelled — recovering")
                     self.store.unassign(task_id)
-                    handle.task_ids.remove(task_id)
-                handle.last_heartbeat = now
+                    handle.running_tasks.pop(task_id, None)
+                    if task_id in handle.task_ids:
+                        handle.task_ids.remove(task_id)
+                    continue
+                exc = running.exception()
+                if exc is not None:
+                    logger.warning(
+                        f"Agent {handle.agent_id} task {task_id} ended with exception — recovering: {exc}"
+                    )
+                    self.store.unassign(task_id)
+                    handle.running_tasks.pop(task_id, None)
+                    if task_id in handle.task_ids:
+                        handle.task_ids.remove(task_id)
 
     # ------------------------------------------------------------------
     # Queries
@@ -308,7 +319,17 @@ class SwarmCoordinator:
             available_agents=available,
         )
 
-    def shutdown(self) -> None:
-        """Signal the swarm to shut down gracefully."""
+    async def shutdown(self) -> None:
+        """Signal the swarm to shut down gracefully and cancel worker tasks."""
         self._shutdown = True
+        to_cancel: list[asyncio.Task[None]] = []
+        for handle in self.agents.values():
+            for running in handle.running_tasks.values():
+                if not running.done():
+                    running.cancel()
+                    to_cancel.append(running)
+        for running in to_cancel:
+            with suppress(asyncio.CancelledError):
+                await running
+        await self._reconcile_running_tasks()
         logger.info("Swarm shutdown requested")

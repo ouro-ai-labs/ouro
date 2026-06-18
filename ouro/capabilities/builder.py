@@ -426,7 +426,7 @@ class AgentBuilder:
                     return (
                         AgentBuilder()
                         .with_llm(llm)
-                        .with_agent_swarm(enabled=True, store_path=store_path, agent_id=agent_id)
+                        .without_agent_swarm()
                         .without_memory()
                         .with_max_iterations(max_iterations)
                     )
@@ -572,6 +572,17 @@ class ComposedAgent:
             return await self._dispatcher.run(task)
 
         return await self._run_single_agent(task, verify=verify, images=images)
+
+    async def shutdown(self) -> None:
+        """Release any in-flight dispatcher/swarm work."""
+        dispatcher = self._dispatcher
+        if dispatcher is None:
+            return
+        runtime = getattr(dispatcher, "runtime", None)
+        shutdown = getattr(runtime, "shutdown", None)
+        if shutdown is None:
+            return
+        await shutdown()
 
     async def _run_single_agent(
         self,

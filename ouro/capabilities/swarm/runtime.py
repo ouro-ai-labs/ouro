@@ -32,7 +32,7 @@ class SwarmRuntime:
         idle_count = 0
         while not self.coordinator._shutdown:
             await self.coordinator._assign_tasks()
-            await self.coordinator._health_check()
+            await self.coordinator._reconcile_running_tasks()
             self._apply_followups(store)
 
             refreshed = self.coordinator.get_status()
@@ -44,6 +44,10 @@ class SwarmRuntime:
                 idle_count = 0
 
             await asyncio.sleep(min(self.coordinator.heartbeat_interval, 1.0))
+
+    async def shutdown(self) -> None:
+        """Cancel in-flight worker tasks and stop the coordinator."""
+        await self.coordinator.shutdown()
 
     def _apply_followups(self, store) -> None:
         for task in store.list_all():
