@@ -6,17 +6,23 @@ import asyncio
 
 from ouro.capabilities.swarm.coordinator import SwarmCoordinator
 from ouro.capabilities.swarm.replanner import SwarmReplanner
+from ouro.core.loop import ProgressEvent
 
 
 class SwarmRuntime:
     """Execute a Task V2 plan using the existing scheduler implementation."""
 
     def __init__(
-        self, coordinator: SwarmCoordinator, replanner: SwarmReplanner | None = None
+        self,
+        coordinator: SwarmCoordinator,
+        replanner: SwarmReplanner | None = None,
+        default_agents: int = 5,
     ) -> None:
         self.coordinator = coordinator
         self.replanner = replanner or SwarmReplanner()
+        self.default_agents = default_agents
         self._applied_followups: set[str] = set()
+        self._last_status_line: str | None = None
 
     async def run_until_done(self, *, store, plan, root_task: str) -> None:
         # The runtime delegates scheduling to the existing coordinator and
@@ -27,10 +33,28 @@ class SwarmRuntime:
         self.coordinator.engine.store = store
 
         if not self.coordinator.agents:
-            await self.coordinator.spawn_agents(n=1)
+            await self.coordinator.spawn_agents(
+                n=min(self.default_agents, max(1, len(store.list_all())))
+            )
 
         idle_count = 0
         while not self.coordinator._shutdown:
+            status = self.coordinator.get_status()
+            status_line = (
+                "Swarm status: "
+                f"{status.completed}/{status.total_tasks} done, "
+                f"{status.in_progress} running, "
+                f"{status.blocked} blocked, "
+                f"{status.pending} pending"
+            )
+            if status_line != self._last_status_line:
+                self.coordinator.progress.emit(
+                    ProgressEvent(
+                        kind="swarm_status",
+                        payload={"line": status_line, "title": "Swarm Status"},
+                    )
+                )
+                self._last_status_line = status_line
             await self.coordinator._assign_tasks()
             await self.coordinator._reconcile_running_tasks()
             self._apply_followups(store)

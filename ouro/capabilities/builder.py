@@ -136,6 +136,7 @@ class AgentBuilder:
     progress: ProgressSink = field(default_factory=NullProgressSink)
     extra_hooks: list[Hook] = field(default_factory=list)
     dispatcher_factory: Any | None = None
+    swarm_max_workers: int = 5
     # Deterministic per-tool-call rules. ReadBeforeWriteRule and
     # NestedAgentsMdRule are on by default; `extra_rules` run after them.
     # See `ouro.capabilities.rules`.
@@ -273,6 +274,10 @@ class AgentBuilder:
 
     def with_dispatcher_factory(self, factory) -> AgentBuilder:
         self.dispatcher_factory = factory
+        return self
+
+    def with_swarm_max_workers(self, n: int) -> AgentBuilder:
+        self.swarm_max_workers = max(1, n)
         return self
 
     def with_hook(self, hook: Hook) -> AgentBuilder:
@@ -437,7 +442,7 @@ class AgentBuilder:
                     heartbeat_interval=5.0,
                     progress=progress,
                 )
-                runtime = SwarmRuntime(coordinator)
+                runtime = SwarmRuntime(coordinator, default_agents=self.swarm_max_workers)
                 synthesizer = TaskGraphSynthesizer()
                 return SwarmExecutionDispatcher(
                     analyzer=analyzer,
@@ -446,6 +451,7 @@ class AgentBuilder:
                     runtime=runtime,
                     synthesizer=synthesizer,
                     single_agent_runner=single_agent_runner,
+                    progress=progress,
                 )
 
             dispatcher_factory = default_dispatcher_factory
@@ -591,14 +597,12 @@ class ComposedAgent:
         verify: bool = False,
         images: Sequence[ImageInput] | None = None,
     ) -> str:
-        if self.memory is None:
-            return await self._core.run(task, context=self._context)
-
-        # 1) System prompt — only on first turn.
-        if not self._context.has_system_messages:
+        # 1) System prompt — only when memory-backed conversations are enabled.
+        if self.memory is not None and not self._context.has_system_messages:
             await self._add_system_prompt()
 
-        # 2) User message (text or multimodal with images).
+        # 2) User message (text or multimodal with images) always enters the
+        # loop-owned context, even for transient no-memory runs.
         user_msg = await self._build_user_message(task, images)
         self._context.detached.append(user_msg)
 
@@ -627,8 +631,9 @@ class ComposedAgent:
                 for block in user_msg.content
             ]
 
-        # 6) Flush memory.
-        await self.memory.save_memory(context=self._context)
+        # 6) Flush memory when persistence is enabled.
+        if self.memory is not None:
+            await self.memory.save_memory(context=self._context)
         return result
 
     # ---- proxies ------------------------------------------------------------

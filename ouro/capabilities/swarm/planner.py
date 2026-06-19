@@ -59,7 +59,9 @@ Return valid JSON matching this schema:
 ```
 
 Rules:
-- Create 1 to 6 tasks.
+- Create 3 to 6 tasks for genuinely complex requests; use 1 task only if the request is truly atomic.
+- Prefer high-level phases or responsibilities over atomic implementation steps.
+- Do not exceed 8 tasks under any circumstance.
 - Use dependencies whenever one task must wait for another.
 - Prefer partially ordered work over pretending tasks are independent.
 - Every `local_id` must be unique.
@@ -75,8 +77,9 @@ Response:"""
 class TaskPlanner:
     """Plan a complex task as a dependency graph for Task V2 execution."""
 
-    def __init__(self, llm) -> None:
+    def __init__(self, llm, max_tasks: int = 8) -> None:
         self.llm = llm
+        self.max_tasks = max_tasks
 
     async def plan(self, task: str) -> TaskPlan:
         """Return a validated task graph for the given request."""
@@ -125,6 +128,10 @@ class TaskPlanner:
     def _validate(self, plan: TaskPlan) -> None:
         if not plan.tasks:
             raise ValueError("Planner returned no tasks")
+        if len(plan.tasks) > self.max_tasks:
+            raise ValueError(
+                f"Planner returned too many tasks: {len(plan.tasks)} > {self.max_tasks}"
+            )
 
         ids = [task.local_id for task in plan.tasks]
         if len(ids) != len(set(ids)):
