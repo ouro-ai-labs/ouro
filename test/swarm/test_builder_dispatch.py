@@ -60,6 +60,12 @@ async def test_agent_team_run_uses_dispatcher_factory() -> None:
     assert holder["dispatcher"].calls == ["complex task"]
 
 
+async def test_builder_defaults_swarm_max_workers_to_five() -> None:
+    builder = AgentBuilder()
+
+    assert builder.swarm_max_workers == 5
+
+
 async def test_non_team_run_keeps_single_agent_path() -> None:
     agent = AgentBuilder().with_llm(FakeLLM()).without_memory().build()
 

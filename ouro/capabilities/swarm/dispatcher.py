@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from ouro.capabilities.swarm.analyzer import TaskAnalysis, TaskAnalyzer
 from ouro.capabilities.swarm.planner import TaskPlan, TaskPlanner
 from ouro.capabilities.tasks.store import TaskStore
+from ouro.core.loop import NullProgressSink, ProgressEvent
 
 
 @dataclass
@@ -30,6 +31,7 @@ class SwarmExecutionDispatcher:
         runtime,
         synthesizer,
         single_agent_runner,
+        progress=None,
     ) -> None:
         self.analyzer = analyzer
         self.planner = planner
@@ -37,6 +39,7 @@ class SwarmExecutionDispatcher:
         self.runtime = runtime
         self.synthesizer = synthesizer
         self.single_agent_runner = single_agent_runner
+        self.progress = progress or NullProgressSink()
         self.last_decision: DispatchDecision | None = None
 
     async def run(self, task: str) -> str:
@@ -46,6 +49,31 @@ class SwarmExecutionDispatcher:
             return await self.single_agent_runner(task)
 
         plan = await self.planner.plan(task)
+        self.progress.emit(
+            ProgressEvent(
+                kind="swarm_reset",
+                payload={"keep_headers": False},
+            )
+        )
+        self.progress.emit(
+            ProgressEvent(
+                kind="swarm_header",
+                payload={
+                    "line": f"Swarm selected: complexity={analysis.complexity_score:.2f}, tasks={len(plan.tasks)}",
+                    "title": "Swarm",
+                },
+            )
+        )
+        for idx, planned in enumerate(plan.tasks, start=1):
+            self.progress.emit(
+                ProgressEvent(
+                    kind="swarm_plan_item",
+                    payload={
+                        "line": f"#{idx} {planned.subject}",
+                        "title": "Swarm Plan",
+                    },
+                )
+            )
         store: TaskStore = self.store_factory()
         self._persist_plan(plan, store)
         await self.runtime.run_until_done(store=store, plan=plan, root_task=task)

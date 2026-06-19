@@ -10,6 +10,15 @@ from ouro.capabilities.swarm.dispatcher import SwarmExecutionDispatcher
 from ouro.capabilities.swarm.planner import PlannedTask, TaskPlan
 from ouro.capabilities.swarm.synthesizer import TaskGraphSynthesizer
 from ouro.capabilities.tasks.store import TaskStore
+from ouro.core.loop import ProgressEvent
+
+
+class RecordingProgress:
+    def __init__(self):
+        self.events: list[ProgressEvent] = []
+
+    def emit(self, event: ProgressEvent) -> None:
+        self.events.append(event)
 
 
 class StubAnalyzer:
@@ -64,6 +73,7 @@ class StubRuntime:
 class TestSwarmExecutionDispatcher:
     async def test_simple_task_uses_single_agent_runner(self) -> None:
         runtime = StubRuntime()
+        progress = RecordingProgress()
         with tempfile.TemporaryDirectory() as tmpdir:
             store_path = Path(tmpdir) / "tasks.db"
             dispatcher = SwarmExecutionDispatcher(
@@ -73,17 +83,20 @@ class TestSwarmExecutionDispatcher:
                 runtime=runtime,
                 synthesizer=TaskGraphSynthesizer(),
                 single_agent_runner=_single_agent_runner,
+                progress=progress,
             )
 
             result = await dispatcher.run("Simple task")
 
         assert result == "single-agent: Simple task"
         assert runtime.calls == 0
+        assert progress.events == []
         assert dispatcher.last_decision is not None
         assert dispatcher.last_decision.used_swarm is False
 
-    async def test_complex_task_uses_swarm_path_and_persists_dependencies(self) -> None:
+    async def test_complex_task_emits_plan_progress_and_persists_dependencies(self) -> None:
         runtime = StubRuntime()
+        progress = RecordingProgress()
         with tempfile.TemporaryDirectory() as tmpdir:
             store_path = Path(tmpdir) / "tasks.db"
             store_ref: dict[str, TaskStore] = {}
@@ -100,12 +113,17 @@ class TestSwarmExecutionDispatcher:
                 runtime=runtime,
                 synthesizer=TaskGraphSynthesizer(),
                 single_agent_runner=_single_agent_runner,
+                progress=progress,
             )
 
             result = await dispatcher.run("Complex task")
             tasks = store_ref["store"].list_all()
 
         assert runtime.calls == 1
+        kinds = [event.kind for event in progress.events]
+        assert "swarm_reset" in kinds
+        assert "swarm_header" in kinds
+        assert kinds.count("swarm_plan_item") == 2
         assert len(tasks) == 2
         assert tasks[1].blockedBy == [tasks[0].id]
         assert tasks[0].metadata["result"] == "result-1"
