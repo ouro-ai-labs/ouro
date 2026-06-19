@@ -31,7 +31,9 @@ async def test_runtime_emits_status_only_on_change() -> None:
         progress = RecordingProgress()
         coordinator = SwarmCoordinator(store, lambda agent_id: BuilderStub(), progress=progress)
         runtime = SwarmRuntime(coordinator, default_agents=1)
-        coordinator.agents["agent-1"] = object()  # prevent automatic spawn for this observability test
+        coordinator.agents["agent-1"] = (
+            object()
+        )  # prevent automatic spawn for this observability test
         coordinator._shutdown = True
 
         await runtime.run_until_done(store=store, plan=None, root_task="task")
