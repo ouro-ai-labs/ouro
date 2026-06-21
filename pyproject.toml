@@ -90,6 +90,7 @@ packages = [
     "ouro.core",
     "ouro.core.llm",
     "ouro.core.loop",
+    "ouro.core.tracing",
     "ouro.capabilities",
     "ouro.capabilities.compaction",
     "ouro.capabilities.context",
