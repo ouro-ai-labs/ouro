@@ -44,6 +44,17 @@ def is_retryable_error(error: BaseException) -> bool:
         "timeout",
         "connection",
         "server error",
+        # httpx/httpcore can surface upstream disconnects as
+        # RemoteProtocolError("Server disconnected without sending a response")
+        # without wrapping them in LiteLLM's APIConnectionError. Treat these as
+        # transient transport failures so the normal retry policy applies.
+        "server disconnected",
+        "disconnected without sending",
+        "remote protocol error",
+        "remoteprotocolerror",
+        "connection closed",
+        "connection reset",
+        "connection aborted",
         "500",
         "502",
         "503",
