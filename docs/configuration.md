@@ -143,6 +143,16 @@ agent = (
 )
 ```
 
+### Agent Tracing
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `TRACE_STORAGE_DIALECT` | `sqlite` | Trace storage backend. `sqlite` is supported now; MySQL-compatible backends such as MySQL/StarRocks are planned. |
+| `TRACE_DB_PATH` | `~/.ouro/trace.db` | Local SQLite trace database path. Used when `TRACE_STORAGE_DIALECT=sqlite` and no `TRACE_DATABASE_URL` is set. |
+| `TRACE_DATABASE_URL` | `""` | Optional database URL for future remote trace backends. SQLite URLs such as `sqlite:///tmp/ouro-trace.db` can also be resolved to local paths. |
+
+Tracing is opt-in until CLI/runtime wiring lands. Core tracing exporters do not read config directly; CLI/capability layers should resolve these settings and inject the selected exporter.
+
 ### Retry
 
 | Setting | Default | Description |
