@@ -84,7 +84,9 @@ class StatusBar:
         total_in = self._format_tokens(self.state.input_tokens)
         total_out = self._format_tokens(self.state.output_tokens)
         items.append(
-            f"[{colors.text_secondary}]Total:[/{colors.text_secondary}] {total_in}↑ {total_out}↓"
+            f"[{colors.text_secondary}]Total:[/{colors.text_secondary}] "
+            f"[{colors.success}]{total_in}↑[/{colors.success}] "
+            f"[{colors.warning}]{total_out}↓[/{colors.warning}]"
         )
 
         # Cache info
@@ -99,11 +101,15 @@ class StatusBar:
 
         # Context Tokens
         ctx_tokens = self._format_tokens(self.state.context_tokens)
-        items.append(f"[{colors.text_secondary}]Context:[/{colors.text_secondary}] {ctx_tokens}")
+        items.append(
+            f"[{colors.text_secondary}]Context:[/{colors.text_secondary}] "
+            f"[{colors.primary}]{ctx_tokens}[/{colors.primary}]"
+        )
 
         # Cost
         items.append(
-            f"[{colors.text_secondary}]Cost:[/{colors.text_secondary}] ${self.state.cost:.4f}"
+            f"[{colors.text_secondary}]Cost:[/{colors.text_secondary}] "
+            f"[{colors.primary}]${self.state.cost:.4f}[/{colors.primary}]"
         )
 
         # Compression count
