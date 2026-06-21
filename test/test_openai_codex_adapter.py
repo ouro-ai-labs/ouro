@@ -1,6 +1,9 @@
 import base64
 import json
 
+import httpx
+import pytest
+
 from ouro.core.llm.message_types import LLMMessage, StopReason
 from ouro.core.llm.model_manager import ModelManager, ModelProfile
 from ouro.core.llm.openai_codex_adapter import (
@@ -178,3 +181,26 @@ def test_openai_codex_model_does_not_require_api_key(tmp_path) -> None:
 
     assert valid is True
     assert message == ""
+
+
+async def test_call_async_formats_codex_request_errors(monkeypatch) -> None:
+    adapter = OpenAICodexAdapter("openai-codex/gpt-5.5")
+    token = _jwt({"https://api.openai.com/auth": {"chatgpt_account_id": "acct_123"}})
+
+    async def fake_access_token() -> str:
+        return token
+
+    async def fake_request_events(**_kwargs):
+        raise httpx.ConnectError("")
+
+    monkeypatch.setattr(adapter, "_ensure_access_token", fake_access_token)
+    monkeypatch.setattr(adapter, "_request_events", fake_request_events)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        await adapter.call_async([LLMMessage(role="user", content="hello")])
+
+    message = str(exc_info.value)
+    assert "Unable to connect to the ChatGPT Codex endpoint" in message
+    assert "https://chatgpt.com/backend-api/codex/responses" in message
+    assert "proxy/VPN" in message
+    assert isinstance(exc_info.value.__cause__, httpx.ConnectError)
