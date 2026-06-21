@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-06-21
+
+### Added
+
+- **OpenAI Codex subscription adapter**: added subscription-based Codex support, model catalog updates, and retry handling for transient Codex transport failures (#229, #227, #242).
+- **Agent Tracing Monitor foundation**: added an RFC and first core tracing primitives, including trace events/spans, context propagation, in-memory and JSONL exporters, redaction, truncation, and package registration (#239, #241).
+- **Progress event bus and sinks**: refactored progress reporting into a shared event bus with source metadata, JSON progress output, and clearer CLI/TUI task and swarm rendering (#231, #232, #228).
+
+### Changed
+
+- **Swarm robustness and observability**: redesigned swarm execution around Task V2, improved worker shutdown/coordination, surfaced sub-agent source prefixes, and renamed the swarm config flag (#234, #236, #237, #233, #235).
+- **LLM reliability**: retry transient LLM disconnects and upgrade LiteLLM to `1.87.0` (#238, #226).
+- **GitHub Copilot model catalog**: updated OAuth model discovery/catalog entries (#225).
+- **Documentation**: restructured README Features and Architecture sections (#222).
+
+### Fixed
+
+- **TUI rendering**: escape tool-call markup and colorize status bar metrics for clearer, safer terminal output (#240, #243).
+- **Session persistence**: incrementally persist sessions and print the session ID on interactive exit (#223, #224).
+
 ## [0.5.0] - 2026-05-31
 
 ### Added
