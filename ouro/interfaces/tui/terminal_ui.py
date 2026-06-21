@@ -145,19 +145,22 @@ def print_tool_call(tool_name: str, arguments: Dict[str, Any]) -> None:
     # Format arguments nicely
     args_lines = []
     for key, value in arguments.items():
+        key_str = rich_escape(str(key))
         value_str = str(value)
         if len(value_str) > 100:
             value_str = value_str[:97] + "..."
+        value_str = rich_escape(value_str)
         args_lines.append(
-            f"  [{colors.text_secondary}]{key}:[/{colors.text_secondary}] {value_str}"
+            f"  [{colors.text_secondary}]{key_str}:[/{colors.text_secondary}] {value_str}"
         )
 
     content = "\n".join(args_lines) if args_lines else ""
+    escaped_tool_name = rich_escape(tool_name)
 
     console.print(
         Panel(
             content,
-            title=f"[{colors.tool_accent}]Tool: {tool_name}[/{colors.tool_accent}]",
+            title=f"[{colors.tool_accent}]Tool: {escaped_tool_name}[/{colors.tool_accent}]",
             title_align="left",
             border_style=colors.text_muted,
             box=box.ROUNDED,
@@ -199,20 +202,23 @@ def print_tool_blocked(tool_name: str, arguments: Dict[str, Any], reason: str) -
     # Format arguments nicely (same as print_tool_call)
     args_lines = []
     for key, value in arguments.items():
+        key_str = rich_escape(str(key))
         value_str = str(value)
         if len(value_str) > 100:
             value_str = value_str[:97] + "..."
+        value_str = rich_escape(value_str)
         args_lines.append(
-            f"  [{colors.text_secondary}]{key}:[/{colors.text_secondary}] {value_str}"
+            f"  [{colors.text_secondary}]{key_str}:[/{colors.text_secondary}] {value_str}"
         )
 
-    content_parts = args_lines + ["", f"[{colors.warning}]{reason}[/{colors.warning}]"]
+    content_parts = args_lines + ["", f"[{colors.warning}]{rich_escape(reason)}[/{colors.warning}]"]
     content = "\n".join(content_parts)
+    escaped_tool_name = rich_escape(tool_name)
 
     console.print(
         Panel(
             content,
-            title=f"[{colors.warning}]Blocked: {tool_name}[/{colors.warning}]",
+            title=f"[{colors.warning}]Blocked: {escaped_tool_name}[/{colors.warning}]",
             title_align="left",
             border_style=colors.warning,
             box=box.ROUNDED,
