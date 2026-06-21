@@ -3,6 +3,7 @@
 import asyncio
 from typing import Callable, TypeVar
 
+import httpx
 from tenacity import retry, retry_if_exception, stop_after_attempt
 from tenacity.wait import wait_base
 
@@ -30,6 +31,13 @@ def is_retryable_error(error: BaseException) -> bool:
     """Check if an error is retryable."""
     if isinstance(error, asyncio.CancelledError):
         return False
+
+    if isinstance(error, httpx.TimeoutException | httpx.NetworkError | httpx.RemoteProtocolError):
+        return True
+
+    if isinstance(error, httpx.HTTPStatusError):
+        status_code = error.response.status_code
+        return status_code in {408, 409, 425, 429, 500, 502, 503, 504}
 
     if is_rate_limit_error(error):
         return True

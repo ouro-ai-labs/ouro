@@ -50,7 +50,12 @@ class OpenAICodexAdapter:
         token = await self._ensure_access_token()
         account_id = _extract_account_id(token)
         body = self._build_request_body(messages, tools, max_tokens, **kwargs)
-        events = await self._request_events(token=token, account_id=account_id, body=body)
+        try:
+            events = await self._request_events(token=token, account_id=account_id, body=body)
+        except httpx.RequestError as e:
+            raise RuntimeError(
+                _format_request_error(e, url=_resolve_codex_url(self.api_base))
+            ) from e
         return _convert_response_events(events)
 
     async def _ensure_access_token(self) -> str:
@@ -341,6 +346,15 @@ async def _format_error_response(response: httpx.Response) -> str:
         return f"Codex request failed with HTTP {response.status_code}: {text.decode('utf-8')}"
     message = payload.get("detail") or payload.get("message") or payload.get("error") or payload
     return f"Codex request failed with HTTP {response.status_code}: {message}"
+
+
+def _format_request_error(error: httpx.RequestError, *, url: str) -> str:
+    detail = str(error).strip() or type(error).__name__
+    return (
+        f"Unable to connect to the ChatGPT Codex endpoint ({url}): {detail}. "
+        "Check your network connection and proxy/VPN settings. If you use a proxy, "
+        "verify HTTP_PROXY, HTTPS_PROXY, or ALL_PROXY can reach chatgpt.com."
+    )
 
 
 def _convert_response_events(events: list[dict[str, Any]]) -> LLMResponse:
