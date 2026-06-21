@@ -1,5 +1,7 @@
 import types
 
+from ouro.interfaces.tui.interactive import _format_exception_message
+
 
 class _FakeInputHandler:
     def __init__(self, inputs: list[str]):
@@ -7,6 +9,15 @@ class _FakeInputHandler:
 
     async def prompt_async(self, prompt_text: str = "> ") -> str:  # noqa: ARG002
         return next(self._inputs)
+
+
+def test_format_exception_message_falls_back_to_exception_type() -> None:
+    class EmptyMessageError(Exception):
+        def __str__(self) -> str:
+            return ""
+
+    assert _format_exception_message(EmptyMessageError()) == "EmptyMessageError"
+    assert _format_exception_message(RuntimeError("boom")) == "boom"
 
 
 async def _write_models_yaml(path, *, model_id: str = "openai/gpt-4o") -> None:

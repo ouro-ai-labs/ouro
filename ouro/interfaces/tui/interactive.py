@@ -1,6 +1,7 @@
 """Interactive multi-turn conversation mode for the agent."""
 
 import asyncio
+import logging
 import shlex
 import signal
 
@@ -35,6 +36,16 @@ from ouro.interfaces.tui.reasoning_ui import pick_reasoning_effort
 from ouro.interfaces.tui.skills_ui import SkillsAction, pick_skills_action
 from ouro.interfaces.tui.status_bar import StatusBar
 from ouro.interfaces.tui.theme import Theme, set_theme
+
+logger = logging.getLogger(__name__)
+
+
+def _format_exception_message(error: BaseException) -> str:
+    """Return a useful user-facing message even for exceptions with empty str()."""
+    message = str(error).strip()
+    if message:
+        return message
+    return type(error).__name__
 
 
 class InteractiveSession:
@@ -517,7 +528,8 @@ class InteractiveSession:
             if getattr(self.agent, "memory", None) is not None:
                 self.agent.rollback_incomplete_exchange()
         except Exception as e:
-            terminal_ui.print_error(str(e))
+            logger.exception("Skill invocation failed")
+            terminal_ui.print_error(_format_exception_message(e))
             if Config.TUI_STATUS_BAR:
                 self.status_bar.update(is_processing=False)
 
@@ -909,7 +921,8 @@ class InteractiveSession:
                     self.current_task = None
                     continue
                 except Exception as e:
-                    terminal_ui.print_error(str(e))
+                    logger.exception("Interactive agent run failed")
+                    terminal_ui.print_error(_format_exception_message(e))
                     if Config.TUI_STATUS_BAR:
                         self.status_bar.update(is_processing=False)
                     continue
