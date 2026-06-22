@@ -13,6 +13,14 @@ async def test_imports():
     from ouro.core import Agent, Hook, ToolRegistry  # noqa: F401
 
 
+async def test_trace_config_defaults_are_available():
+    from ouro.config import Config
+
+    assert Config.TRACE_STORAGE_DIALECT == "sqlite"
+    assert Config.TRACE_DB_PATH == "~/.ouro/trace.db"
+    assert Config.TRACE_DATABASE_URL == ""
+
+
 async def test_tools_execute_and_cleanup(tmp_path):
     from ouro.capabilities.tools.builtins.file_ops import FileReadTool, FileWriteTool
 

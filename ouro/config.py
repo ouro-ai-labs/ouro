@@ -34,6 +34,12 @@ MAX_ITERATIONS=1000
 # enabled, discovery failures fail login model sync instead of using stale data.
 # OAUTH_MODEL_DYNAMIC_REFRESH=true
 # OAUTH_MODEL_REFRESH_TIMEOUT_SECONDS=10
+
+# Agent tracing monitor. SQLite is the default local durable store; future
+# storage dialects can use TRACE_DATABASE_URL for MySQL-compatible backends.
+# TRACE_STORAGE_DIALECT=sqlite
+# TRACE_DB_PATH=~/.ouro/trace.db
+# TRACE_DATABASE_URL=
 """
 
 
@@ -108,6 +114,11 @@ class Config:
     # When enabled, replaces TodoTool and MultiTaskTool with task_create,
     # task_claim, task_update, task_list, task_get, task_delete tools.
     ENABLE_AGENT_SWARM = _cfg.get("ENABLE_AGENT_SWARM", "false").lower() == "true"
+
+    # Agent Tracing Monitor
+    TRACE_STORAGE_DIALECT = _cfg.get("TRACE_STORAGE_DIALECT", "sqlite").lower()
+    TRACE_DB_PATH = _cfg.get("TRACE_DB_PATH", "~/.ouro/trace.db")
+    TRACE_DATABASE_URL = _cfg.get("TRACE_DATABASE_URL", "")
 
     # Retry Configuration
     RETRY_MAX_ATTEMPTS = int(_cfg.get("RETRY_MAX_ATTEMPTS", "3"))

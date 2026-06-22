@@ -27,7 +27,7 @@ Without a first-class trace model, every monitor UI would need to reconstruct ex
 
 - Provide a shared trace event/span model for agent execution.
 - Preserve parent-child relationships across runs, agents, tasks, tool calls, LLM calls, memory operations, and swarm workers.
-- Support realtime event streaming and durable JSONL export in the first implementation slice.
+- Support realtime event streaming and durable database-backed trace storage in the first implementation slice.
 - Make tracing opt-in or explicitly configurable, with minimal overhead when disabled.
 - Keep tracing safe by default: redact secrets, avoid storing full prompts/tool outputs unless explicitly configured, and bound payload sizes.
 - Support concurrent tasks and agent swarm execution without losing context propagation.
@@ -51,21 +51,28 @@ Tracing can be enabled for a run and observed in realtime or saved for later ins
 - CLI / UX changes:
   - Add an opt-in trace mode, for example:
     - `python main.py --task "..." --trace`
-    - `python main.py --task "..." --trace-file .ouro/traces/<run_id>.jsonl`
+    - `python main.py --task "..." --trace-db ~/.ouro/trace.db`
+    - `python main.py --task "..." --trace-file .ouro/traces/<run_id>.jsonl` for debug/export workflows.
   - Add follow-up monitor commands in a later slice, for example:
+    - `ouro trace list` to list recent runs from the trace database.
     - `ouro trace watch <run_id>` to stream active spans/events.
-    - `ouro trace view <trace.jsonl>` to inspect a saved trace.
+    - `ouro trace view <run_id>` to inspect a saved trace tree/timeline from the database.
+    - `ouro trace export <run_id> --format jsonl` to produce a portable JSONL artifact.
     - `ouro trace serve` to start a local monitor UI.
 - Config changes:
   - Add optional tracing configuration only after the core event model lands, for example:
     - `tracing.enabled`
-    - `tracing.exporters`
+    - `TRACE_STORAGE_DIALECT` defaulting to `sqlite`
+    - `TRACE_DB_PATH` defaulting to `~/.ouro/trace.db` for local SQLite
+    - `TRACE_DATABASE_URL` for future MySQL-compatible backends such as MySQL and StarRocks
+    - `tracing.exporters` for optional JSONL/debug/OpenTelemetry export
     - `tracing.max_payload_bytes`
     - `tracing.capture_prompts` / `tracing.capture_tool_outputs` defaulting to false.
+  - `ouro.config.Config` owns these settings and higher layers inject the resolved path/URL into core exporters. `ouro.core.tracing` must not import config directly. Future storage dialects can use the same relational schema through MySQL-compatible targets, including MySQL and StarRocks.
 - Output / logging changes:
   - Normal runs remain unchanged when tracing is disabled.
   - When tracing is enabled, ouro emits structured trace events such as `run.started`, `task.completed`, `tool.failed`, and `llm.completed`.
-  - Saved traces are newline-delimited JSON for easy inspection and test assertions.
+  - Saved traces are written to the configured relational trace store by default; JSONL remains available as a debug/export format.
 
 Example saved event shape:
 
@@ -124,9 +131,11 @@ async with tracer.span("tool_call", name="grep_content", attributes={"tool.name"
    - Initial exporters:
      - no-op exporter for disabled tracing.
      - in-memory exporter for tests.
-     - JSONL file exporter for local debugging and later monitor replay.
+     - SQLite database exporter for the default durable store at `~/.ouro/trace.db`.
+     - JSONL file exporter for local debugging, interchange, and monitor replay.
      - stdout/debug exporter only for development.
    - Exporters should be async-compatible and failure-isolated.
+   - Future database exporters should share the same relational schema for MySQL-compatible targets such as MySQL and StarRocks.
 
 4. Instrumentation points
    - Initial slice should instrument high-value boundaries only:
@@ -151,12 +160,50 @@ ouro/core/tracing/
 
 Capabilities and interfaces import those core primitives to instrument their own execution paths. This keeps monitor data production separate from monitor display.
 
-### Realtime Monitoring Path
+### Database Storage Path
 
-The first implementation should write JSONL as events arrive. A later CLI monitor can follow that file or subscribe to an in-process stream:
+The default durable trace store should be a relational database. The local zero-config default is configured through `TRACE_DB_PATH` in `~/.ouro/config` and resolves to SQLite at:
 
 ```text
-runtime spans -> TraceExporter -> JSONL / event bus -> trace watch/view/serve
+~/.ouro/trace.db
+```
+
+The first schema can be intentionally small:
+
+```sql
+CREATE TABLE trace_events (
+    event_id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL,
+    span_id TEXT NOT NULL,
+    parent_span_id TEXT,
+    timestamp TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    name TEXT NOT NULL,
+    status TEXT NOT NULL,
+    duration_ms INTEGER,
+    agent_id TEXT,
+    task_id TEXT,
+    attributes_json TEXT NOT NULL DEFAULT '{}',
+    error_json TEXT,
+    links_json TEXT NOT NULL DEFAULT '[]'
+);
+
+CREATE INDEX idx_trace_events_run_id ON trace_events(run_id);
+CREATE INDEX idx_trace_events_span_id ON trace_events(span_id);
+CREATE INDEX idx_trace_events_parent_span_id ON trace_events(parent_span_id);
+CREATE INDEX idx_trace_events_timestamp ON trace_events(timestamp);
+CREATE INDEX idx_trace_events_type_status ON trace_events(event_type, status);
+CREATE INDEX idx_trace_events_agent_task ON trace_events(agent_id, task_id);
+```
+
+A later schema can add a `trace_runs` summary table for faster run listing and aggregate status queries. External backends such as MySQL and StarRocks should use the same logical columns, with backend-specific DDL handled by the exporter/migration layer.
+
+### Realtime Monitoring Path
+
+The first implementation should write events to the configured trace database as they arrive. A later CLI monitor can query the database, follow an in-process stream, or consume an optional JSONL export:
+
+```text
+runtime spans -> TraceExporter -> SQLite trace_events / event bus / JSONL export -> trace list/watch/view/serve
 ```
 
 A web monitor is intentionally a later slice. It can reconstruct a tree/timeline from `run_id`, `span_id`, and `parent_span_id` without changing the event schema.
@@ -190,7 +237,8 @@ Trace attributes are metadata, not arbitrary dumps. Defaults should:
   - exception handling marks spans failed and records bounded error data.
   - disabled/no-op tracer has near-zero behavior impact and does not call exporters.
   - `contextvars` preserve span context across concurrent async tasks.
-  - JSONL exporter writes valid newline-delimited JSON and survives exporter errors according to policy.
+  - database exporter initializes schema, writes queryable trace rows, and survives exporter errors according to policy.
+  - JSONL exporter writes valid newline-delimited JSON for debug/export workflows.
   - redaction/truncation removes known secret keys and bounds payload sizes.
 - Targeted tests to run locally:
   - `./scripts/dev.sh test -q test/core/` after core tracing lands.
@@ -198,8 +246,8 @@ Trace attributes are metadata, not arbitrary dumps. Defaults should:
   - `TYPECHECK_STRICT=1 ./scripts/dev.sh typecheck`.
   - `./scripts/dev.sh importlint`.
 - Smoke run (one real CLI run):
-  - `python main.py --task "explain what ouro is" --trace --trace-file /tmp/ouro-trace.jsonl`
-  - Verify the JSONL file contains a run span plus LLM/tool/task spans when applicable.
+  - `python main.py --task "explain what ouro is" --trace --trace-db ~/.ouro/trace.db`
+  - Verify the trace database contains a run span plus LLM/tool/task spans when applicable.
 
 ## Rollout / Migration
 
@@ -209,11 +257,12 @@ Trace attributes are metadata, not arbitrary dumps. Defaults should:
   - Existing progress/log behavior remains unchanged.
 - Incremental rollout:
   1. Add core tracing primitives, no-op tracer, in-memory exporter, JSONL exporter, and tests.
-  2. Wire opt-in CLI/config plumbing for trace file output.
-  3. Instrument run, tool, and LLM boundaries.
-  4. Instrument Task V2 and swarm execution boundaries.
-  5. Add `trace view/watch` CLI or TUI inspection.
-  6. Add optional OpenTelemetry exporter and local web monitor if demand justifies it.
+  2. Add database trace exporter and make SQLite `~/.ouro/trace.db` the default durable store.
+  3. Wire opt-in CLI/config plumbing for trace database output.
+  4. Instrument run, tool, and LLM boundaries.
+  5. Instrument Task V2 and swarm execution boundaries.
+  6. Add `trace list/view/watch` CLI or TUI inspection.
+  7. Add optional MySQL/StarRocks/OpenTelemetry exporters and local web monitor if demand justifies it.
 - Rollback:
   - Disable tracing via config/flag to return to current behavior.
   - Remove instrumentation calls independently because they should target no-op-safe APIs.
@@ -238,6 +287,6 @@ Trace attributes are metadata, not arbitrary dumps. Defaults should:
 - Should tracing be disabled by default, enabled by a CLI flag, or enabled for debug/development profiles?
 - What event names should be considered stable public schema in the first accepted version?
 - Should prompt/tool-output capture ever be allowed, or should ouro only support metadata-level traces?
-- How should trace files be retained and cleaned up under `~/.ouro/traces/`?
-- Should the first realtime monitor follow JSONL files, subscribe to an in-process event bus, or support both?
-- What is the right compatibility layer for OpenTelemetry: direct span mapping, JSONL conversion, or an exporter plugin?
+- How should trace rows be retained, compacted, and cleaned up under `~/.ouro/trace.db`?
+- Should the first realtime monitor query SQLite, subscribe to an in-process event bus, consume JSONL export, or support multiple modes?
+- What is the right compatibility layer for OpenTelemetry: direct span mapping, database conversion, JSONL conversion, or an exporter plugin?

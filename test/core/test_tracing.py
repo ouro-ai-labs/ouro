@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -9,9 +10,11 @@ import pytest
 from ouro.core.tracing import (
     InMemoryTraceExporter,
     JSONLTraceExporter,
+    SQLiteTraceExporter,
     TraceEventType,
     Tracer,
     get_current_span_id,
+    resolve_sqlite_trace_db_path,
     sanitize_attributes,
 )
 
@@ -100,6 +103,61 @@ async def test_jsonl_exporter_writes_newline_delimited_json(tmp_path: Path) -> N
     assert payloads[1]["status"] == "completed"
     assert payloads[0]["run_id"] == "run-jsonl"
     assert payloads[0]["attributes"] == {"tool.name": "grep"}
+
+
+def test_resolve_sqlite_trace_db_path_prefers_configured_path(tmp_path: Path) -> None:
+    configured = tmp_path / "configured.db"
+
+    assert resolve_sqlite_trace_db_path(db_path=configured) == configured
+
+
+def test_resolve_sqlite_trace_db_path_supports_sqlite_urls(tmp_path: Path) -> None:
+    configured = tmp_path / "from-url.db"
+
+    assert resolve_sqlite_trace_db_path(database_url="sqlite://" + str(configured)) == configured
+
+
+def test_resolve_sqlite_trace_db_path_rejects_remote_urls() -> None:
+    with pytest.raises(ValueError, match="Unsupported SQLite trace database URL scheme"):
+        resolve_sqlite_trace_db_path(database_url="mysql://localhost/ouro_trace")
+
+
+async def test_sqlite_exporter_writes_queryable_trace_events(tmp_path: Path) -> None:
+    trace_path = tmp_path / "trace.db"
+    tracer = Tracer(exporter=SQLiteTraceExporter(trace_path), run_id="run-sqlite")
+
+    async with tracer.span(
+        TraceEventType.TOOL_CALL,
+        "grep",
+        attributes={"tool.name": "grep", "api_key": "secret"},
+        agent_id="agent-1",
+        task_id="task-1",
+    ):
+        pass
+
+    with sqlite3.connect(trace_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT run_id, event_type, name, status, agent_id, task_id,
+                   attributes_json, duration_ms
+            FROM trace_events
+            ORDER BY rowid
+            """
+        ).fetchall()
+
+    assert len(rows) == 2
+    started, completed = rows
+    assert started[:6] == (
+        "run-sqlite",
+        TraceEventType.TOOL_CALL,
+        "grep",
+        "started",
+        "agent-1",
+        "task-1",
+    )
+    assert json.loads(started[6]) == {"api_key": "[redacted]", "tool.name": "grep"}
+    assert completed[3] == "completed"
+    assert completed[7] is not None
 
 
 def test_sanitize_attributes_redacts_and_truncates() -> None:
