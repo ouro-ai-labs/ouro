@@ -260,6 +260,45 @@ def test_main_does_not_print_session_id_after_task_run(monkeypatch):
     assert "Session ID: 12345678-1234-1234-1234-123456789abc" not in calls["info"]
 
 
+def test_main_resume_with_session_id_loads_session_before_interactive_mode(monkeypatch):
+    calls, _ = _setup_common(monkeypatch, ["--resume", "abcdef12"])
+    state = {"loaded": None, "interactive_started": False}
+    agent = SimpleNamespace(
+        session_id=None,
+        set_reasoning_effort=lambda effort: None,
+        load_session=None,
+    )
+
+    async def fake_resolve_session_id(resume_arg: str):
+        assert resume_arg == "abcdef12"
+        return "abcdef12-3456-7890-abcd-ef1234567890"
+
+    async def fake_load_session(session_id: str):
+        state["loaded"] = session_id
+        agent.session_id = session_id
+
+    async def fake_interactive_mode(passed_agent):
+        assert passed_agent is agent
+        assert state["loaded"] == "abcdef12-3456-7890-abcd-ef1234567890"
+        state["interactive_started"] = True
+        return None
+
+    agent.load_session = fake_load_session
+
+    monkeypatch.setattr(ouro_main.Config, "validate", staticmethod(lambda: None))
+    monkeypatch.setattr(ouro_main, "_resolve_session_id", fake_resolve_session_id)
+    monkeypatch.setattr(ouro_main, "create_agent", lambda model_id=None, **kwargs: agent)
+    monkeypatch.setattr(ouro_main, "run_interactive_mode", fake_interactive_mode)
+
+    ouro_main.main()
+
+    assert calls["info"][0] == "Resuming session: abcdef12-3456-7890-abcd-ef1234567890"
+    assert state == {
+        "loaded": "abcdef12-3456-7890-abcd-ef1234567890",
+        "interactive_started": True,
+    }
+
+
 def test_main_prints_session_id_after_interactive_mode(monkeypatch):
     calls, _ = _setup_common(monkeypatch, [])
     agent = SimpleNamespace(
