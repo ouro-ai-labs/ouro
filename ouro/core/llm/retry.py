@@ -77,18 +77,40 @@ class _ConfigBackoff(wait_base):
         return Config.get_retry_delay(attempt)
 
 
+def _boxed_retry_message(
+    *, error_type: str, error: BaseException, delay: float, attempt: int
+) -> str:
+    """Format retry notices as a compact terminal-friendly box."""
+    lines = [
+        f"{error_type} error: {error}",
+        f"Retrying in {delay:.1f}s... (attempt {attempt}/{Config.RETRY_MAX_ATTEMPTS + 1})",
+    ]
+    width = max(len(line) for line in lines)
+    top = f"┌─ Retry ─{'─' * max(width - 7, 0)}┐"
+    body = [f"│ {line.ljust(width)} │" for line in lines]
+    bottom = f"└{'─' * (width + 2)}┘"
+    return "\n".join([top, *body, bottom])
+
+
 def _log_before_sleep(retry_state) -> None:
     error = retry_state.outcome.exception() if retry_state.outcome else None
     if not error:
         return
+
+    # The first transient failure is common and usually self-heals; keep the CLI
+    # quiet unless a second (or later) retry is needed.
+    if retry_state.attempt_number <= 1:
+        return
+
     error_type = "Rate limit" if is_rate_limit_error(error) else "Retryable"
     delay = _ConfigBackoff()(retry_state)
-    logger.warning(f"{error_type} error: {error}")
     logger.warning(
-        "Retrying in %.1fs... (attempt %s/%s)",
-        delay,
-        retry_state.attempt_number,
-        Config.RETRY_MAX_ATTEMPTS + 1,
+        _boxed_retry_message(
+            error_type=error_type,
+            error=error,
+            delay=delay,
+            attempt=retry_state.attempt_number,
+        )
     )
 
 

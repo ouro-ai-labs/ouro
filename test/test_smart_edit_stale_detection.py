@@ -10,6 +10,7 @@ The rule stores this snapshot and checks it before allowing any
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from ouro.capabilities.rules.read_before_write import (
     ReadBeforeWriteRule,
@@ -115,8 +116,8 @@ class FakeToolCall:
         self.id = "tc-1"
 
 
-def test_rule_blocks_stale_edit(tmp_path):
-    """If the file changed after read, before_toolcall blocks the edit."""
+def test_rule_blocks_stale_edit_without_warning_log(tmp_path, caplog):
+    """If the file changed after read, before_toolcall blocks the edit quietly."""
     rule = ReadBeforeWriteRule()
     ctx = FakeLoopContext()
 
@@ -141,11 +142,13 @@ def test_rule_blocks_stale_edit(tmp_path):
     # Modify file behind the rule's back
     f.write_text("x = 2\n", encoding="utf-8")
 
-    # Now try to smart_edit — should be blocked as stale
+    # Now try to smart_edit — should be blocked as stale, but not logged as a warning.
     edit_tc = FakeToolCall("smart_edit", f)
-    msg = rule.before_toolcall(ctx, edit_tc)
+    with caplog.at_level(logging.WARNING):
+        msg = rule.before_toolcall(ctx, edit_tc)
     assert msg is not None
     assert "modified on disk" in msg
+    assert "blocked smart_edit on stale file" not in caplog.text
 
 
 def test_rule_allows_fresh_edit(tmp_path):
