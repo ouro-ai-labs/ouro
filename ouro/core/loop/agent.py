@@ -14,6 +14,7 @@ from typing import Any, Callable, Sequence
 from ouro.core.llm import LLMMessage, LLMResponse, StopReason, ToolCall, ToolOutput, ToolResult
 from ouro.core.llm.reasoning import normalize_reasoning_effort
 from ouro.core.log import get_logger
+from ouro.core.tracing import TraceEventType, Tracer
 
 from .context import MessageListContext, RunStatistic
 from .message_list import MessageList
@@ -46,6 +47,7 @@ class Agent:
         usage_callback: Callable[[dict[str, int]], None] | None = None,
         repeat_tool_call_threshold: int = 3,
         rules: Sequence[Rule] = (),
+        tracer: Tracer | None = None,
     ) -> None:
         self.llm = llm
         self.tools = tools
@@ -53,6 +55,7 @@ class Agent:
         self.max_iterations = max_iterations
         self.max_tokens_per_call = max_tokens_per_call
         self.progress: ProgressSink = progress or NullProgressSink()
+        self.tracer = tracer or Tracer(enabled=False)
         self._reasoning_effort: str | None = None
         self._usage_callback = usage_callback
         # Warn the model after `repeat_tool_call_threshold` consecutive identical
@@ -76,6 +79,26 @@ class Agent:
         self.rules.append(rule)
 
     async def run(
+        self,
+        task: str,
+        *,
+        context: MessageListContext | None = None,
+    ) -> str:
+        async with self.tracer.span(
+            TraceEventType.RUN,
+            "agent.run",
+            attributes={
+                "task.preview": task[:200],
+                "task.length": len(task),
+                "agent.max_iterations": self.max_iterations,
+            },
+        ) as span:
+            result = await self._run_impl(task, context=context)
+            span.set_attributes({"result.length": len(result)})
+            return result
+        raise AssertionError("unreachable: tracer span exited without returning")
+
+    async def _run_impl(
         self,
         task: str,
         *,
@@ -116,7 +139,27 @@ class Agent:
                     call_kwargs["max_tokens"] = self.max_tokens_per_call
                 if os.environ.get("OURO_DEBUG_LLM_HISTORY"):
                     _log_outgoing_messages(ctx.iteration, outgoing)
-                response = await self.llm.call_async(**call_kwargs)
+                async with self.tracer.span(
+                    TraceEventType.LLM_CALL,
+                    "llm.call",
+                    attributes={
+                        "llm.model": getattr(self.llm, "model", "unknown"),
+                        "llm.provider": getattr(self.llm, "provider_name", "unknown"),
+                        "llm.message_count": len(outgoing),
+                        "llm.tool_schema_count": len(tool_schemas),
+                        "agent.iteration": ctx.iteration,
+                    },
+                ) as llm_span:
+                    response = await self.llm.call_async(**call_kwargs)
+                    usage = getattr(response, "usage", None) or {}
+                    llm_span.set_attributes(
+                        {
+                            "llm.stop_reason": response.stop_reason,
+                            "llm.input_tokens": usage.get("input_tokens", 0),
+                            "llm.output_tokens": usage.get("output_tokens", 0),
+                            "llm.total_tokens": usage.get("total_tokens", 0),
+                        }
+                    )
             ctx.stop_reason_last = response.stop_reason
             ctx.add_usage(getattr(response, "usage", None))
 
@@ -375,7 +418,7 @@ class Agent:
                 )
             )
             async with self.progress.spinner(f"Executing {tc.name}...", title="Working"):
-                output = await self.tools.execute_tool_call(tc.name, tc.arguments)
+                output = await self._execute_traced_tool_call(tc)
             self.progress.emit(ProgressEvent(kind="tool_result", payload={"text": output.content}))
             results.append(
                 ToolResult(
@@ -386,6 +429,26 @@ class Agent:
                 )
             )
         return results
+
+    async def _execute_traced_tool_call(self, tool_call: ToolCall) -> ToolOutput:
+        async with self.tracer.span(
+            TraceEventType.TOOL_CALL,
+            tool_call.name,
+            attributes={
+                "tool.name": tool_call.name,
+                "tool.call_id": tool_call.id,
+                "tool.argument_keys": sorted(tool_call.arguments.keys()),
+            },
+        ) as tool_span:
+            output = await self.tools.execute_tool_call(tool_call.name, tool_call.arguments)
+            tool_span.set_attributes(
+                {
+                    "tool.result_length": len(output.content),
+                    "tool.metadata_keys": sorted((output.metadata or {}).keys()),
+                }
+            )
+            return output
+        raise AssertionError("unreachable: tool trace span exited without returning")
 
     async def _exec_parallel(
         self, ctx: RunStatistic, tool_calls: list[ToolCall]
@@ -401,7 +464,7 @@ class Agent:
         outputs: list[ToolOutput | None] = [None] * len(tool_calls)
 
         async def _run(i: int, tc: ToolCall) -> None:
-            outputs[i] = await self.tools.execute_tool_call(tc.name, tc.arguments)
+            outputs[i] = await self._execute_traced_tool_call(tc)
 
         names = ", ".join(tc.name for tc in tool_calls)
         async with self.progress.spinner(

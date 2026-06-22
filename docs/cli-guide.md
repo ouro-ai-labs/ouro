@@ -77,6 +77,7 @@ ouro --resume a1b2c3d4
 | `--logout` | - | Open OAuth provider selector and logout |
 | `--verify` | | Enable self-verification (Ralph Loop) in `--task` mode |
 | `--reasoning-effort LEVEL` | - | Set run-scoped reasoning effort (`default|none|minimal|low|medium|high|xhigh|off`) |
+| `--trace` | - | Enable agent/LLM/tool tracing to the configured SQLite trace DB |
 | `--verbose` | `-v` | Enable verbose logging to `~/.ouro/logs/` |
 
 ## Interactive Commands

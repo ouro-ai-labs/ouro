@@ -27,6 +27,10 @@ ouro --task "Summarize this README" --model openai/gpt-4o
 
 # Set reasoning effort (LiteLLM/OpenAI-style). Use `off` as alias for `none`.
 ouro --task "Solve this logic puzzle" --reasoning-effort high
+
+# Enable tracing to the configured SQLite trace DB (`TRACE_DB_PATH`, default `~/.ouro/trace.db`)
+ouro --task "Summarize this README" --trace
+
 ```
 
 From source (without install):

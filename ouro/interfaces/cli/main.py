@@ -23,6 +23,7 @@ from ouro.core.llm.oauth_model_sync import remove_oauth_models, sync_oauth_model
 from ouro.core.llm.reasoning import REASONING_EFFORT_CHOICES
 from ouro.core.log import setup_logger
 from ouro.core.runtime import ensure_runtime_dirs
+from ouro.core.tracing import SQLiteTraceExporter, Tracer, resolve_sqlite_trace_db_path
 from ouro.interfaces.cli.factory import create_agent
 from ouro.interfaces.tui import terminal_ui
 from ouro.interfaces.tui.interactive import run_interactive_mode, run_model_setup_mode
@@ -83,6 +84,22 @@ async def _pick_auth_provider_cli(mode: str) -> str | None:
     return await pick_oauth_provider(providers=providers, title=title, hint=hint)
 
 
+def _create_tracer(*, enabled: bool) -> Tracer | None:
+    """Create an opt-in CLI tracer from config."""
+    if not enabled:
+        return None
+    if Config.TRACE_STORAGE_DIALECT != "sqlite":
+        raise ValueError(
+            "Only TRACE_STORAGE_DIALECT=sqlite is supported for tracing right now. "
+            "MySQL/StarRocks backends are planned but not implemented."
+        )
+    db_path = resolve_sqlite_trace_db_path(
+        db_path=Config.TRACE_DB_PATH,
+        database_url=Config.TRACE_DATABASE_URL or None,
+    )
+    return Tracer(exporter=SQLiteTraceExporter(db_path))
+
+
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(description="Run an AI agent with tool-calling capabilities")
@@ -139,6 +156,11 @@ def main():
         choices=REASONING_EFFORT_CHOICES,
         default="default",
         help="Run-scoped reasoning level (LiteLLM/OpenAI-style). Use 'default' to omit the parameter, or 'off' as an alias for 'none'.",
+    )
+    parser.add_argument(
+        "--trace",
+        action="store_true",
+        help="Enable agent tracing and write events to the configured SQLite trace database.",
     )
     parser.add_argument(
         "--json",
@@ -236,6 +258,12 @@ def main():
             terminal_ui.print_error(str(e), title="Resume Error")
             return
 
+    try:
+        tracer = _create_tracer(enabled=args.trace)
+    except ValueError as e:
+        terminal_ui.print_error(str(e), title="Tracing Configuration Error")
+        return
+
     # Create agent with optional model selection. If we're going into interactive mode and
     # models aren't configured yet, enter a setup session first.
     progress_format = "json" if args.json else "tui"
@@ -245,6 +273,7 @@ def main():
             model_id=args.model,
             progress_format=progress_format,
             progress_stream=progress_stream,
+            tracer=tracer,
         )
     except ValueError as e:
         if args.task:
@@ -265,6 +294,7 @@ def main():
             model_id=args.model,
             progress_format=progress_format,
             progress_stream=progress_stream,
+            tracer=tracer,
         )
 
     async def _run() -> None:
