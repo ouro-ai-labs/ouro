@@ -13,7 +13,18 @@ from . import context
 from .events import TraceError, TraceEvent, TraceStatus, utc_now
 from .exporters import NoOpTraceExporter, TraceExporter
 
-_SECRET_MARKERS = ("key", "token", "secret", "password", "authorization", "auth")
+_SECRET_KEYS = {
+    "api_key",
+    "apikey",
+    "authorization",
+    "auth_header",
+    "access_token",
+    "refresh_token",
+    "id_token",
+    "secret",
+    "password",
+}
+_SECRET_SUFFIXES = ("_api_key", "_secret", "_password", "_access_token", "_refresh_token")
 _DEFAULT_MAX_STRING_LENGTH = 2048
 _DEFAULT_MAX_ATTRIBUTES = 64
 
@@ -24,7 +35,7 @@ def _new_id(prefix: str) -> str:
 
 def _is_secret_key(key: str) -> bool:
     lowered = key.lower()
-    return any(marker in lowered for marker in _SECRET_MARKERS)
+    return lowered in _SECRET_KEYS or any(lowered.endswith(suffix) for suffix in _SECRET_SUFFIXES)
 
 
 def _sanitize_value(value: Any, *, max_string_length: int) -> Any:
@@ -173,6 +184,16 @@ class Span:
         self._run_token: Any = None
         self._span_token: Any = None
 
+    def set_attributes(self, attributes: Mapping[str, Any] | None = None, **kwargs: Any) -> None:
+        """Merge additional sanitized attributes into future span events."""
+        merged: dict[str, Any] = {}
+        if attributes:
+            merged.update(attributes)
+        merged.update(kwargs)
+        self.attributes.update(
+            sanitize_attributes(merged, max_string_length=self.tracer.max_string_length)
+        )
+
     async def __aenter__(self) -> Self:
         self.parent_span_id = context.get_current_span_id()
         self.run_id = context.get_current_run_id() or self.tracer.run_id
@@ -232,6 +253,9 @@ class Span:
 
 class NoOpSpan:
     """Span context manager used when tracing is disabled."""
+
+    def set_attributes(self, attributes: Mapping[str, Any] | None = None, **kwargs: Any) -> None:
+        return None
 
     async def __aenter__(self) -> Self:
         return self

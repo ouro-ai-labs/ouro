@@ -21,6 +21,7 @@ from ouro.capabilities.tools.builtins.web_fetch import WebFetchTool
 from ouro.capabilities.tools.builtins.web_search import WebSearchTool
 from ouro.config import Config
 from ouro.core.llm import ModelManager, create_llm_adapter
+from ouro.core.tracing import Tracer
 from ouro.interfaces.tui import terminal_ui
 from ouro.interfaces.tui.json_progress import JsonProgressSink
 from ouro.interfaces.tui.tui_progress import TuiProgressSink
@@ -32,6 +33,7 @@ def create_agent(
     memory_dir: str | None = None,
     progress_format: str = "tui",
     progress_stream=None,
+    tracer: Tracer | None = None,
 ) -> ComposedAgent:
     """Factory function to create a fully wired ComposedAgent.
 
@@ -39,6 +41,7 @@ def create_agent(
         model_id: Optional LiteLLM model ID (defaults to current/default).
         sessions_dir: Optional custom sessions directory (bot-mode isolation).
         memory_dir: Optional custom long-term memory directory (bot-mode isolation).
+        tracer: Optional tracer for run/LLM/tool instrumentation.
 
     Returns:
         A ComposedAgent with the standard builtin toolset, memory, and a
@@ -102,6 +105,7 @@ def create_agent(
         .with_llm(llm, model_manager=model_manager)
         .with_max_iterations(Config.MAX_ITERATIONS)
         .with_progress_sink(progress_sink)
+        .with_tracer(tracer)
         .with_progress_identity(
             agent_id="root",
             root_agent_id="root",

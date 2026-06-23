@@ -36,6 +36,7 @@ from ouro.core.loop import (
     Rule,
     ScopedProgressSink,
 )
+from ouro.core.tracing import Tracer
 
 from .compaction.hook import CompactionHook
 from .context.agents_md import load_agents_md
@@ -134,6 +135,7 @@ class AgentBuilder:
     verifier: Verifier | None = None
     verification_max_iterations: int = 0  # 0 disables verification
     progress: ProgressSink = field(default_factory=NullProgressSink)
+    tracer: Tracer | None = None
     extra_hooks: list[Hook] = field(default_factory=list)
     dispatcher_factory: Any | None = None
     swarm_max_workers: int = 5
@@ -270,6 +272,10 @@ class AgentBuilder:
 
     def with_progress_sink(self, progress: ProgressSink) -> AgentBuilder:
         self.progress = progress
+        return self
+
+    def with_tracer(self, tracer: Tracer | None) -> AgentBuilder:
+        self.tracer = tracer
         return self
 
     def with_dispatcher_factory(self, factory) -> AgentBuilder:
@@ -414,6 +420,7 @@ class AgentBuilder:
             progress=progress_sink,
             usage_callback=(memory.token_tracker.record_usage if memory is not None else None),
             rules=rules,
+            tracer=self.tracer,
         )
 
         dispatcher_factory = self.dispatcher_factory
