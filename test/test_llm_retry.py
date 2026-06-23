@@ -1,12 +1,26 @@
 import asyncio
+import logging
+from types import SimpleNamespace
 
 import httpx
 
-from ouro.core.llm.retry import is_retryable_error
+from ouro.core.llm.retry import _boxed_retry_message, _log_before_sleep, is_retryable_error
 
 
 class CustomError(Exception):
     pass
+
+
+class _Outcome:
+    def __init__(self, error: BaseException) -> None:
+        self._error = error
+
+    def exception(self) -> BaseException:
+        return self._error
+
+
+def _retry_state(attempt_number: int, error: BaseException) -> SimpleNamespace:
+    return SimpleNamespace(attempt_number=attempt_number, outcome=_Outcome(error))
 
 
 def test_server_disconnected_error_is_retryable() -> None:
@@ -49,3 +63,38 @@ def test_non_retryable_http_statuses_are_not_retryable() -> None:
 
 def test_unknown_exception_is_not_retryable_by_default() -> None:
     assert not is_retryable_error(ValueError("bad request body"))
+
+
+def test_log_before_sleep_suppresses_first_retry(caplog):
+    with caplog.at_level(logging.WARNING, logger="ouro.core.llm.retry"):
+        _log_before_sleep(_retry_state(1, RuntimeError("Server disconnected")))
+
+    assert caplog.text == ""
+
+
+def test_log_before_sleep_boxes_second_and_later_retries(caplog):
+    error = RuntimeError("Server disconnected without sending a response.")
+
+    with caplog.at_level(logging.WARNING, logger="ouro.core.llm.retry"):
+        _log_before_sleep(_retry_state(2, error))
+
+    assert "┌─ Retry" in caplog.text
+    assert "│ Retryable error: Server disconnected without sending a response." in caplog.text
+    assert "│ Retrying in" in caplog.text
+    assert "(attempt 2/" in caplog.text
+    assert "└" in caplog.text
+
+
+def test_boxed_retry_message_contains_single_boxed_notice():
+    message = _boxed_retry_message(
+        error_type="Retryable",
+        error=RuntimeError("Server disconnected without sending a response."),
+        delay=1.0,
+        attempt=2,
+    )
+
+    lines = message.splitlines()
+    assert lines[0].startswith("┌─ Retry ─")
+    assert lines[1].startswith("│ Retryable error: Server disconnected")
+    assert lines[2].startswith("│ Retrying in 1.0s... (attempt 2/")
+    assert lines[3].startswith("└")

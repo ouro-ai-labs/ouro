@@ -161,11 +161,6 @@ class ReadBeforeWriteRule:
             read_mtime, read_hash = snapshot
             stale_msg = _check_stale(path, read_mtime, read_hash)
             if stale_msg:
-                logger.warning(
-                    "ReadBeforeWriteRule: blocked %s on stale file %r",
-                    tool_call.name,
-                    tool_call.arguments.get("file_path"),
-                )
                 return stale_msg
 
         return None
