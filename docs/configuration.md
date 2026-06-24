@@ -151,7 +151,7 @@ agent = (
 | `TRACE_DB_PATH` | `~/.ouro/trace.db` | Local SQLite trace database path. Used when `TRACE_STORAGE_DIALECT=sqlite` and no `TRACE_DATABASE_URL` is set. |
 | `TRACE_DATABASE_URL` | `""` | Optional database URL for future remote trace backends. SQLite URLs such as `sqlite:///tmp/ouro-trace.db` can also be resolved to local paths. |
 
-Tracing is opt-in until CLI/runtime wiring lands. Core tracing exporters do not read config directly; CLI/capability layers should resolve these settings and inject the selected exporter.
+Tracing is opt-in via `ouro --task "..." --trace`. Core tracing exporters do not read config directly; CLI/capability layers resolve these settings and inject the selected exporter. See `docs/trace-monitor.md` for the local web monitor.
 
 ### Retry
 

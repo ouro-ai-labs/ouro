@@ -83,6 +83,7 @@ Issues = "https://github.com/ouro-ai-labs/ouro/issues"
 [project.scripts]
 ouro-cli = "ouro.interfaces.cli.entry:main"
 ouro-bot = "ouro.interfaces.bot.entry:main"
+ouro-trace-monitor = "ouro.interfaces.trace_web.server:main"
 
 [tool.setuptools]
 packages = [
@@ -111,6 +112,7 @@ packages = [
     "ouro.interfaces.bot",
     "ouro.interfaces.bot.channel",
     "ouro.interfaces.cli",
+    "ouro.interfaces.trace_web",
     "ouro.interfaces.tui",
     "ouro_harbor",
 ]
@@ -119,6 +121,7 @@ packages = [
 "*" = ["py.typed"]
 "ouro_harbor" = ["*.j2"]
 "ouro.capabilities.skills" = ["system/**"]
+"ouro.interfaces.trace_web" = ["static/*"]
 
 [tool.black]
 line-length = 100

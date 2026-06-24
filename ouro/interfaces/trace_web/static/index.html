@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ouro Trace Monitor</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>ouro Trace Monitor</h1>
+      <p>Local view of agent run, LLM call, and tool call traces.</p>
+    </header>
+    <main>
+      <section class="panel runs-panel">
+        <div class="panel-title">
+          <h2>Runs</h2>
+          <button id="refresh">Refresh</button>
+        </div>
+        <div id="runs" class="runs"></div>
+      </section>
+      <section class="panel detail-panel">
+        <div class="panel-title">
+          <h2 id="detail-title">Trace</h2>
+          <label><input id="auto-refresh" type="checkbox" checked /> auto refresh</label>
+        </div>
+        <div id="tree" class="tree muted">Select a run to view its trace.</div>
+      </section>
+      <section class="panel raw-panel">
+        <div class="panel-title"><h2>Selected Event</h2></div>
+        <pre id="raw" class="raw muted">Click a trace node to inspect raw event metadata.</pre>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

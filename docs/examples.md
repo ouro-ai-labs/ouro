@@ -31,6 +31,10 @@ ouro --task "Solve this logic puzzle" --reasoning-effort high
 # Enable tracing to the configured SQLite trace DB (`TRACE_DB_PATH`, default `~/.ouro/trace.db`)
 ouro --task "Summarize this README" --trace
 
+# View captured traces in the local web monitor
+ouro-trace-monitor
+# then open http://127.0.0.1:8765
+
 ```
 
 From source (without install):
