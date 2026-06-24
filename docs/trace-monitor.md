@@ -27,7 +27,7 @@ TRACE_DATABASE_URL=
 ## Start the local monitor
 
 ```bash
-ouro-trace-monitor
+ouro-trace
 ```
 
 Then open:
@@ -39,8 +39,8 @@ http://127.0.0.1:8765
 Useful options:
 
 ```bash
-ouro-trace-monitor --host 127.0.0.1 --port 8765
-ouro-trace-monitor --db /path/to/trace.db
+ouro-trace --host 127.0.0.1 --port 8765
+ouro-trace --db /path/to/trace.db
 ```
 
 The web UI shows:

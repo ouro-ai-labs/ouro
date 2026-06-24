@@ -83,7 +83,7 @@ Issues = "https://github.com/ouro-ai-labs/ouro/issues"
 [project.scripts]
 ouro-cli = "ouro.interfaces.cli.entry:main"
 ouro-bot = "ouro.interfaces.bot.entry:main"
-ouro-trace-monitor = "ouro.interfaces.trace_web.server:main"
+ouro-trace = "ouro.interfaces.trace_web.server:main"
 
 [tool.setuptools]
 packages = [
