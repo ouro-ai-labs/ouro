@@ -49,6 +49,6 @@ The web UI shows:
 - run status and duration
 - LLM/tool call counts
 - trace tree for the selected run
-- raw event metadata for selected spans
+- structured selected-event details with attributes, errors, links, and collapsible raw JSON
 
-The first version polls the SQLite database every few seconds. WebSocket live streaming and swarm/task graph visualizations are planned future improvements.
+The monitor polls the SQLite database every few seconds and shows running spans before their completion events arrive. WebSocket live streaming and swarm/task graph visualizations are planned future improvements.
