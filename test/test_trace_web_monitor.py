@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 from ouro.core.tracing import SQLiteTraceExporter, TraceEventType, Tracer
@@ -46,6 +47,33 @@ async def test_get_latest_run_and_events(tmp_path: Path) -> None:
     )
     assert completed_llm["attributes"]["llm.total_tokens"] == 7
     assert completed_llm["parent_span_id"] is not None
+
+
+async def test_events_include_stable_write_sequence(tmp_path: Path) -> None:
+    db_path = tmp_path / "trace.db"
+    await _write_sample_trace(db_path)
+
+    events = get_run_events(db_path, "run-web")
+
+    assert [event["sequence"] for event in events] == sorted(event["sequence"] for event in events)
+    assert events[0]["status"] == "started"
+
+
+async def test_latest_run_uses_write_order_not_timestamp_only(tmp_path: Path) -> None:
+    db_path = tmp_path / "trace.db"
+    await _write_sample_trace(db_path)
+    tracer = Tracer(exporter=SQLiteTraceExporter(db_path), run_id="run-newer")
+    async with tracer.span(TraceEventType.RUN, "agent.run"):
+        pass
+
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "UPDATE trace_events SET timestamp = '1900-01-01T00:00:00Z' WHERE run_id = 'run-newer'"
+        )
+        connection.commit()
+
+    assert get_latest_run_id(db_path) == "run-newer"
+    assert list_runs(db_path)[0].run_id == "run-newer"
 
 
 def test_missing_trace_database_returns_empty_results(tmp_path: Path) -> None:

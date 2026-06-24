@@ -1,5 +1,7 @@
 let selectedRunId = null;
+let selectedSpanId = null;
 let selectedEvent = null;
+let currentSpans = new Map();
 
 const runsEl = document.getElementById('runs');
 const treeEl = document.getElementById('tree');
@@ -21,6 +23,21 @@ function duration(ms) {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function formatValue(value) {
+  if (value === null || value === undefined) return '<span class="muted">None</span>';
+  if (typeof value === 'object') return `<code>${escapeHtml(JSON.stringify(value))}</code>`;
+  return `<code>${escapeHtml(value)}</code>`;
+}
+
 async function loadRuns(selectLatest = true) {
   const res = await fetch('/api/runs');
   const data = await res.json();
@@ -33,61 +50,207 @@ async function loadRuns(selectLatest = true) {
     const row = document.createElement('div');
     row.className = `run-row ${run.run_id === selectedRunId ? 'active' : ''}`;
     row.innerHTML = `
-      <div class="run-id">${run.run_id}</div>
-      <div class="meta"><span class="status-${run.status}">${run.status}</span> · ${duration(run.duration_ms)}</div>
+      <div class="run-id">${escapeHtml(run.run_id)}</div>
+      <div class="meta"><span class="status-${escapeHtml(run.status)}">${escapeHtml(run.status)}</span> · ${duration(run.duration_ms)}</div>
       <div class="meta">LLM ${run.llm_calls} · Tools ${run.tool_calls} · Events ${run.event_count}</div>
-      <div class="meta">${run.started_at}</div>
+      <div class="meta">${escapeHtml(run.started_at)}</div>
     `;
-    row.addEventListener('click', () => loadRun(run.run_id));
+    row.addEventListener('click', () => {
+      selectedSpanId = null;
+      selectedEvent = null;
+      loadRun(run.run_id);
+    });
     runsEl.appendChild(row);
   }
   if (selectLatest && !selectedRunId) loadRun(data.runs[0].run_id);
 }
 
-async function loadRun(runId, updateRaw = true) {
+async function loadRun(runId, resetDetail = true) {
   selectedRunId = runId;
   const res = await fetch(`/api/runs/${encodeURIComponent(runId)}`);
   if (!res.ok) return;
   const data = await res.json();
   titleEl.textContent = `Trace ${runId}`;
-  renderTree(data.events);
-  if (updateRaw) rawEl.textContent = selectedEvent ? JSON.stringify(selectedEvent, null, 2) : 'Click a trace node to inspect raw event metadata.';
+  currentSpans = buildSpanModels(data.events);
+  renderTree(currentSpans);
+
+  if (selectedSpanId && currentSpans.has(selectedSpanId)) {
+    selectedEvent = currentSpans.get(selectedSpanId);
+    renderEventDetail(selectedEvent);
+  } else if (resetDetail) {
+    selectedEvent = null;
+    renderEventDetail(null);
+  }
   loadRuns(false);
 }
 
-function renderTree(events) {
-  treeEl.innerHTML = '';
-  const terminal = events.filter(e => ['completed', 'failed'].includes(e.status));
-  const bySpan = new Map(terminal.map(e => [e.span_id, e]));
-  const children = new Map();
-  for (const event of terminal) {
-    const parent = event.parent_span_id || '__root__';
-    if (!children.has(parent)) children.set(parent, []);
-    children.get(parent).push(event);
+function buildSpanModels(events) {
+  const grouped = new Map();
+  for (const event of events) {
+    if (!grouped.has(event.span_id)) grouped.set(event.span_id, []);
+    grouped.get(event.span_id).push(event);
   }
-  const roots = children.get('__root__') || terminal.filter(e => !bySpan.has(e.parent_span_id));
+
+  const spans = new Map();
+  for (const [spanId, spanEvents] of grouped) {
+    spanEvents.sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
+    const started = spanEvents.find(e => e.status === 'started') || spanEvents[0];
+    const failed = spanEvents.find(e => e.status === 'failed');
+    const completed = spanEvents.find(e => e.status === 'completed');
+    const terminal = failed || completed || null;
+    const display = terminal || started;
+    spans.set(spanId, {
+      ...display,
+      status: terminal ? terminal.status : 'running',
+      duration_ms: terminal ? terminal.duration_ms : null,
+      parent_span_id: started.parent_span_id || display.parent_span_id,
+      timestamp: started.timestamp,
+      sequence: started.sequence ?? display.sequence ?? 0,
+      attributes: {
+        ...(started.attributes || {}),
+        ...(terminal?.attributes || {}),
+      },
+      lifecycle_events: spanEvents,
+    });
+  }
+  return spans;
+}
+
+function renderTree(spans) {
+  treeEl.innerHTML = '';
+  const children = new Map();
+  const roots = [];
+  for (const span of spans.values()) {
+    const parent = span.parent_span_id;
+    if (parent && spans.has(parent)) {
+      if (!children.has(parent)) children.set(parent, []);
+      children.get(parent).push(span);
+    } else {
+      roots.push(span);
+    }
+  }
+  for (const group of children.values()) group.sort(compareSpanOrder);
+  roots.sort(compareSpanOrder);
+
   if (!roots.length) {
-    treeEl.innerHTML = '<p class="muted">No completed spans yet.</p>';
+    treeEl.innerHTML = '<p class="muted">No trace spans yet.</p>';
     return;
   }
   for (const root of roots) renderNode(root, children, 0);
 }
 
+function compareSpanOrder(a, b) {
+  return (a.sequence ?? 0) - (b.sequence ?? 0);
+}
+
 function renderNode(event, children, depth) {
   const node = document.createElement('div');
-  node.className = `node ${event.status}`;
+  node.className = `node ${event.status} ${event.span_id === selectedSpanId ? 'selected' : ''}`;
   node.style.setProperty('--depth', `${depth * 18}px`);
   node.innerHTML = `
-    <span class="node-title">${event.event_type} ${event.name}</span>
-    <span class="badge">${event.status} · ${duration(event.duration_ms)}</span>
+    <span class="node-title">${escapeHtml(event.event_type)} ${escapeHtml(event.name)}</span>
+    <span class="badge">${escapeHtml(event.status)} · ${duration(event.duration_ms)}</span>
   `;
   node.addEventListener('click', (e) => {
     e.stopPropagation();
+    selectedSpanId = event.span_id;
     selectedEvent = event;
-    rawEl.textContent = JSON.stringify(event, null, 2);
+    renderEventDetail(event);
+    renderTree(currentSpans);
   });
   treeEl.appendChild(node);
   for (const child of children.get(event.span_id) || []) renderNode(child, children, depth + 1);
+}
+
+function renderEventDetail(event) {
+  if (!event) {
+    rawEl.innerHTML = '<p class="muted">Click a trace node to inspect event details.</p>';
+    return;
+  }
+
+  rawEl.innerHTML = `
+    <div class="event-summary">
+      ${summaryCard('Status', `<span class="status-${escapeHtml(event.status)}">${escapeHtml(event.status)}</span>`)}
+      ${summaryCard('Type', escapeHtml(event.event_type))}
+      ${summaryCard('Name', escapeHtml(event.name))}
+      ${summaryCard('Duration', duration(event.duration_ms))}
+    </div>
+
+    <section class="detail-section">
+      <h3>Span</h3>
+      ${keyValueTable({
+        'Run ID': event.run_id,
+        'Event ID': event.event_id,
+        'Span ID': event.span_id,
+        'Parent Span': event.parent_span_id,
+        'Timestamp': event.timestamp,
+        'Sequence': event.sequence,
+        'Agent ID': event.agent_id,
+        'Task ID': event.task_id,
+      })}
+    </section>
+
+    <section class="detail-section">
+      <h3>Attributes</h3>
+      ${keyValueTable(event.attributes || {}, 'No attributes recorded.')}
+    </section>
+
+    <section class="detail-section">
+      <h3>Error</h3>
+      ${renderError(event.error)}
+    </section>
+
+    <section class="detail-section">
+      <h3>Links</h3>
+      ${renderLinks(event.links)}
+    </section>
+
+    <details class="raw-json">
+      <summary>Raw JSON</summary>
+      <pre>${escapeHtml(JSON.stringify(event, null, 2))}</pre>
+    </details>
+  `;
+}
+
+function summaryCard(label, value) {
+  return `
+    <div class="summary-card">
+      <div class="summary-label">${escapeHtml(label)}</div>
+      <div class="summary-value">${value}</div>
+    </div>
+  `;
+}
+
+function keyValueTable(values, emptyText = 'None') {
+  const entries = Object.entries(values).filter(([, value]) => value !== undefined && value !== null && value !== '');
+  if (!entries.length) return `<p class="muted">${escapeHtml(emptyText)}</p>`;
+  return `
+    <table class="kv-table">
+      <tbody>
+        ${entries.map(([key, value]) => `
+          <tr>
+            <th>${escapeHtml(key)}</th>
+            <td>${formatValue(value)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderError(error) {
+  if (!error) return '<p class="muted">None</p>';
+  return `
+    <div class="error-block">
+      <strong>${escapeHtml(error.type || 'Error')}</strong>
+      <div>${escapeHtml(error.message || JSON.stringify(error))}</div>
+    </div>
+  `;
+}
+
+function renderLinks(links) {
+  if (!links || !links.length) return '<p class="muted">None</p>';
+  return `<ul class="links">${links.map(link => `<li><code>${escapeHtml(link)}</code></li>`).join('')}</ul>`;
 }
 
 loadRuns();

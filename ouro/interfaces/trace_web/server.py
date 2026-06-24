@@ -118,13 +118,14 @@ def list_runs(db_path: str | Path, limit: int = 50) -> list[TraceRunSummary]:
                 MIN(timestamp) AS started_at,
                 MAX(timestamp) AS last_event_at,
                 COUNT(*) AS event_count,
-                SUM(CASE WHEN event_type = 'llm_call' AND status = 'completed' THEN 1 ELSE 0 END) AS llm_calls,
-                SUM(CASE WHEN event_type = 'tool_call' AND status = 'completed' THEN 1 ELSE 0 END) AS tool_calls,
+                COUNT(DISTINCT CASE WHEN event_type = 'llm_call' THEN span_id END) AS llm_calls,
+                COUNT(DISTINCT CASE WHEN event_type = 'tool_call' THEN span_id END) AS tool_calls,
                 MAX(CASE WHEN event_type = 'run' AND status IN ('completed', 'failed') THEN status END) AS terminal_status,
-                MAX(CASE WHEN event_type = 'run' AND status IN ('completed', 'failed') THEN duration_ms END) AS duration_ms
+                MAX(CASE WHEN event_type = 'run' AND status IN ('completed', 'failed') THEN duration_ms END) AS duration_ms,
+                MAX(rowid) AS last_sequence
             FROM trace_events
             GROUP BY run_id
-            ORDER BY last_event_at DESC
+            ORDER BY last_sequence DESC
             LIMIT ?
             """,
             (limit,),
@@ -155,7 +156,7 @@ def get_latest_run_id(db_path: str | Path) -> str | None:
             SELECT run_id
             FROM trace_events
             GROUP BY run_id
-            ORDER BY MAX(timestamp) DESC
+            ORDER BY MAX(rowid) DESC
             LIMIT 1
             """
         ).fetchone()
@@ -172,6 +173,7 @@ def get_run_events(db_path: str | Path, run_id: str) -> list[dict[str, Any]]:
         rows = connection.execute(
             """
             SELECT
+                rowid AS sequence,
                 event_id,
                 run_id,
                 span_id,
@@ -188,7 +190,7 @@ def get_run_events(db_path: str | Path, run_id: str) -> list[dict[str, Any]]:
                 links_json
             FROM trace_events
             WHERE run_id = ?
-            ORDER BY timestamp, rowid
+            ORDER BY rowid
             """,
             (run_id,),
         ).fetchall()
