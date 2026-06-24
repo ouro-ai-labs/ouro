@@ -78,11 +78,11 @@ def test_log_before_sleep_boxes_second_and_later_retries(caplog):
     with caplog.at_level(logging.WARNING, logger="ouro.core.llm.retry"):
         _log_before_sleep(_retry_state(2, error))
 
-    assert "┌─ Retry" in caplog.text
-    assert "│ Retryable error: Server disconnected without sending a response." in caplog.text
-    assert "│ Retrying in" in caplog.text
-    assert "(attempt 2/" in caplog.text
-    assert "└" in caplog.text
+    assert "╭─ Retry: Retryable" in caplog.text
+    assert "│   error: Server disconnected without sending a response." in caplog.text
+    assert "│   retryIn:" in caplog.text
+    assert "│   attempt: 2/" in caplog.text
+    assert "╰" in caplog.text
 
 
 def test_boxed_retry_message_contains_single_boxed_notice():
@@ -94,7 +94,8 @@ def test_boxed_retry_message_contains_single_boxed_notice():
     )
 
     lines = message.splitlines()
-    assert lines[0].startswith("┌─ Retry ─")
-    assert lines[1].startswith("│ Retryable error: Server disconnected")
-    assert lines[2].startswith("│ Retrying in 1.0s... (attempt 2/")
-    assert lines[3].startswith("└")
+    assert lines[0].startswith("╭─ Retry: Retryable ")
+    assert lines[1].startswith("│   error: Server disconnected")
+    assert lines[2].startswith("│   retryIn: 1.0s")
+    assert lines[3].startswith("│   attempt: 2/")
+    assert lines[4].startswith("╰")
