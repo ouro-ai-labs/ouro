@@ -88,13 +88,14 @@ class Agent:
             TraceEventType.RUN,
             "agent.run",
             attributes={
+                "run.task": task,
                 "task.preview": task[:200],
                 "task.length": len(task),
                 "agent.max_iterations": self.max_iterations,
             },
         ) as span:
             result = await self._run_impl(task, context=context)
-            span.set_attributes({"result.length": len(result)})
+            span.set_attributes({"run.final_answer": result, "result.length": len(result)})
             return result
         raise AssertionError("unreachable: tracer span exited without returning")
 
@@ -146,7 +147,10 @@ class Agent:
                         "llm.model": getattr(self.llm, "model", "unknown"),
                         "llm.provider": getattr(self.llm, "provider_name", "unknown"),
                         "llm.message_count": len(outgoing),
+                        "llm.messages": [_trace_message(message) for message in outgoing],
                         "llm.tool_schema_count": len(tool_schemas),
+                        "llm.tool_schemas": tool_schemas,
+                        "llm.request_params": _trace_request_params(call_kwargs),
                         "agent.iteration": ctx.iteration,
                     },
                 ) as llm_span:
@@ -158,6 +162,9 @@ class Agent:
                             "llm.input_tokens": usage.get("input_tokens", 0),
                             "llm.output_tokens": usage.get("output_tokens", 0),
                             "llm.total_tokens": usage.get("total_tokens", 0),
+                            "llm.response.content": response.content,
+                            "llm.response.tool_calls": response.tool_calls or [],
+                            "llm.response.thinking": getattr(response, "thinking", None),
                         }
                     )
             ctx.stop_reason_last = response.stop_reason
@@ -438,12 +445,15 @@ class Agent:
                 "tool.name": tool_call.name,
                 "tool.call_id": tool_call.id,
                 "tool.argument_keys": sorted(tool_call.arguments.keys()),
+                "tool.arguments": tool_call.arguments,
             },
         ) as tool_span:
             output = await self.tools.execute_tool_call(tool_call.name, tool_call.arguments)
             tool_span.set_attributes(
                 {
+                    "tool.result": output.content,
                     "tool.result_length": len(output.content),
+                    "tool.metadata": output.metadata or {},
                     "tool.metadata_keys": sorted((output.metadata or {}).keys()),
                 }
             )
@@ -523,6 +533,14 @@ class Agent:
         if retries:
             return ContinueDecision.retry_with_feedback(*retries)
         return decision
+
+
+def _trace_message(message: LLMMessage) -> dict[str, Any]:
+    return message.to_dict()
+
+
+def _trace_request_params(call_kwargs: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in call_kwargs.items() if key not in {"messages", "tools"}}
 
 
 def _log_outgoing_messages(iteration: int, messages: list[LLMMessage]) -> None:

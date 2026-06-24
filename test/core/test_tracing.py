@@ -56,6 +56,7 @@ async def test_failed_span_records_bounded_error_and_reraises() -> None:
     assert failed.error.type == "ValueError"
     assert failed.error.message == "bad input"
     assert failed.duration_ms is not None
+    assert "ValueError: bad input" in failed.attributes["error.traceback"]
 
 
 async def test_disabled_tracer_does_not_export_events() -> None:
@@ -174,6 +175,10 @@ def test_sanitize_attributes_redacts_and_truncates() -> None:
     assert sanitized["nested"]["Authorization"] == "[redacted]"
     assert sanitized["nested"]["safe"] == "ok"
     assert sanitized["long"] == "xxxx…[truncated]"
+    assert (
+        sanitize_attributes({"image_url": {"url": "data:image/png;base64,abc"}})["image_url"]
+        == "[omitted binary/blob]"
+    )
 
 
 async def test_exporter_failures_do_not_fail_user_work() -> None:
