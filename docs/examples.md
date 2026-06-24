@@ -32,7 +32,7 @@ ouro --task "Solve this logic puzzle" --reasoning-effort high
 ouro --task "Summarize this README" --trace
 
 # View captured traces in the local web monitor
-ouro-trace-monitor
+ouro-trace
 # then open http://127.0.0.1:8765
 
 ```
