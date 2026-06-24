@@ -80,15 +80,22 @@ class _ConfigBackoff(wait_base):
 def _boxed_retry_message(
     *, error_type: str, error: BaseException, delay: float, attempt: int
 ) -> str:
-    """Format retry notices as a compact terminal-friendly box."""
+    """Format retry notices as a compact terminal-friendly box.
+
+    Keep this in core without importing the TUI layer, but mirror the visual
+    structure used by terminal_ui.print_tool_call(): rounded corners, a
+    left-aligned title, and indented key/value rows.
+    """
     lines = [
-        f"{error_type} error: {error}",
-        f"Retrying in {delay:.1f}s... (attempt {attempt}/{Config.RETRY_MAX_ATTEMPTS + 1})",
+        f"  error: {error}",
+        f"  retryIn: {delay:.1f}s",
+        f"  attempt: {attempt}/{Config.RETRY_MAX_ATTEMPTS + 1}",
     ]
     width = max(len(line) for line in lines)
-    top = f"┌─ Retry ─{'─' * max(width - 7, 0)}┐"
+    title = f" Retry: {error_type} "
+    top = f"╭─{title}{'─' * max(width - len(title), 0)}╮"
     body = [f"│ {line.ljust(width)} │" for line in lines]
-    bottom = f"└{'─' * (width + 2)}┘"
+    bottom = f"╰{'─' * (width + 2)}╯"
     return "\n".join([top, *body, bottom])
 
 
