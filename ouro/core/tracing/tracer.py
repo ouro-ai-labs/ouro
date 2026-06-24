@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import traceback
 import uuid
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
@@ -25,12 +26,18 @@ _SECRET_KEYS = {
     "password",
 }
 _SECRET_SUFFIXES = ("_api_key", "_secret", "_password", "_access_token", "_refresh_token")
-_DEFAULT_MAX_STRING_LENGTH = 2048
+_BLOB_KEYS = {"image", "image_url", "base64", "b64_json", "audio", "video"}
+_DEFAULT_MAX_STRING_LENGTH = 65536
 _DEFAULT_MAX_ATTRIBUTES = 64
 
 
 def _new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex}"
+
+
+def _is_blob_key(key: str) -> bool:
+    lowered = key.lower()
+    return lowered in _BLOB_KEYS or lowered.endswith(("_base64", "_b64", "_blob"))
 
 
 def _is_secret_key(key: str) -> bool:
@@ -70,6 +77,8 @@ def sanitize_attributes(
         string_key = str(key)
         if _is_secret_key(string_key):
             sanitized[string_key] = "[redacted]"
+        elif _is_blob_key(string_key):
+            sanitized[string_key] = "[omitted binary/blob]"
         else:
             sanitized[string_key] = _sanitize_value(value, max_string_length=max_string_length)
     return sanitized
@@ -213,6 +222,9 @@ class Span:
         if exc is None:
             await self._emit("completed", duration_ms=duration_ms)
         else:
+            self.set_attributes(
+                {"error.traceback": "".join(traceback.format_exception(exc_type, exc, tb))}
+            )
             await self._emit(
                 "failed",
                 duration_ms=duration_ms,

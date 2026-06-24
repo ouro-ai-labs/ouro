@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from ouro.core.llm import LLMResponse, StopReason, ToolCall, ToolOutput
+from ouro.core.llm import LLMMessage, LLMResponse, StopReason, ToolCall, ToolOutput
 from ouro.core.loop import Agent, NullProgressSink
 from ouro.core.tracing import InMemoryTraceExporter, TraceEventType, Tracer
 
@@ -32,6 +32,11 @@ class _ToolRegistry:
     async def execute_tool_call(self, name: str, arguments: dict) -> ToolOutput:
         self.calls.append((name, arguments))
         return ToolOutput(content="tool output", metadata={"source": "test"})
+
+
+class _BootstrapHook:
+    async def on_run_start(self, ctx, messages):  # type: ignore[no-untyped-def]
+        messages.append(LLMMessage(role="user", content=ctx.task))
 
 
 class _LLM:
@@ -73,7 +78,13 @@ async def test_agent_traces_run_and_llm_spans() -> None:
             )
         ]
     )
-    agent = Agent(llm=llm, tools=_ToolRegistry(), progress=NullProgressSink(), tracer=tracer)
+    agent = Agent(
+        llm=llm,
+        tools=_ToolRegistry(),
+        hooks=(_BootstrapHook(),),
+        progress=NullProgressSink(),
+        tracer=tracer,
+    )
 
     result = await agent.run("say done")
 
@@ -84,6 +95,11 @@ async def test_agent_traces_run_and_llm_spans() -> None:
     assert llm_event.parent_span_id == run.span_id
     assert llm_event.attributes["llm.model"] == "test/model"
     assert llm_event.attributes["llm.total_tokens"] == 5
+    assert run.attributes["run.task"] == "say done"
+    assert run.attributes["run.final_answer"] == "done"
+    assert llm_event.attributes["llm.messages"][-1]["content"] == "say done"
+    assert llm_event.attributes["llm.tool_schemas"][0]["function"]["name"] == "echo"
+    assert llm_event.attributes["llm.response.content"] == "done"
     assert run.attributes["result.length"] == 4
 
 
@@ -106,7 +122,13 @@ async def test_agent_traces_tool_call_spans() -> None:
             LLMResponse(content="done", stop_reason=StopReason.STOP, usage={}),
         ]
     )
-    agent = Agent(llm=llm, tools=_ToolRegistry(), progress=NullProgressSink(), tracer=tracer)
+    agent = Agent(
+        llm=llm,
+        tools=_ToolRegistry(),
+        hooks=(_BootstrapHook(),),
+        progress=NullProgressSink(),
+        tracer=tracer,
+    )
 
     result = await agent.run("use tool")
 
@@ -120,5 +142,8 @@ async def test_agent_traces_tool_call_spans() -> None:
     completed = tool_events[-1]
     assert completed.attributes["tool.name"] == "echo"
     assert completed.attributes["tool.argument_keys"] == ["text"]
+    assert completed.attributes["tool.arguments"] == {"text": "hello"}
+    assert completed.attributes["tool.result"] == "tool output"
+    assert completed.attributes["tool.metadata"] == {"source": "test"}
     assert completed.attributes["tool.result_length"] == len("tool output")
     assert completed.attributes["tool.metadata_keys"] == ["source"]

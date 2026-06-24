@@ -50,5 +50,6 @@ The web UI shows:
 - LLM/tool call counts
 - trace tree for the selected run
 - structured selected-event details with attributes, errors, links, and collapsible raw JSON
+- captured run task/final answer, LLM messages/responses, and tool arguments/results (with secret redaction and binary/blob omission)
 
 The monitor polls the SQLite database every few seconds and shows running spans before their completion events arrive. WebSocket live streaming and swarm/task graph visualizations are planned future improvements.
