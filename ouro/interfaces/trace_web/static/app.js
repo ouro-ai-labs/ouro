@@ -23,6 +23,15 @@ function shortId(value) {
   return value.length > 18 ? `${value.slice(0, 8)}…${value.slice(-6)}` : value;
 }
 
+function isScrolledNearBottom(element) {
+  const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+  return distanceFromBottom < 80;
+}
+
+function scrollTreeToLatest() {
+  treeEl.scrollTop = treeEl.scrollHeight;
+}
+
 function duration(ms) {
   if (ms === null || ms === undefined) return 'running';
   if (ms < 1000) return `${ms}ms`;
@@ -94,8 +103,10 @@ async function loadRun(runId, resetDetail = true) {
   if (!res.ok) return;
   const data = await res.json();
   titleEl.textContent = `Trace · ${shortId(runId)}`;
+  const shouldFollowLatest = resetDetail || isScrolledNearBottom(treeEl);
   currentSpans = buildSpanModels(data.events);
   renderTree(currentSpans);
+  if (shouldFollowLatest) scrollTreeToLatest();
 
   if (selectedSpanId && currentSpans.has(selectedSpanId)) {
     selectedEvent = currentSpans.get(selectedSpanId);
