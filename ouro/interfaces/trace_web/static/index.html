@@ -7,30 +7,53 @@
     <link rel="stylesheet" href="/static/style.css" />
   </head>
   <body>
-    <header>
-      <h1>ouro Trace Monitor</h1>
-      <p>Local view of agent run, LLM call, and tool call traces.</p>
-    </header>
-    <main>
-      <section class="panel runs-panel">
-        <div class="panel-title">
-          <h2>Runs</h2>
-          <button id="refresh">Refresh</button>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <div class="eyeline">agent observability</div>
+          <h1>ouro Trace</h1>
         </div>
-        <div id="runs" class="runs"></div>
-      </section>
-      <section class="panel detail-panel">
-        <div class="panel-title">
-          <h2 id="detail-title">Trace</h2>
-          <label><input id="auto-refresh" type="checkbox" checked /> auto refresh</label>
+        <div id="run-stats" class="run-stats" aria-live="polite">
+          <div class="stat-card"><span>Total runs</span><strong>—</strong></div>
+          <div class="stat-card"><span>Latest</span><strong>—</strong></div>
+          <div class="stat-card"><span>Events</span><strong>—</strong></div>
         </div>
-        <div id="tree" class="tree muted">Select a run to view its trace.</div>
-      </section>
-      <section class="panel raw-panel">
-        <div class="panel-title"><h2>Selected Event</h2></div>
-        <pre id="raw" class="raw muted">Click a trace node to inspect raw event metadata.</pre>
-      </section>
-    </main>
+      </header>
+
+      <main class="trace-grid">
+        <section class="panel runs-panel" aria-labelledby="runs-title">
+          <div class="panel-title">
+            <div>
+              <h2 id="runs-title">Runs</h2>
+              <p class="panel-subtitle">Most recently updated first</p>
+            </div>
+            <button id="refresh" class="button" type="button">Refresh</button>
+          </div>
+          <div id="runs" class="runs"></div>
+        </section>
+
+        <section class="panel detail-panel" aria-labelledby="detail-title">
+          <div class="panel-title">
+            <div>
+              <h2 id="detail-title">Trace</h2>
+              <p class="panel-subtitle">Span tree ordered by write sequence</p>
+            </div>
+            <label class="toggle"><input id="auto-refresh" type="checkbox" checked /> <span>Live</span></label>
+          </div>
+          <div id="tree" class="tree muted">Select a run to view its trace.</div>
+        </section>
+
+        <section class="panel raw-panel" aria-labelledby="event-title">
+          <div class="panel-title">
+            <div>
+              <h2 id="event-title">Selected Event</h2>
+              <p class="panel-subtitle">Structured metadata and raw JSON</p>
+            </div>
+          </div>
+          <div id="raw" class="raw muted">Click a trace node to inspect event metadata.</div>
+        </section>
+      </main>
+    </div>
     <script src="/static/app.js"></script>
   </body>
 </html>

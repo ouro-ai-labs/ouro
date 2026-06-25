@@ -8,6 +8,7 @@ const treeEl = document.getElementById('tree');
 const rawEl = document.getElementById('raw');
 const titleEl = document.getElementById('detail-title');
 const autoRefreshEl = document.getElementById('auto-refresh');
+const runStatsEl = document.getElementById('run-stats');
 
 document.getElementById('refresh').addEventListener('click', () => loadRuns());
 setInterval(() => {
@@ -16,6 +17,11 @@ setInterval(() => {
     if (selectedRunId) loadRun(selectedRunId, false);
   }
 }, 2000);
+
+function shortId(value) {
+  if (!value) return '—';
+  return value.length > 18 ? `${value.slice(0, 8)}…${value.slice(-6)}` : value;
+}
 
 function duration(ms) {
   if (ms === null || ms === undefined) return 'running';
@@ -41,6 +47,7 @@ function formatValue(value) {
 async function loadRuns(selectLatest = true) {
   const res = await fetch('/api/runs');
   const data = await res.json();
+  updateRunStats(data.runs);
   runsEl.innerHTML = '';
   if (!data.runs.length) {
     runsEl.innerHTML = '<p class="muted">No traces found. Run `ouro --task "..." --trace` first.</p>';
@@ -48,12 +55,18 @@ async function loadRuns(selectLatest = true) {
   }
   for (const run of data.runs) {
     const row = document.createElement('div');
-    row.className = `run-row ${run.run_id === selectedRunId ? 'active' : ''}`;
+    row.className = `run-row status-${escapeHtml(run.status)} ${run.run_id === selectedRunId ? 'active' : ''}`;
     row.innerHTML = `
-      <div class="run-id">${escapeHtml(run.run_id)}</div>
-      <div class="meta"><span class="status-${escapeHtml(run.status)}">${escapeHtml(run.status)}</span> · ${duration(run.duration_ms)}</div>
-      <div class="meta">LLM ${run.llm_calls} · Tools ${run.tool_calls} · Events ${run.event_count}</div>
-      <div class="meta">${escapeHtml(run.started_at)}</div>
+      <div class="run-head">
+        <div class="run-id" title="${escapeHtml(run.run_id)}">${escapeHtml(run.run_id)}</div>
+        <span class="pill status-${escapeHtml(run.status)}">${escapeHtml(run.status)}</span>
+      </div>
+      <div class="meta">${escapeHtml(run.started_at)} · ${duration(run.duration_ms)}</div>
+      <div class="metric-strip">
+        <span>LLM ${run.llm_calls}</span>
+        <span>Tools ${run.tool_calls}</span>
+        <span>Events ${run.event_count}</span>
+      </div>
     `;
     row.addEventListener('click', () => {
       selectedSpanId = null;
@@ -65,12 +78,22 @@ async function loadRuns(selectLatest = true) {
   if (selectLatest && !selectedRunId) loadRun(data.runs[0].run_id);
 }
 
+function updateRunStats(runs) {
+  const totalEvents = runs.reduce((sum, run) => sum + run.event_count, 0);
+  const latest = runs[0];
+  runStatsEl.innerHTML = `
+    <div class="stat-card"><span>Total runs</span><strong>${runs.length}</strong></div>
+    <div class="stat-card"><span>Latest</span><strong title="${latest ? escapeHtml(latest.run_id) : '—'}">${latest ? escapeHtml(latest.status) : '—'}</strong></div>
+    <div class="stat-card"><span>Events</span><strong>${totalEvents}</strong></div>
+  `;
+}
+
 async function loadRun(runId, resetDetail = true) {
   selectedRunId = runId;
   const res = await fetch(`/api/runs/${encodeURIComponent(runId)}`);
   if (!res.ok) return;
   const data = await res.json();
-  titleEl.textContent = `Trace ${runId}`;
+  titleEl.textContent = `Trace · ${shortId(runId)}`;
   currentSpans = buildSpanModels(data.events);
   renderTree(currentSpans);
 
@@ -148,7 +171,9 @@ function renderNode(event, children, depth) {
   node.className = `node ${event.status} ${event.span_id === selectedSpanId ? 'selected' : ''}`;
   node.style.setProperty('--depth', `${depth * 18}px`);
   node.innerHTML = `
-    <span class="node-title">${escapeHtml(event.event_type)} ${escapeHtml(event.name)}</span>
+    <span class="node-main">
+      <span class="node-title"><span class="node-type">${escapeHtml(event.event_type)}</span> ${escapeHtml(event.name)}</span>
+    </span>
     <span class="badge">${escapeHtml(event.status)} · ${duration(event.duration_ms)}</span>
   `;
   node.addEventListener('click', (e) => {
@@ -167,6 +192,8 @@ function renderEventDetail(event) {
     rawEl.innerHTML = '<p class="muted">Click a trace node to inspect event details.</p>';
     return;
   }
+
+  const rawJsonWasOpen = rawEl.querySelector('.raw-json')?.open ?? false;
 
   rawEl.innerHTML = `
     <div class="event-summary">
@@ -210,6 +237,9 @@ function renderEventDetail(event) {
       <pre>${escapeHtml(JSON.stringify(event, null, 2))}</pre>
     </details>
   `;
+
+  const rawJson = rawEl.querySelector('.raw-json');
+  if (rawJson) rawJson.open = rawJsonWasOpen;
 }
 
 function summaryCard(label, value) {
