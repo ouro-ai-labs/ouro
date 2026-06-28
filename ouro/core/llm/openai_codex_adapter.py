@@ -88,8 +88,11 @@ class OpenAICodexAdapter:
             "tool_choice": "auto",
             "parallel_tool_calls": True,
         }
-        if max_tokens is not None:
-            body["max_output_tokens"] = max_tokens
+        # ChatGPT's subscription Codex endpoint rejects the Responses API
+        # `max_output_tokens` parameter even though the rest of the payload is
+        # Responses-shaped. Keep ouro's generic `max_tokens` argument best-effort
+        # for providers that support it, but do not forward it here.
+        kwargs.pop("max_output_tokens", None)
         if tools:
             body["tools"] = self._convert_tools(tools)
         if "temperature" in kwargs:
