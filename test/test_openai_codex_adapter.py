@@ -76,7 +76,7 @@ def test_build_request_body_uses_responses_protocol() -> None:
     assert body["stream"] is True
     assert body["store"] is False
     assert body["instructions"] == "Be brief."
-    assert body["max_output_tokens"] == 123
+    assert "max_output_tokens" not in body
     assert body["input"] == [
         {"role": "user", "content": [{"type": "input_text", "text": "Call a tool."}]}
     ]
@@ -88,6 +88,18 @@ def test_build_request_body_uses_responses_protocol() -> None:
             "parameters": {"type": "object", "properties": {}},
         }
     ]
+
+
+def test_build_request_body_drops_unsupported_max_output_tokens_kwarg() -> None:
+    adapter = OpenAICodexAdapter("openai-codex/gpt-5.5")
+    body = adapter._build_request_body(
+        [LLMMessage(role="user", content="hello")],
+        tools=None,
+        max_tokens=None,
+        max_output_tokens=123,
+    )
+
+    assert "max_output_tokens" not in body
 
 
 def test_convert_response_events_extracts_text_tool_calls_and_usage() -> None:
