@@ -5,22 +5,11 @@ from __future__ import annotations
 from .types import SkillInfo
 
 SKILLS_USAGE_RULES = """\
-- Discovery: The list above shows skills available in this session (name + description + file path). Skill bodies live on disk at the listed paths.
-- Trigger: Use a skill when the user explicitly asks for it by name, or when the task is a strong match for a skill's description. Do not carry skills across turns unless re-mentioned.
-- How to use a skill (progressive disclosure):
-  1) After deciding to use a skill, open its `SKILL.md`. Read only enough to follow the workflow.
-  2) When `SKILL.md` references relative paths (e.g., `scripts/foo.py`), resolve them relative to the skill directory listed above.
-  3) If `SKILL.md` points to extra folders such as `references/`, load only the specific files needed for the request; don't bulk-load everything.
-  4) If `scripts/` exist, prefer running or patching them instead of retyping large code blocks.
-  5) If `assets/` or templates exist, reuse them instead of recreating from scratch.
-- Coordination and sequencing:
-  - If multiple skills apply, choose the minimal set that covers the request and state the order you'll use them.
-  - Announce which skill(s) you're using and why (one short line). If you skip an obvious skill, say why.
-- Context hygiene:
-  - Keep context small: summarize long sections instead of pasting them; only load extra files when needed.
-  - Avoid deep reference-chasing: prefer opening only files directly linked from `SKILL.md` unless you're blocked.
-  - When variants exist (frameworks, providers, domains), pick only the relevant reference file(s) and note that choice.
-- Safety and fallback: If a skill can't be applied cleanly (missing files, unclear instructions), state the issue, pick the next-best approach, and continue."""
+- Discovery: The list above is an index of skills available in this session. Skill bodies live on disk at the listed `SKILL.md` paths.
+- Trigger: Use a skill when the user asks for it by name or when its description clearly matches the task. Do not carry a skill across turns unless it is still relevant.
+- Progressive disclosure: After choosing a skill, open its `SKILL.md` and read only what is needed. Resolve relative paths from the skill directory, and load referenced scripts, assets, or reference files only when they are relevant.
+- Coordination: If several skills apply, choose the minimal useful set and mention the order briefly.
+- Fallback: If a skill is missing or does not fit cleanly, say so and continue with the next-best approach."""
 
 
 def render_skills_section(skills: list[SkillInfo]) -> str | None:
