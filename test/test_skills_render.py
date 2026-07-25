@@ -29,6 +29,9 @@ def test_render_skills_section_single() -> None:
     assert "/home/user/.ouro/skills/code-review/SKILL.md" in result
     assert "### How to use skills" in result
     assert "Trigger:" in result
+    assert "Progressive disclosure:" in result
+    assert "read only what is needed" in result
+    assert "If `scripts/` exist" not in result
     assert "$SkillName" not in result
 
 
