@@ -14,6 +14,14 @@ def _get_provider_model_ids(provider: str) -> tuple[str, ...]:
     return get_oauth_provider_model_ids(provider)
 
 
+def _legacy_alias_model_ids(provider: str, model_id: str) -> tuple[str, ...]:
+    if provider != "chatgpt":
+        return ()
+    if not model_id.startswith("openai-codex/"):
+        return ()
+    return (f"chatgpt/{model_id.split('/', 1)[1]}",)
+
+
 def _is_managed_profile(profile: ModelProfile, provider: str) -> bool:
     return (
         profile.extra.get("oauth_managed") is True
@@ -29,6 +37,11 @@ def sync_oauth_models(model_manager: ModelManager, provider: str) -> list[str]:
     """
     model_ids = _get_provider_model_ids(provider)
     desired_model_ids = set(model_ids)
+    legacy_alias_model_ids = {
+        alias_model_id
+        for model_id in model_ids
+        for alias_model_id in _legacy_alias_model_ids(provider, model_id)
+    }
     added: list[str] = []
     changed = False
 
@@ -40,6 +53,16 @@ def sync_oauth_models(model_manager: ModelManager, provider: str) -> list[str]:
         if model_id in desired_model_ids:
             continue
         del model_manager.models[model_id]
+        changed = True
+
+    for alias_model_id in legacy_alias_model_ids:
+        if alias_model_id not in model_manager.models:
+            continue
+        if model_manager.default_model_id == alias_model_id:
+            model_manager.default_model_id = None
+        if model_manager.current_model_id == alias_model_id:
+            model_manager.current_model_id = None
+        del model_manager.models[alias_model_id]
         changed = True
 
     for model_id in model_ids:

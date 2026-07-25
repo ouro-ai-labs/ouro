@@ -102,6 +102,71 @@ def test_remove_oauth_models_removes_only_managed_entries(tmp_path):
     assert manager.default_model_id in manager.models
 
 
+def test_sync_oauth_models_removes_legacy_chatgpt_entries(tmp_path):
+    config_path = tmp_path / "models.yaml"
+    _write_models_yaml(
+        config_path,
+        "\n".join(
+            [
+                "models:",
+                "  chatgpt/gpt-5.5:",
+                "    timeout: 123",
+                "    drop_params: false",
+                "    api_base: https://example.invalid",
+                "    oauth_managed: true",
+                "    oauth_provider: chatgpt",
+                "  openai/gpt-4o:",
+                "    api_key: test",
+                "default: chatgpt/gpt-5.5",
+                "current: chatgpt/gpt-5.5",
+                "",
+            ]
+        ),
+    )
+
+    manager = ModelManager(config_path=str(config_path))
+    added = sync_oauth_models(manager, "chatgpt")
+
+    assert "chatgpt/gpt-5.5" not in manager.models
+    assert "openai-codex/gpt-5.5" in manager.models
+    assert "openai-codex/gpt-5.5" in added
+    profile = manager.models["openai-codex/gpt-5.5"]
+    assert profile.timeout == 600
+    assert profile.drop_params is True
+    assert profile.api_base is None
+    assert manager.default_model_id in manager.models
+    assert manager.current_model_id in manager.models
+
+
+def test_sync_oauth_models_removes_legacy_alias_when_new_entry_exists(tmp_path):
+    config_path = tmp_path / "models.yaml"
+    _write_models_yaml(
+        config_path,
+        "\n".join(
+            [
+                "models:",
+                "  chatgpt/gpt-5.5:",
+                "    timeout: 600",
+                "    oauth_managed: true",
+                "    oauth_provider: chatgpt",
+                "  openai-codex/gpt-5.5:",
+                "    timeout: 600",
+                "    oauth_managed: true",
+                "    oauth_provider: chatgpt",
+                "default: openai-codex/gpt-5.5",
+                "current: openai-codex/gpt-5.5",
+                "",
+            ]
+        ),
+    )
+
+    manager = ModelManager(config_path=str(config_path))
+    sync_oauth_models(manager, "chatgpt")
+
+    assert "openai-codex/gpt-5.5" in manager.models
+    assert "chatgpt/gpt-5.5" not in manager.models
+
+
 def test_remove_oauth_models_removes_stale_managed_entries(tmp_path):
     config_path = tmp_path / "models.yaml"
     _write_models_yaml(
