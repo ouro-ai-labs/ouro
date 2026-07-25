@@ -102,8 +102,6 @@ def test_remove_oauth_models_removes_only_managed_entries(tmp_path):
     assert manager.default_model_id in manager.models
 
 
-
-
 def test_sync_oauth_models_removes_legacy_chatgpt_entries(tmp_path):
     config_path = tmp_path / "models.yaml"
     _write_models_yaml(
@@ -167,6 +165,8 @@ def test_sync_oauth_models_removes_legacy_alias_when_new_entry_exists(tmp_path):
 
     assert "openai-codex/gpt-5.5" in manager.models
     assert "chatgpt/gpt-5.5" not in manager.models
+
+
 def test_remove_oauth_models_removes_stale_managed_entries(tmp_path):
     config_path = tmp_path / "models.yaml"
     _write_models_yaml(
