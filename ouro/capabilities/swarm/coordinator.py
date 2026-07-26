@@ -50,6 +50,7 @@ class SwarmStatus:
     pending: int
     in_progress: int
     completed: int
+    failed: int
     blocked: int
     available_agents: list[str]
 
@@ -125,6 +126,7 @@ class SwarmCoordinator:
                     payload={
                         "line": "Swarm status: "
                         f"{status.completed}/{status.total_tasks} done, "
+                        f"{status.failed} failed, "
                         f"{status.in_progress} running, "
                         f"{status.blocked} blocked, "
                         f"{status.pending} pending",
@@ -132,10 +134,15 @@ class SwarmCoordinator:
                     },
                 )
             )
-            if status.pending == 0 and status.in_progress == 0:
+            if status.in_progress == 0 and (status.pending == 0 or not self.store.list_available()):
                 idle_count += 1
                 if idle_count >= self.max_idle_iterations:
-                    logger.info("Swarm idle — all tasks resolved")
+                    if status.pending == 0:
+                        logger.info("Swarm idle — all tasks resolved")
+                    else:
+                        logger.warning(
+                            "Swarm idle with pending blocked tasks — stopping to avoid deadlock"
+                        )
                     break
             else:
                 idle_count = 0
@@ -224,6 +231,18 @@ class SwarmCoordinator:
                 )
             )
 
+        except asyncio.CancelledError:
+            logger.info(
+                f"Agent {handle.agent_id} task {task_id} cancelled — returning it to the queue"
+            )
+            cancelled_task = self.store.get(task_id)
+            if (
+                cancelled_task is not None
+                and cancelled_task.status == TaskStatus.IN_PROGRESS
+                and cancelled_task.owner == handle.agent_id
+            ):
+                self.store.unassign(task_id)
+            raise
         except Exception as e:
             logger.error(f"Agent {handle.agent_id} failed task {task_id}: {e}")
             failure_task = self.store.get(task_id)
@@ -231,20 +250,23 @@ class SwarmCoordinator:
                 metadata = dict(failure_task.metadata)
                 metadata["error"] = str(e)
                 metadata["worker_agent_id"] = handle.agent_id
-                self.store.update(task_id, metadata=metadata)
+                self.store.update(
+                    task_id,
+                    owner=None,
+                    status=TaskStatus.FAILED,
+                    metadata=metadata,
+                )
             handle.total_tasks_failed += 1
             self.progress.emit(
                 ProgressEvent(
                     kind="swarm_assignment",
                     payload={
                         "agent": handle.agent_id,
-                        "assignment": f"failed #{task_id}; returning it to the queue",
+                        "assignment": f"failed #{task_id}; marked failed",
                         "title": "Swarm",
                     },
                 )
             )
-            # Unassign so another agent can try
-            self.store.unassign(task_id)
 
         finally:
             handle.running_tasks.pop(task_id, None)
@@ -303,6 +325,7 @@ class SwarmCoordinator:
         pending = sum(1 for t in all_tasks if t.status == TaskStatus.PENDING)
         in_progress = sum(1 for t in all_tasks if t.status == TaskStatus.IN_PROGRESS)
         completed = len(completed_ids)
+        failed = sum(1 for t in all_tasks if t.status == TaskStatus.FAILED)
         blocked = sum(
             1 for t in all_tasks if t.blockedBy and not all(b in completed_ids for b in t.blockedBy)
         )
@@ -315,6 +338,7 @@ class SwarmCoordinator:
             pending=pending,
             in_progress=in_progress,
             completed=completed,
+            failed=failed,
             blocked=blocked,
             available_agents=available,
         )

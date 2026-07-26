@@ -240,7 +240,7 @@ class TaskStore:
                     import time
 
                     updates["completed_at"] = time.time()
-                elif new_status in ("pending", "in_progress"):
+                elif new_status in ("pending", "in_progress", "failed"):
                     updates["completed_at"] = None
 
             # Serialize JSON fields
@@ -335,7 +335,7 @@ class TaskStore:
                     )
 
                 # 3. Already resolved?
-                if task.status == TaskStatus.COMPLETED:
+                if task.status in (TaskStatus.COMPLETED, TaskStatus.FAILED):
                     conn.rollback()
                     return ClaimResult(
                         success=False,
@@ -393,6 +393,11 @@ class TaskStore:
 
     def unassign(self, task_id: str) -> Task | None:
         """Remove owner from a task (e.g., on agent crash or timeout)."""
+        task = self.get(task_id)
+        if task is None:
+            return None
+        if task.status in (TaskStatus.COMPLETED, TaskStatus.FAILED):
+            return task
         return self.update(task_id, owner=None, status=TaskStatus.PENDING)
 
     def get_agent_tasks(self, agent_id: str) -> list[Task]:

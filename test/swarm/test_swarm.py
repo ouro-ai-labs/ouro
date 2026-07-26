@@ -269,10 +269,12 @@ async def test_health_check_ignores_active_running_task(store: TaskStore) -> Non
 
 
 async def test_shutdown_cancels_running_tasks_cleanly(store: TaskStore) -> None:
+    started = asyncio.Event()
     gate = asyncio.Event()
 
     class BlockingAgent:
         async def run(self, task: str) -> str:
+            started.set()
             await gate.wait()
             return "done"
 
@@ -286,6 +288,7 @@ async def test_shutdown_cancels_running_tasks_cleanly(store: TaskStore) -> None:
 
     handle = coordinator.agents["agent-1"]
     assert "1" in handle.running_tasks
+    await started.wait()
 
     await coordinator.shutdown()
 
@@ -295,6 +298,73 @@ async def test_shutdown_cancels_running_tasks_cleanly(store: TaskStore) -> None:
     assert task.owner is None
     assert handle.running_tasks == {}
     assert handle.task_ids == []
+
+
+async def test_failed_task_reaches_terminal_state_instead_of_retrying_forever(
+    store: TaskStore,
+) -> None:
+    class FailingAgent:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def run(self, task: str) -> str:
+            self.calls += 1
+            raise RuntimeError("boom")
+
+    agent = FailingAgent()
+
+    def builder_factory(agent_id: str):
+        return BuilderStub(agent)
+
+    coordinator = SwarmCoordinator(
+        store,
+        builder_factory,
+        heartbeat_interval=0.01,
+        max_idle_iterations=2,
+    )
+    store.create(subject="Test task", description="...")
+    await coordinator.spawn_agents(n=1)
+
+    await asyncio.wait_for(coordinator.run_until_done(), timeout=1.0)
+
+    task = store.get("1")
+    assert task is not None
+    assert task.status == TaskStatus.FAILED
+    assert task.owner is None
+    assert task.metadata["error"] == "boom"
+    assert task.metadata["worker_agent_id"] == "agent-1"
+    assert agent.calls == 1
+    status = coordinator.get_status()
+    assert status.failed == 1
+    assert status.pending == 0
+
+
+async def test_run_until_done_stops_on_blocked_only_deadlock(store: TaskStore) -> None:
+    agent = NonSwarmingAgent(response="worker-complete")
+
+    def builder_factory(agent_id: str):
+        return BuilderStub(agent)
+
+    first = store.create(subject="First", description="...")
+    second = store.create(subject="Second", description="...")
+    store.update(first.id, blockedBy=[second.id])
+    store.update(second.id, blockedBy=[first.id])
+
+    coordinator = SwarmCoordinator(
+        store,
+        builder_factory,
+        heartbeat_interval=0.01,
+        max_idle_iterations=2,
+    )
+    await coordinator.spawn_agents(n=1)
+
+    await asyncio.wait_for(coordinator.run_until_done(), timeout=1.0)
+
+    assert agent.calls == []
+    status = coordinator.get_status()
+    assert status.pending == 2
+    assert status.blocked == 2
+    assert status.in_progress == 0
 
 
 async def test_composed_agent_shutdown_delegates_to_dispatcher_runtime() -> None:

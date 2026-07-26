@@ -38,6 +38,7 @@ WHEN TO USE:
 CRITICAL RULES:
 - To claim a task: set owner to your agent name and status to "in_progress"
 - To complete: set status to "completed"
+- To mark failed: set status to "failed"
 - To delete: set status to "deleted" (permanently removes the task)
 - addBlocks / removeBlocks: manage which tasks this task blocks
 - addBlockedBy / removeBlockedBy: manage which tasks block this task
@@ -45,6 +46,7 @@ CRITICAL RULES:
 EXAMPLES:
 - Claim: {"taskId": "1", "owner": "alice", "status": "in_progress"}
 - Complete: {"taskId": "1", "status": "completed"}
+- Fail: {"taskId": "1", "status": "failed", "metadata": {"error": "reason"}}
 - Add dependency: {"taskId": "2", "addBlockedBy": ["1"]}
 - Delete: {"taskId": "1", "status": "deleted"}"""
 
@@ -69,7 +71,7 @@ EXAMPLES:
             },
             "status": {
                 "type": "string",
-                "enum": ["pending", "in_progress", "completed", "deleted"],
+                "enum": ["pending", "in_progress", "completed", "failed", "deleted"],
                 "description": "New status. Use 'deleted' to remove the task.",
             },
             "owner": {
@@ -109,7 +111,7 @@ EXAMPLES:
         description: str = "",
         activeForm: str = "",
         status: str = "",
-        owner: str = "",
+        owner: str | None = None,
         addBlocks: list[str] | None = None,
         removeBlocks: list[str] | None = None,
         addBlockedBy: list[str] | None = None,
@@ -135,12 +137,12 @@ EXAMPLES:
         if activeForm:
             updates["activeForm"] = activeForm
         if status:
-            if status not in ("pending", "in_progress", "completed"):
-                return f"Error: Invalid status '{status}'. Must be: pending, in_progress, completed, or deleted"
+            if status not in ("pending", "in_progress", "completed", "failed"):
+                return f"Error: Invalid status '{status}'. Must be: pending, in_progress, completed, failed, or deleted"
             updates["status"] = TaskStatus(status)
-        if owner != "":
-            # Empty string means unassign
-            updates["owner"] = owner if owner else None
+        if owner is not None:
+            # Empty string means unassign.
+            updates["owner"] = owner or None
 
         # Handle dependency changes bidirectionally
         current_blocks = list(task.blocks)
@@ -207,7 +209,7 @@ EXAMPLES:
             return f"Error: Failed to update task #{taskId}"
 
         status_str = f"status={updated.status.value}" if status else ""
-        owner_str = f"owner={updated.owner}" if owner != "" else ""
+        owner_str = f"owner={updated.owner or '(unassigned)'}" if owner is not None else ""
         changes = ", ".join(filter(None, [status_str, owner_str]))
         display = updated.activeForm or updated.subject
         line = f"[{updated.status.value}] #{updated.id}"
