@@ -117,7 +117,6 @@ def create_agent(
     )
     tools = _base_tools(sandbox_enabled=sandbox_enabled, memory_dir=memory_dir)
 
-    sandbox_section = None
     if sandbox_enabled:
         sandbox_manager = SandboxManager()
         if sandbox_id:
@@ -142,16 +141,6 @@ def create_agent(
             raise ValueError(sandbox_error)
         sandbox_session = create_sandbox_session(sandbox_profile)
         tools.extend(create_sandbox_tools(sandbox_session))
-        sandbox_section = (
-            "<sandbox>\n"
-            "Sandbox is enabled. Host shell/file/edit/search tools are not available.\n"
-            "Use sandbox_* tools for commands and files inside the isolated sandbox.\n"
-            f"Sandbox id: {sandbox_profile.sandbox_id}\n"
-            f"Provider: {sandbox_profile.provider}\n"
-            f"Working directory: {sandbox_profile.working_dir}\n"
-            "Do not assume host paths exist inside the sandbox unless configured as mounted volumes.\n"
-            "</sandbox>"
-        )
 
     builder = (
         AgentBuilder()
@@ -165,9 +154,14 @@ def create_agent(
             role="root",
         )
         .with_memory(sessions_dir=sessions_dir, memory_dir=memory_dir)
-        .with_sandbox_section(sandbox_section)
         .with_tools(tools)
     )
+
+    if sandbox_enabled:
+        # The default read-before-write rule checks host filesystem paths. In
+        # sandbox mode, the same tool names are backed by a remote sandbox, so
+        # keep the host-aware rule out of the sandbox tool path.
+        builder = builder.without_read_before_write()
 
     # Agent Swarm / Task V2: persistent task store + multi-agent coordination.
     # When enabled, replaces TodoTool and MultiTaskTool with task_create,

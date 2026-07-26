@@ -40,23 +40,23 @@ class SandboxShellTool(BaseTool):
 
     @property
     def name(self) -> str:
-        return "sandbox_shell"
+        return "shell"
 
     @property
     def description(self) -> str:
         return (
-            "Execute shell commands inside the configured sandbox, not on the host. "
-            "Returns stdout/stderr. Commands that exceed the timeout are killed or return an error."
+            "Execute shell commands. Returns stdout/stderr. "
+            "Commands that exceed the timeout are killed or return an error."
         )
 
     @property
     def parameters(self) -> dict[str, Any]:
         return {
-            "command": {"type": "string", "description": "Shell command to execute in the sandbox"},
+            "command": {"type": "string", "description": "Shell command to execute"},
             "timeout": {"type": "number", "description": "Timeout in seconds", "default": 120.0},
             "cwd": {
                 "type": "string",
-                "description": "Working directory inside the sandbox (default: sandbox profile working_dir)",
+                "description": "Working directory",
                 "default": None,
             },
         }
@@ -70,7 +70,7 @@ class SandboxShellTool(BaseTool):
 
 
 class SandboxReadFileTool(BaseTool):
-    """Read files inside the sandbox."""
+    """Read files."""
 
     readonly = True
 
@@ -79,19 +79,16 @@ class SandboxReadFileTool(BaseTool):
 
     @property
     def name(self) -> str:
-        return "sandbox_read_file"
+        return "read_file"
 
     @property
     def description(self) -> str:
-        return (
-            "Read contents of a file inside the configured sandbox, not on the host. "
-            "For large files, use offset and limit parameters."
-        )
+        return "Read contents of a file. " "For large files, use offset and limit parameters."
 
     @property
     def parameters(self) -> dict[str, Any]:
         return {
-            "file_path": {"type": "string", "description": "Path inside the sandbox to read"},
+            "file_path": {"type": "string", "description": "Path to the file to read"},
             "offset": {
                 "type": "integer",
                 "description": "Line number to start from (0-indexed)",
@@ -113,23 +110,23 @@ class SandboxReadFileTool(BaseTool):
 
 
 class SandboxWriteFileTool(BaseTool):
-    """Write files inside the sandbox."""
+    """Write files."""
 
     def __init__(self, session: SandboxSession):
         self.session = session
 
     @property
     def name(self) -> str:
-        return "sandbox_write_file"
+        return "write_file"
 
     @property
     def description(self) -> str:
-        return "Write content to a file inside the configured sandbox, not on the host."
+        return "Write content to a file."
 
     @property
     def parameters(self) -> dict[str, Any]:
         return {
-            "file_path": {"type": "string", "description": "Path inside the sandbox to write"},
+            "file_path": {"type": "string", "description": "Path where to write the file"},
             "content": {"type": "string", "description": "Content to write"},
         }
 
@@ -148,7 +145,7 @@ class SandboxWriteFileTool(BaseTool):
 
 
 class SandboxGlobTool(BaseTool):
-    """Glob files inside the sandbox."""
+    """Glob files."""
 
     readonly = True
 
@@ -157,11 +154,11 @@ class SandboxGlobTool(BaseTool):
 
     @property
     def name(self) -> str:
-        return "sandbox_glob_files"
+        return "glob_files"
 
     @property
     def description(self) -> str:
-        return "Fast file pattern matching inside the configured sandbox, not on the host."
+        return "Fast file pattern matching tool."
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -169,7 +166,7 @@ class SandboxGlobTool(BaseTool):
             "pattern": {"type": "string", "description": "Glob pattern to match files"},
             "path": {
                 "type": "string",
-                "description": "Base directory inside sandbox",
+                "description": "Base directory to search in (default: current directory)",
                 "default": ".",
             },
         }
@@ -187,7 +184,7 @@ class SandboxGlobTool(BaseTool):
 
 
 class SandboxGrepTool(BaseTool):
-    """Grep files inside the sandbox."""
+    """Grep files."""
 
     readonly = True
 
@@ -196,20 +193,21 @@ class SandboxGrepTool(BaseTool):
 
     @property
     def name(self) -> str:
-        return "sandbox_grep_content"
+        return "grep_content"
 
     @property
     def description(self) -> str:
-        return (
-            "Search file contents inside the configured sandbox, not on the host. "
-            "Use this for code/content search in sandbox files."
-        )
+        return "Search file contents using regex patterns."
 
     @property
     def parameters(self) -> dict[str, Any]:
         return {
             "pattern": {"type": "string", "description": "Regex pattern to search for"},
-            "path": {"type": "string", "description": "Directory inside sandbox", "default": "."},
+            "path": {
+                "type": "string",
+                "description": "Directory to search in (default: current directory)",
+                "default": ".",
+            },
             "mode": {
                 "type": "string",
                 "description": "files_only, with_context, or count",
@@ -263,7 +261,7 @@ class SandboxGrepTool(BaseTool):
 
 
 class SandboxSmartEditTool(BaseTool):
-    """Smart edit for files inside the sandbox."""
+    """Smart edit for files."""
 
     def __init__(self, session: SandboxSession):
         self.session = session
@@ -271,19 +269,19 @@ class SandboxSmartEditTool(BaseTool):
 
     @property
     def name(self) -> str:
-        return "sandbox_smart_edit"
+        return "smart_edit"
 
     @property
     def description(self) -> str:
         return (
-            "Intelligent code editing inside the configured sandbox, not on the host. "
-            "Supports diff_replace, smart_insert, and block_edit with diff preview."
+            "Intelligent code editing tool with fuzzy matching and preview. "
+            "Supports diff_replace, smart_insert, and block_edit."
         )
 
     @property
     def parameters(self) -> dict[str, Any]:
         return {
-            "file_path": {"type": "string", "description": "Path inside sandbox to edit"},
+            "file_path": {"type": "string", "description": "Path to the file to edit"},
             "mode": {"type": "string", "description": "diff_replace, smart_insert, or block_edit"},
             "old_code": {"type": "string", "description": "Code to replace", "default": ""},
             "new_code": {"type": "string", "description": "New code", "default": ""},
@@ -349,7 +347,7 @@ class SandboxSmartEditTool(BaseTool):
                 f"Error: Unknown mode '{mode}'. Supported: diff_replace, smart_insert, block_edit"
             )
         except Exception as e:
-            return f"Error executing sandbox_smart_edit: {e}"
+            return f"Error executing smart_edit: {e}"
 
     async def _diff_replace(
         self,

@@ -1,6 +1,6 @@
 # Sandbox Providers
 
-Ouro can expose optional `sandbox_*` tools that run commands and file operations inside an isolated sandbox instead of on the host machine.
+Ouro can route command and file tools through an isolated sandbox instead of the host machine.
 
 This first sandbox slice supports the **sandbox-as-a-tool** mode: ouro itself still runs on the host, while selected tools operate inside the configured sandbox.
 
@@ -67,10 +67,10 @@ Unknown provider-specific fields are preserved in the profile `extra` map for fu
 
 ## Running with a Sandbox
 
-Enable sandbox tools for a one-shot task:
+Enable sandbox-backed tools for a one-shot task:
 
 ```bash
-ouro --sandbox smolvm-local --task "Use sandbox_shell to run python --version"
+ouro --sandbox smolvm-local --task "Run python --version"
 ```
 
 Use the current/default sandbox:
@@ -79,7 +79,7 @@ Use the current/default sandbox:
 ouro --sandbox --task "Create and run a small Python script inside the sandbox"
 ```
 
-If you do not pass `--sandbox`, sandbox tools are not enabled.
+If you do not pass `--sandbox`, tools run in the normal host mode.
 
 Interactive mode also accepts `--sandbox` at startup:
 
@@ -91,18 +91,18 @@ The selected sandbox is bound when the agent is created. Switching sandboxes mid
 
 ## Sandbox Tools
 
-When sandbox is enabled, ouro registers sandbox-scoped replacements for filesystem/search/command tools:
+When sandbox is enabled, ouro keeps the normal tool names but backs filesystem/search/command tools with the selected sandbox:
 
-| Tool | Runs inside sandbox |
-|------|---------------------|
-| `sandbox_shell` | Execute shell commands |
-| `sandbox_read_file` | Read sandbox files |
-| `sandbox_write_file` | Write sandbox files |
-| `sandbox_glob_files` | Glob sandbox files |
-| `sandbox_grep_content` | Search sandbox files |
-| `sandbox_smart_edit` | Edit sandbox files with diff preview/fuzzy matching |
+| Tool name | Sandbox-backed behavior |
+|-----------|-------------------------|
+| `shell` | Execute shell commands inside the sandbox |
+| `read_file` | Read sandbox files |
+| `write_file` | Write sandbox files |
+| `glob_files` | Glob sandbox files |
+| `grep_content` | Search sandbox files |
+| `smart_edit` | Edit sandbox files with diff preview/fuzzy matching |
 
-In sandbox mode, host `shell`, `read_file`, `write_file`, `smart_edit`, `glob_files`, and `grep_content` are not registered. The agent can still use host-independent capabilities such as `web_search`, `web_fetch`, conversation search, memory tools, and task orchestration tools.
+Host implementations of `shell`, `read_file`, `write_file`, `smart_edit`, `glob_files`, and `grep_content` are not registered in sandbox mode. The agent can still use host-independent capabilities such as `web_search`, `web_fetch`, conversation search, memory tools, and task orchestration tools.
 
 ## Safety Notes
 
@@ -124,4 +124,4 @@ Install the smolvm Python SDK and start/verify the smolvm server. The default SD
 
 ### Sandbox files are missing
 
-Host paths do not automatically exist inside the sandbox. Configure a supported volume mount or create/upload files inside the sandbox with `sandbox_write_file`.
+Host paths do not automatically exist inside the sandbox. Configure a supported volume mount or create files inside the sandbox with `write_file`.

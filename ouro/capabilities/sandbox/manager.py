@@ -16,7 +16,7 @@ DEFAULT_SANDBOX_CONFIG_TEMPLATE = """# Sandbox Configuration
 # This file is gitignored - do not commit secrets.
 #
 # Sandboxes are optional isolated execution environments. When enabled,
-# ouro exposes sandbox_* tools that operate inside the selected sandbox.
+# ouro routes shell/file/edit/search tools into the selected sandbox.
 #
 # Install providers separately:
 #   - BoxLite: pip install boxlite

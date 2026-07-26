@@ -29,7 +29,7 @@ ouro --task "Summarize this README" --model openai/gpt-4o
 ouro --task "Solve this logic puzzle" --reasoning-effort high
 
 # Enable sandbox tools using a configured sandbox profile
-ouro --sandbox smolvm-local --task "Use sandbox_shell to run python --version"
+ouro --sandbox smolvm-local --task "Run python --version"
 
 # Use the current/default sandbox from ~/.ouro/sandboxes.yaml
 ouro --sandbox --task "Create and run a small Python script inside the sandbox"
@@ -139,8 +139,8 @@ ouro --task "Fetch https://example.com and extract the main content"
 
 **Sandboxed shell/files** (requires `~/.ouro/sandboxes.yaml` and provider runtime):
 ```bash
-ouro --sandbox boxlite-local --task "Use sandbox_write_file to create /workspace/app.py, then run it with sandbox_shell"
-ouro --sandbox smolvm-local --task "Use sandbox_grep_content to search files under /workspace"
+ouro --sandbox boxlite-local --task "Create /workspace/app.py, then run it"
+ouro --sandbox smolvm-local --task "Search files under /workspace"
 ```
 
 **Shell commands**:

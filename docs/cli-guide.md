@@ -63,7 +63,7 @@ ouro --task "Calculate 123 * 456"
 ouro --resume
 
 # Enable sandbox tools with a configured sandbox profile
-ouro --sandbox smolvm-local --task "Use sandbox_shell to run python --version"
+ouro --sandbox smolvm-local --task "Run python --version"
 
 # Resume specific session (ID prefix)
 ouro --resume a1b2c3d4
