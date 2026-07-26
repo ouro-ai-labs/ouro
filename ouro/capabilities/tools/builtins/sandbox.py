@@ -1,14 +1,17 @@
-"""Tools that operate inside the configured sandbox."""
+"""Sandbox-backed variants of the standard builtin tools."""
 
 from __future__ import annotations
 
 import os
-from difflib import SequenceMatcher, unified_diff
 from typing import Any
 
 from ouro.core.sandbox import SandboxExecResult, SandboxSession
 
 from ..base import BaseTool
+from .advanced_file_ops import GlobTool, GrepTool
+from .file_ops import FileReadTool, FileWriteTool
+from .shell import ShellTool
+from .smart_edit import SmartEditTool
 
 
 def _format_exec_result(result: SandboxExecResult) -> str:
@@ -26,80 +29,42 @@ def _check_output_size(tool: BaseTool, output: str) -> str:
     estimated_tokens = len(output) // tool.CHARS_PER_TOKEN
     if estimated_tokens > tool.MAX_TOKENS:
         return (
-            f"Error: Sandbox tool output (~{estimated_tokens} tokens) exceeds maximum "
+            f"Error: Tool output (~{estimated_tokens} tokens) exceeds maximum "
             f"allowed ({tool.MAX_TOKENS}). Use pagination, grep, or redirect output to a file."
         )
     return output
 
 
-class SandboxShellTool(BaseTool):
-    """Execute shell commands inside the configured sandbox."""
+def _default_cwd(session: SandboxSession) -> str | None:
+    profile = getattr(session, "profile", None)
+    working_dir = getattr(profile, "working_dir", None)
+    return str(working_dir) if working_dir else None
 
-    def __init__(self, session: SandboxSession):
+
+class SandboxShellTool(ShellTool):
+    """Standard shell tool backed by a sandbox session."""
+
+    def __init__(self, session: SandboxSession, attribution_enabled: bool = True):
+        super().__init__(attribution_enabled=attribution_enabled)
         self.session = session
 
-    @property
-    def name(self) -> str:
-        return "shell"
-
-    @property
-    def description(self) -> str:
-        return (
-            "Execute shell commands. Returns stdout/stderr. "
-            "Commands that exceed the timeout are killed or return an error."
-        )
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {
-            "command": {"type": "string", "description": "Shell command to execute"},
-            "timeout": {"type": "number", "description": "Timeout in seconds", "default": 120.0},
-            "cwd": {
-                "type": "string",
-                "description": "Working directory",
-                "default": None,
-            },
-        }
-
-    async def execute(self, command: str, timeout: float = 120.0, cwd: str | None = None) -> str:
+    async def execute(self, command: str, timeout: float = 120.0, **kwargs: Any) -> str:
         try:
-            result = await self.session.exec(command, cwd=cwd, timeout=timeout)
+            result = await self.session.exec(
+                command,
+                cwd=kwargs.get("cwd") or _default_cwd(self.session),
+                timeout=timeout,
+            )
             return _check_output_size(self, _format_exec_result(result))
         except Exception as e:
             return f"Error executing sandbox command: {e}"
 
 
-class SandboxReadFileTool(BaseTool):
-    """Read files."""
-
-    readonly = True
+class SandboxReadFileTool(FileReadTool):
+    """Standard read_file tool backed by a sandbox session."""
 
     def __init__(self, session: SandboxSession):
         self.session = session
-
-    @property
-    def name(self) -> str:
-        return "read_file"
-
-    @property
-    def description(self) -> str:
-        return "Read contents of a file. " "For large files, use offset and limit parameters."
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {
-            "file_path": {"type": "string", "description": "Path to the file to read"},
-            "offset": {
-                "type": "integer",
-                "description": "Line number to start from (0-indexed)",
-                "default": 0,
-            },
-            "limit": {
-                "type": "integer",
-                "description": "Maximum number of lines to read",
-                "default": None,
-            },
-        }
 
     async def execute(self, file_path: str, offset: int = 0, limit: int | None = None) -> str:
         try:
@@ -109,26 +74,11 @@ class SandboxReadFileTool(BaseTool):
             return f"Error reading sandbox file: {e}"
 
 
-class SandboxWriteFileTool(BaseTool):
-    """Write files."""
+class SandboxWriteFileTool(FileWriteTool):
+    """Standard write_file tool backed by a sandbox session."""
 
     def __init__(self, session: SandboxSession):
         self.session = session
-
-    @property
-    def name(self) -> str:
-        return "write_file"
-
-    @property
-    def description(self) -> str:
-        return "Write content to a file."
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {
-            "file_path": {"type": "string", "description": "Path where to write the file"},
-            "content": {"type": "string", "description": "Content to write"},
-        }
 
     def conflict_keys(self, **kwargs: Any) -> set[str] | None:
         file_path = kwargs.get("file_path")
@@ -139,98 +89,36 @@ class SandboxWriteFileTool(BaseTool):
     async def execute(self, file_path: str, content: str) -> str:
         try:
             await self.session.write_file(file_path, content)
-            return f"Successfully wrote sandbox file {file_path}"
+            return f"Successfully wrote to {file_path}"
         except Exception as e:
             return f"Error writing sandbox file: {e}"
 
 
-class SandboxGlobTool(BaseTool):
-    """Glob files."""
-
-    readonly = True
+class SandboxGlobTool(GlobTool):
+    """Standard glob_files tool backed by a sandbox session."""
 
     def __init__(self, session: SandboxSession):
         self.session = session
-
-    @property
-    def name(self) -> str:
-        return "glob_files"
-
-    @property
-    def description(self) -> str:
-        return "Fast file pattern matching tool."
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {
-            "pattern": {"type": "string", "description": "Glob pattern to match files"},
-            "path": {
-                "type": "string",
-                "description": "Base directory to search in (default: current directory)",
-                "default": ".",
-            },
-        }
 
     async def execute(self, pattern: str, path: str = ".") -> str:
         try:
             matches = await self.session.glob(pattern, path=path)
             if not matches:
-                return f"No sandbox files found matching pattern: {pattern} in {path}"
+                return f"No files found matching pattern: {pattern} in {path}"
             if len(matches) > 100:
                 return "\n".join(matches[:100] + [f"\n... and {len(matches) - 100} more files"])
             return "\n".join(matches)
         except Exception as e:
-            return f"Error executing sandbox glob: {e}"
+            return f"Error executing glob: {e}"
 
 
-class SandboxGrepTool(BaseTool):
-    """Grep files."""
-
-    readonly = True
+class SandboxGrepTool(GrepTool):
+    """Standard grep_content tool backed by a sandbox session."""
 
     def __init__(self, session: SandboxSession):
+        # Intentionally do not call GrepTool.__init__(): sandbox grep is handled
+        # by the provider/session, not host ripgrep discovery.
         self.session = session
-
-    @property
-    def name(self) -> str:
-        return "grep_content"
-
-    @property
-    def description(self) -> str:
-        return "Search file contents using regex patterns."
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {
-            "pattern": {"type": "string", "description": "Regex pattern to search for"},
-            "path": {
-                "type": "string",
-                "description": "Directory to search in (default: current directory)",
-                "default": ".",
-            },
-            "mode": {
-                "type": "string",
-                "description": "files_only, with_context, or count",
-                "default": "files_only",
-            },
-            "case_sensitive": {
-                "type": "boolean",
-                "description": "Case sensitive search",
-                "default": True,
-            },
-            "file_pattern": {
-                "type": "string",
-                "description": "Optional glob filter",
-                "default": None,
-            },
-            "context_lines": {"type": "integer", "description": "Context lines", "default": 0},
-            "head_limit": {
-                "type": "integer",
-                "description": "Limit results; 0 = unlimited",
-                "default": 250,
-            },
-            "offset": {"type": "integer", "description": "Skip first N results", "default": 0},
-        }
 
     async def execute(
         self,
@@ -239,10 +127,13 @@ class SandboxGrepTool(BaseTool):
         mode: str = "files_only",
         case_sensitive: bool = True,
         file_pattern: str | None = None,
+        type: str | None = None,
+        exclude_patterns: list[str] | None = None,
         context_lines: int = 0,
-        head_limit: int | None = 250,
+        multiline: bool = False,
+        head_limit: int | None = None,
         offset: int = 0,
-        **kwargs,
+        **kwargs: Any,
     ) -> str:
         try:
             output = await self.session.grep(
@@ -257,55 +148,15 @@ class SandboxGrepTool(BaseTool):
             )
             return _check_output_size(self, output)
         except Exception as e:
-            return f"Error executing sandbox grep: {e}"
+            return f"Error executing grep: {e}"
 
 
-class SandboxSmartEditTool(BaseTool):
-    """Smart edit for files."""
+class SandboxSmartEditTool(SmartEditTool):
+    """Standard smart_edit tool backed by a sandbox session."""
 
     def __init__(self, session: SandboxSession):
+        super().__init__()
         self.session = session
-        self.fuzzy_threshold = 0.8
-
-    @property
-    def name(self) -> str:
-        return "smart_edit"
-
-    @property
-    def description(self) -> str:
-        return (
-            "Intelligent code editing tool with fuzzy matching and preview. "
-            "Supports diff_replace, smart_insert, and block_edit."
-        )
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {
-            "file_path": {"type": "string", "description": "Path to the file to edit"},
-            "mode": {"type": "string", "description": "diff_replace, smart_insert, or block_edit"},
-            "old_code": {"type": "string", "description": "Code to replace", "default": ""},
-            "new_code": {"type": "string", "description": "New code", "default": ""},
-            "anchor": {"type": "string", "description": "Anchor for smart_insert", "default": ""},
-            "code": {"type": "string", "description": "Code to insert", "default": ""},
-            "position": {"type": "string", "description": "before or after", "default": "after"},
-            "start_line": {
-                "type": "integer",
-                "description": "Start line for block_edit",
-                "default": 0,
-            },
-            "end_line": {"type": "integer", "description": "End line for block_edit", "default": 0},
-            "fuzzy_match": {
-                "type": "boolean",
-                "description": "Enable fuzzy matching",
-                "default": True,
-            },
-            "dry_run": {
-                "type": "boolean",
-                "description": "Preview without writing",
-                "default": False,
-            },
-            "show_diff": {"type": "boolean", "description": "Show diff preview", "default": True},
-        }
 
     def conflict_keys(self, **kwargs: Any) -> set[str] | None:
         file_path = kwargs.get("file_path")
@@ -326,22 +177,44 @@ class SandboxSmartEditTool(BaseTool):
         end_line: int = 0,
         fuzzy_match: bool = True,
         dry_run: bool = False,
+        create_backup: bool | None = None,
         show_diff: bool = True,
-        **kwargs,
+        **kwargs: Any,
     ) -> str:
         try:
             original = await self.session.read_file(file_path)
             if mode == "diff_replace":
-                return await self._diff_replace(
-                    file_path, original, old_code, new_code, fuzzy_match, dry_run, show_diff
+                return await self._diff_replace_sandbox(
+                    file_path,
+                    original,
+                    old_code,
+                    new_code,
+                    fuzzy_match,
+                    dry_run,
+                    bool(create_backup),
+                    show_diff,
                 )
             if mode == "smart_insert":
-                return await self._smart_insert(
-                    file_path, original, anchor, code, position, dry_run, show_diff
+                return await self._smart_insert_sandbox(
+                    file_path,
+                    original,
+                    anchor,
+                    code,
+                    position,
+                    dry_run,
+                    bool(create_backup),
+                    show_diff,
                 )
             if mode == "block_edit":
-                return await self._block_edit(
-                    file_path, original, start_line, end_line, new_code, dry_run, show_diff
+                return await self._block_edit_sandbox(
+                    file_path,
+                    original,
+                    start_line,
+                    end_line,
+                    new_code,
+                    dry_run,
+                    bool(create_backup),
+                    show_diff,
                 )
             return (
                 f"Error: Unknown mode '{mode}'. Supported: diff_replace, smart_insert, block_edit"
@@ -349,7 +222,7 @@ class SandboxSmartEditTool(BaseTool):
         except Exception as e:
             return f"Error executing smart_edit: {e}"
 
-    async def _diff_replace(
+    async def _diff_replace_sandbox(
         self,
         path: str,
         original: str,
@@ -357,6 +230,7 @@ class SandboxSmartEditTool(BaseTool):
         new_code: str,
         fuzzy_match: bool,
         dry_run: bool,
+        create_backup: bool,
         show_diff: bool,
     ) -> str:
         if not old_code:
@@ -369,24 +243,34 @@ class SandboxSmartEditTool(BaseTool):
         elif fuzzy_match:
             found = self._fuzzy_find(old_code, original)
             if found is None:
-                return f"Error: Could not find code block (even with fuzzy matching).\n\nSearched for:\n{old_code[:200]}..."
+                return (
+                    "Error: Could not find code block (even with fuzzy matching).\n\n"
+                    f"Searched for:\n{old_code[:200]}..."
+                )
             start, end, similarity = found
             if similarity < 0.99:
-                info = f"\n[Fuzzy match found with {similarity:.1%} similarity]\nMatched text:\n{original[start:end][:200]}...\n"
+                info = (
+                    f"\n[Fuzzy match found with {similarity:.1%} similarity]\n"
+                    f"Matched text:\n{original[start:end][:200]}...\n"
+                )
         else:
-            return f"Error: Exact match not found and fuzzy_match is disabled.\n\nSearched for:\n{old_code[:200]}..."
+            return (
+                "Error: Exact match not found and fuzzy_match is disabled.\n\n"
+                f"Searched for:\n{old_code[:200]}..."
+            )
         new_content = original[:start] + new_code + original[end:]
-        return await self._maybe_write(
+        return await self._maybe_write_sandbox(
             path,
             original,
             new_content,
             dry_run,
+            create_backup,
             show_diff,
             info,
-            f"Successfully edited sandbox file {path}",
+            f"Successfully edited {path}",
         )
 
-    async def _smart_insert(
+    async def _smart_insert_sandbox(
         self,
         path: str,
         original: str,
@@ -394,6 +278,7 @@ class SandboxSmartEditTool(BaseTool):
         code: str,
         position: str,
         dry_run: bool,
+        create_backup: bool,
         show_diff: bool,
     ) -> str:
         if not anchor:
@@ -407,17 +292,18 @@ class SandboxSmartEditTool(BaseTool):
         if not code.endswith("\n"):
             code += "\n"
         lines.insert(idx if position == "before" else idx + 1, code)
-        return await self._maybe_write(
+        return await self._maybe_write_sandbox(
             path,
             original,
             "".join(lines),
             dry_run,
+            create_backup,
             show_diff,
             "",
-            f"Successfully inserted code {position} anchor in sandbox file {path}",
+            f"Successfully inserted code {position} anchor in {path}",
         )
 
-    async def _block_edit(
+    async def _block_edit_sandbox(
         self,
         path: str,
         original: str,
@@ -425,6 +311,7 @@ class SandboxSmartEditTool(BaseTool):
         end_line: int,
         new_block: str,
         dry_run: bool,
+        create_backup: bool,
         show_diff: bool,
     ) -> str:
         if start_line <= 0 or end_line <= 0:
@@ -437,22 +324,24 @@ class SandboxSmartEditTool(BaseTool):
         if not new_block.endswith("\n"):
             new_block += "\n"
         new_content = "".join(lines[: start_line - 1] + [new_block] + lines[end_line:])
-        return await self._maybe_write(
+        return await self._maybe_write_sandbox(
             path,
             original,
             new_content,
             dry_run,
+            create_backup,
             show_diff,
             "",
-            f"Successfully edited sandbox lines {start_line}-{end_line} in {path}",
+            f"Successfully edited lines {start_line}-{end_line} in {path}",
         )
 
-    async def _maybe_write(
+    async def _maybe_write_sandbox(
         self,
         path: str,
         original: str,
         new_content: str,
         dry_run: bool,
+        create_backup: bool,
         show_diff: bool,
         info: str,
         success: str,
@@ -463,58 +352,24 @@ class SandboxSmartEditTool(BaseTool):
                 parts.append(info)
             parts.append(f"Diff preview:\n{self._generate_diff(original, new_content, path)}\n")
         if dry_run:
-            parts.append("[DRY RUN] No changes made to sandbox file.")
+            parts.append("[DRY RUN] No changes made to file.")
             return "\n".join(parts)
+        if create_backup:
+            backup_path = f"{path}.bak"
+            await self.session.write_file(backup_path, original)
+            parts.append(f"Created backup: {backup_path}")
         await self.session.write_file(path, new_content)
         parts.append(success)
         return "\n".join(parts)
 
-    def _fuzzy_find(self, target: str, text: str) -> tuple[int, int, float] | None:
-        target_norm = self._normalize_whitespace(target)
-        target_lines = target.splitlines()
-        text_lines = text.splitlines()
-        best = None
-        best_ratio = 0.0
-        for window_size in range(len(target_lines), len(target_lines) + 5):
-            if window_size > len(text_lines):
-                break
-            for i in range(len(text_lines) - window_size + 1):
-                window = text_lines[i : i + window_size]
-                window_text = "\n".join(window)
-                ratio = SequenceMatcher(
-                    None, target_norm, self._normalize_whitespace(window_text)
-                ).ratio()
-                if ratio > best_ratio and ratio >= self.fuzzy_threshold:
-                    char_start = len("\n".join(text_lines[:i]))
-                    if i > 0:
-                        char_start += 1
-                    best = (char_start, char_start + len(window_text), ratio)
-                    best_ratio = ratio
-        return best
-
-    def _normalize_whitespace(self, text: str) -> str:
-        return "\n".join(" ".join(line.split()) for line in text.splitlines())
-
-    def _generate_diff(self, old: str, new: str, filename: str) -> str:
-        return "".join(
-            unified_diff(
-                old.splitlines(keepends=True),
-                new.splitlines(keepends=True),
-                fromfile=f"{filename} (sandbox original)",
-                tofile=f"{filename} (sandbox modified)",
-                lineterm="",
-                n=3,
-            )
-        )
-
 
 def create_sandbox_tools(session: SandboxSession) -> list[BaseTool]:
-    """Create the default sandbox toolset for a session."""
+    """Create standard-named tools backed by a sandbox session."""
 
     return [
-        SandboxShellTool(session),
         SandboxReadFileTool(session),
         SandboxWriteFileTool(session),
+        SandboxShellTool(session),
         SandboxGlobTool(session),
         SandboxGrepTool(session),
         SandboxSmartEditTool(session),

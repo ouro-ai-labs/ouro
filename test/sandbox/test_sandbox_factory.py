@@ -1,4 +1,8 @@
+from ouro.capabilities.tools.builtins.advanced_file_ops import GlobTool, GrepTool
+from ouro.capabilities.tools.builtins.file_ops import FileReadTool, FileWriteTool
 from ouro.capabilities.tools.builtins.sandbox import create_sandbox_tools
+from ouro.capabilities.tools.builtins.shell import ShellTool
+from ouro.capabilities.tools.builtins.smart_edit import SmartEditTool
 from ouro.core.sandbox import SandboxCapabilities, SandboxExecResult
 from ouro.interfaces.cli.factory import _base_tools
 
@@ -44,10 +48,11 @@ def test_sandbox_enabled_base_hides_host_filesystem_and_command_tools():
     assert "grep_content" not in names
 
 
-def test_sandbox_tools_use_original_tool_names():
-    names = {tool.name for tool in create_sandbox_tools(FakeSandboxSession())}
+def test_sandbox_tools_use_original_tool_names_and_native_subclasses():
+    tools = create_sandbox_tools(FakeSandboxSession())
+    by_name = {tool.name: tool for tool in tools}
 
-    assert names == {
+    assert set(by_name) == {
         "shell",
         "read_file",
         "write_file",
@@ -55,6 +60,12 @@ def test_sandbox_tools_use_original_tool_names():
         "glob_files",
         "grep_content",
     }
+    assert isinstance(by_name["shell"], ShellTool)
+    assert isinstance(by_name["read_file"], FileReadTool)
+    assert isinstance(by_name["write_file"], FileWriteTool)
+    assert isinstance(by_name["smart_edit"], SmartEditTool)
+    assert isinstance(by_name["glob_files"], GlobTool)
+    assert isinstance(by_name["grep_content"], GrepTool)
 
 
 def test_sandbox_disabled_keeps_host_filesystem_and_command_tools():
