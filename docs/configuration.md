@@ -88,7 +88,6 @@ Sandbox profiles are configured in `~/.ouro/sandboxes.yaml` (auto-created when s
 sandboxes:
   smolvm-local:
     provider: smolvm
-    api_url: http://127.0.0.1:8080
     image: python:3.12-alpine
     working_dir: /workspace
     persist: true

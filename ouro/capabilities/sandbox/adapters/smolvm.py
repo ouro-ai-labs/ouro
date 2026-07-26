@@ -1,7 +1,8 @@
-"""smolvm sandbox provider."""
+"""smol sandbox provider."""
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from ouro.core.sandbox import SandboxCapabilities, SandboxExecResult
@@ -11,11 +12,11 @@ from .base import ExecOnlySandboxSession, SandboxProviderError, normalize_exec_r
 
 
 class SmolVMSandboxSession(ExecOnlySandboxSession):
-    """SDK-first smolvm session.
+    """SDK-first smol session using the current embedded local engine.
 
-    Requires the smolvm Python SDK and a running smolvm server (default
-    http://127.0.0.1:8080). The first slice uses exec/run plus helper scripts
-    for file operations.
+    Requires the smol-machines Python SDK (``smol``), whose local backend embeds
+    the smolvm engine and does not require a separate ``smolvm serve`` process.
+    File/search/edit helpers are implemented on top of exec.
     """
 
     capabilities = SandboxCapabilities(
@@ -31,39 +32,47 @@ class SmolVMSandboxSession(ExecOnlySandboxSession):
 
     def __init__(self, profile: SandboxProfile):
         super().__init__(profile)
-        self._sandbox: Any | None = None
+        self._machine: Any | None = None
 
     async def _start_provider(self) -> None:
         try:
-            from smolvm import Sandbox, SandboxConfig  # type: ignore[import-not-found]
+            from smol import (  # type: ignore[import-not-found]
+                Machine,
+                MachineConfig,
+                MountSpec,
+                ResourceSpec,
+            )
         except ImportError as e:
             raise SandboxProviderError(
-                "smolvm sandbox provider requires `pip install smolvm` and a running smolvm server."
+                "smol sandbox provider requires the smol-machines Python SDK. "
+                "Install it with `pip install smolmachines`."
             ) from e
 
         try:
-            config_kwargs: dict[str, Any] = {"name": self.profile.sandbox_id}
-            if self.profile.image:
-                config_kwargs["image"] = self.profile.image
-            if self.profile.api_url:
-                config_kwargs["api_url"] = self.profile.api_url
-            while True:
-                try:
-                    config = SandboxConfig(**config_kwargs)
-                    break
-                except TypeError:
-                    # SDK versions may differ on optional constructor fields.
-                    if "api_url" in config_kwargs:
-                        config_kwargs.pop("api_url")
-                        continue
-                    if "image" in config_kwargs:
-                        config_kwargs.pop("image")
-                        continue
-                    raise
-            self._sandbox = Sandbox(config)
-            await self._sandbox.start()
+            mounts = [
+                MountSpec(
+                    source=mount.source,
+                    target=mount.target,
+                    read_only=mount.mode.lower() == "ro",
+                )
+                for mount in self.profile.volumes
+            ]
+            resources = ResourceSpec(
+                cpus=self.profile.resources.cpu,
+                memory_mb=self.profile.resources.memory_mb,
+                network=self.profile.network.enabled,
+                allow_hosts=list(self.profile.network.allow_hosts) or None,
+            )
+            config = MachineConfig(
+                name=self.profile.sandbox_id,
+                image=self.profile.image,
+                mounts=mounts or None,
+                resources=resources,
+                persistent=self.profile.persist,
+            )
+            self._machine = await asyncio.to_thread(Machine.create, config)
         except Exception as e:  # pragma: no cover - provider-specific
-            raise SandboxProviderError(f"Failed to start smolvm sandbox: {e}") from e
+            raise SandboxProviderError(f"Failed to start smol sandbox: {e}") from e
 
     async def _exec_provider(
         self,
@@ -73,33 +82,27 @@ class SmolVMSandboxSession(ExecOnlySandboxSession):
         env: dict[str, str] | None = None,
         timeout: float | None = None,
     ) -> SandboxExecResult:
-        if self._sandbox is None:
-            raise SandboxProviderError("smolvm sandbox is not started.")
-        args = split_command(command)
+        if self._machine is None:
+            raise SandboxProviderError("smol sandbox is not started.")
         try:
-            kwargs = {}
-            if cwd is not None:
-                kwargs["cwd"] = cwd
-            if env is not None:
-                kwargs["env"] = env
-            if timeout is not None:
-                kwargs["timeout"] = timeout
-            # Prefer direct microVM exec. If a provider version lacks optional kwargs,
-            # retry with command only.
-            try:
-                result = await self._sandbox.exec(args, **kwargs)
-            except TypeError:
-                result = await self._sandbox.exec(args)
+            from smol import ExecOptions  # type: ignore[import-not-found]
+        except ImportError as e:  # pragma: no cover - already checked at start
+            raise SandboxProviderError("smol sandbox provider is unavailable.") from e
+
+        args = split_command(command)
+        opts = ExecOptions(
+            env=env,
+            workdir=cwd,
+            timeout=None if timeout is None else int(timeout),
+        )
+        try:
+            result = await asyncio.to_thread(self._machine.exec, args, opts)
             return normalize_exec_result(result)
         except Exception as e:  # pragma: no cover - provider-specific
-            raise SandboxProviderError(f"smolvm exec failed: {e}") from e
+            raise SandboxProviderError(f"smol exec failed: {e}") from e
 
     async def close(self) -> None:
-        if self._sandbox is not None and not self.profile.persist:
-            stop = getattr(self._sandbox, "stop", None)
-            if stop is not None:
-                result = stop()
-                if hasattr(result, "__await__"):
-                    await result
-        self._sandbox = None
+        if self._machine is not None and not self.profile.persist:
+            await asyncio.to_thread(self._machine.delete)
+        self._machine = None
         self._started = False
