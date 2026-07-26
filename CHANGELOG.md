@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-07-26
+
+### Added
+
+- **Sandbox providers and tools**: added configurable sandbox execution support, adapters for BoxLite and SmolVM, sandbox-aware file/shell tools, `--sandbox` CLI wiring, BoxLite profile options, latest Smol SDK support, persistent Smol machine reuse, and sandbox documentation (#259, #265, #267, #268).
+
+### Changed
+
+- **Agent swarm stability**: stabilized agent swarm task lifecycle handling (#266).
+
+### Fixed
+
+- **Sandbox helper startup**: fixed sandbox helper lazy start behavior (#264).
+- **Install stability**: pin runtime `litellm` to the validated `1.87.0` release so fresh installs do not resolve to newer LiteLLM builds that may require Rust/maturin builds in some environments.
+
 ## [0.5.2] - 2026-07-26
 
 ### Added
