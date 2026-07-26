@@ -31,6 +31,11 @@ def _make_session(monkeypatch):
     return InteractiveSession(_FakeAgent())
 
 
+def _make_session_with_agent(monkeypatch, agent, **kwargs):
+    monkeypatch.setattr(InteractiveSession, "_setup_signal_handler", lambda self: None)
+    return InteractiveSession(agent, **kwargs)
+
+
 def _status(*, exists: bool, has_access_token: bool) -> ChatGPTAuthStatus:
     return ChatGPTAuthStatus(
         provider="chatgpt",
@@ -41,6 +46,44 @@ def _status(*, exists: bool, has_access_token: bool) -> ChatGPTAuthStatus:
         expires_at=None,
         expired=None,
     )
+
+
+async def test_run_can_skip_startup_header_for_preloaded_resume(monkeypatch):
+    agent = _FakeAgent()
+    agent.session_id = "abcdef12-3456-7890-abcd-ef1234567890"
+    agent.get_session_message_count = lambda: 2
+    agent.get_memory_stats = lambda: {}
+
+    session = _make_session_with_agent(monkeypatch, agent, show_startup_header=False)
+
+    async def fake_load_skills():
+        return None
+
+    async def fake_prompt(_prompt: str):
+        raise EOFError
+
+    session.skills_registry = SimpleNamespace(load=fake_load_skills, skills={})
+    session.input_handler.prompt_async = fake_prompt
+
+    banner_calls = []
+    config_calls = []
+    infos = []
+    monkeypatch.setattr(interactive.Config, "TUI_STATUS_BAR", False)
+    monkeypatch.setattr(interactive.terminal_ui, "console", _DummyConsole())
+    monkeypatch.setattr(interactive.terminal_ui, "print_banner", lambda: banner_calls.append(True))
+    monkeypatch.setattr(
+        interactive.terminal_ui, "print_config", lambda config: config_calls.append(config)
+    )
+    monkeypatch.setattr(interactive.terminal_ui, "print_info", lambda msg: infos.append(msg))
+    monkeypatch.setattr(interactive.terminal_ui, "print_memory_stats", lambda stats: None)
+    monkeypatch.setattr(interactive.terminal_ui, "print_log_location", lambda log_file: None)
+    monkeypatch.setattr(interactive, "get_log_file_path", lambda: None)
+
+    await session.run()
+
+    assert banner_calls == []
+    assert config_calls == []
+    assert infos == ["Resumed session: abcdef12-3456-7890-abcd-ef1234567890 (2 messages)"]
 
 
 async def test_pick_auth_provider_logout_no_logged_in(monkeypatch):
