@@ -51,13 +51,15 @@ def _format_exception_message(error: BaseException) -> str:
 class InteractiveSession:
     """Manages an interactive conversation session with the agent."""
 
-    def __init__(self, agent):
+    def __init__(self, agent, *, show_startup_header: bool = True):
         """Initialize interactive session.
 
         Args:
             agent: The agent instance
+            show_startup_header: Whether to print the banner/configuration on startup.
         """
         self.agent = agent
+        self.show_startup_header = show_startup_header
         self.conversation_count = 0
         self.show_thinking = Config.TUI_SHOW_THINKING
 
@@ -804,22 +806,21 @@ class InteractiveSession:
 
     async def run(self) -> None:
         """Run the interactive session loop."""
-        # Print header
-        terminal_ui.print_banner()
+        if self.show_startup_header:
+            terminal_ui.print_banner()
 
-        # Display configuration
-        current = self.model_manager.get_current_model()
-        config_dict = {
-            "Model": current.model_id if current else "NOT CONFIGURED",
-            "Theme": Theme.get_theme_name(),
-            "Commands": "/help for all commands",
-        }
-        terminal_ui.print_config(config_dict)
+            current = self.model_manager.get_current_model()
+            config_dict = {
+                "Model": current.model_id if current else "NOT CONFIGURED",
+                "Theme": Theme.get_theme_name(),
+                "Commands": "/help for all commands",
+            }
+            terminal_ui.print_config(config_dict)
 
         colors = Theme.get_colors()
 
         # If session was loaded via --resume, the progress sink has already
-        # replayed history via on_session_loaded; just show the banner here.
+        # replayed history via on_session_loaded.
         resumed_count = self.agent.get_session_message_count()
         if resumed_count > 0:
             terminal_ui.print_info(
@@ -827,12 +828,13 @@ class InteractiveSession:
             )
             terminal_ui.console.print()
 
-        terminal_ui.console.print(
-            f"[bold {colors.success}]Interactive mode started. Type your message or use commands.[/bold {colors.success}]"
-        )
-        terminal_ui.console.print(
-            f"[{colors.text_muted}]Tip: Type '/' for command suggestions, Ctrl+T to toggle thinking display[/{colors.text_muted}]\n"
-        )
+        if self.show_startup_header:
+            terminal_ui.console.print(
+                f"[bold {colors.success}]Interactive mode started. Type your message or use commands.[/bold {colors.success}]"
+            )
+            terminal_ui.console.print(
+                f"[{colors.text_muted}]Tip: Type '/' for command suggestions, Ctrl+T to toggle thinking display[/{colors.text_muted}]\n"
+            )
 
         # Show initial status bar (reflect resumed session state if any)
         if Config.TUI_STATUS_BAR:
@@ -1149,13 +1151,14 @@ class ModelSetupSession:
             terminal_ui.print_error(f"Unknown command: {cmd}. Try /help.")
 
 
-async def run_interactive_mode(agent) -> None:
+async def run_interactive_mode(agent, *, show_startup_header: bool = True) -> None:
     """Run agent in interactive multi-turn conversation mode.
 
     Args:
         agent: The agent instance
+        show_startup_header: Whether to print the banner/configuration on startup.
     """
-    session = InteractiveSession(agent)
+    session = InteractiveSession(agent, show_startup_header=show_startup_header)
     await session.run()
 
 

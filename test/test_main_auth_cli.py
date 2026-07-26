@@ -277,8 +277,9 @@ def test_main_resume_with_session_id_loads_session_before_interactive_mode(monke
         state["loaded"] = session_id
         agent.session_id = session_id
 
-    async def fake_interactive_mode(passed_agent):
+    async def fake_interactive_mode(passed_agent, *, show_startup_header=True):
         assert passed_agent is agent
+        assert show_startup_header is False
         assert state["loaded"] == "abcdef12-3456-7890-abcd-ef1234567890"
         state["interactive_started"] = True
         return None
@@ -307,8 +308,9 @@ def test_main_prints_session_id_after_interactive_mode(monkeypatch):
         load_session=None,
     )
 
-    async def fake_interactive_mode(passed_agent):
+    async def fake_interactive_mode(passed_agent, *, show_startup_header=True):
         assert passed_agent is agent
+        assert show_startup_header is True
         return None
 
     async def fake_load_session(session_id: str):

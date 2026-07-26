@@ -305,9 +305,11 @@ def main():
         if resume_session_id:
             await agent.load_session(resume_session_id)
 
-        # If no task provided, enter interactive mode (default behavior)
+        # If no task provided, enter interactive mode (default behavior).
+        # A resumed session has already replayed history while loading, so avoid
+        # inserting the usual startup header between history and the prompt.
         if not args.task:
-            await run_interactive_mode(agent)
+            await run_interactive_mode(agent, show_startup_header=not bool(resume_session_id))
             return
 
         # Single-turn mode: execute one task and exit
