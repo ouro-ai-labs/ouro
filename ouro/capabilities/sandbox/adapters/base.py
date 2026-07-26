@@ -207,7 +207,7 @@ if sliced:
         self, script: str, stdin_text: str, *, cwd: str | None = None
     ) -> SandboxExecResult:
         command = _python_stdin_command(script, stdin_text)
-        return await self._exec_provider(command, cwd=cwd, timeout=120)
+        return await self.exec(command, cwd=cwd, timeout=120)
 
     async def close(self) -> None:
         self._started = False
