@@ -25,16 +25,43 @@ def mock_loop_ctx():
 
 
 class TestSessionPersistenceHook:
-    async def test_on_run_start_resets_counter(self, mock_llm, mock_loop_ctx):
-        """Counter should reset to 0 at the start of each run."""
+    async def test_on_run_start_preserves_existing_counter(self, mock_llm, mock_loop_ctx):
+        """A new turn should not reset the counter and replay history."""
         memory = MemoryManager(mock_llm)
         hook = SessionPersistenceHook(memory)
         hook._last_saved_count = 5
 
-        messages = MessageList()
+        messages = MessageList(
+            [LLMMessage(role="user", content=f"message {idx}") for idx in range(6)]
+        )
         await hook.on_run_start(mock_loop_ctx, messages)
 
-        assert hook._last_saved_count == 0
+        assert hook._last_saved_count == 5
+
+    async def test_on_run_start_skips_loaded_history_but_saves_new_turn(
+        self, mock_llm, mock_loop_ctx
+    ):
+        """A fresh hook for loaded history should persist only the new user turn."""
+        memory = MemoryManager(mock_llm)
+        await memory._ensure_session()
+
+        hook = SessionPersistenceHook(memory)
+        messages = MessageList(
+            [
+                LLMMessage(role="user", content="previous request"),
+                LLMMessage(role="assistant", content="previous reply"),
+                LLMMessage(role="user", content="new request"),
+            ]
+        )
+
+        await hook.on_run_start(mock_loop_ctx, messages)
+        assert hook._last_saved_count == 2
+
+        messages.append(LLMMessage(role="assistant", content="new reply"))
+        await hook.on_iteration_end(mock_loop_ctx, messages, response=None, finished=True)
+
+        loaded = await memory._store.load_session(memory.session_id)
+        assert [m.content for m in loaded["messages"]] == ["new request", "new reply"]
 
     async def test_on_iteration_end_saves_new_messages(self, mock_llm, mock_loop_ctx):
         """New messages since last save should be persisted incrementally."""

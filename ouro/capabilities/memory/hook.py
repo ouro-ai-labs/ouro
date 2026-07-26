@@ -34,8 +34,16 @@ class SessionPersistenceHook:
         self._last_saved_count: int = 0
 
     async def on_run_start(self, ctx: LoopContext, messages: MessageList) -> None:
-        """Reset incremental counter at the start of every run."""
-        self._last_saved_count = 0
+        """Initialize the incremental counter without replaying history.
+
+        ``MessageList`` is long-lived across interactive turns. At run start it
+        already contains the previous persisted conversation plus the new user
+        message for this turn. Resetting to 0 would append the entire history to
+        ``session.yaml`` again on the first iteration.
+        """
+        current_count = len(messages)
+        if self._last_saved_count == 0 and current_count > 1:
+            self._last_saved_count = current_count - 1
 
     async def _persist_batch(self, messages: list[Any]) -> None:
         """Best-effort persistence of a batch of messages."""
