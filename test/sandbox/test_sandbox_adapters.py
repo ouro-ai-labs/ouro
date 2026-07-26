@@ -1,8 +1,10 @@
 import builtins
+import sys
+from types import SimpleNamespace
 
 import pytest
 
-from ouro.capabilities.sandbox import SandboxProfile
+from ouro.capabilities.sandbox import ResourceConfig, SandboxProfile, VolumeMount
 from ouro.capabilities.sandbox.adapters.base import ExecOnlySandboxSession, SandboxProviderError
 from ouro.capabilities.sandbox.adapters.boxlite import BoxLiteSandboxSession
 from ouro.capabilities.sandbox.adapters.smolvm import SmolVMSandboxSession
@@ -53,6 +55,49 @@ async def test_helper_file_methods_lazy_start_before_exec():
 
     assert session.start_count == 1
     assert session.exec_count == 4
+
+
+async def test_boxlite_start_passes_profile_options(monkeypatch):
+    calls = []
+
+    class FakeSimpleBox:
+        def __init__(self, **kwargs):
+            calls.append(kwargs)
+
+        async def start(self):
+            return None
+
+    monkeypatch.setitem(sys.modules, "boxlite", SimpleNamespace(SimpleBox=FakeSimpleBox))
+
+    profile = SandboxProfile(
+        sandbox_id="box",
+        provider="boxlite",
+        image="python:3.12-slim",
+        working_dir="/workspace",
+        persist=False,
+        resources=ResourceConfig(cpu=2, memory_mb=4096),
+        volumes=[
+            VolumeMount(source="/host/project", target="/workspace", mode="rw"),
+            VolumeMount(source="/host/cache", target="/cache", mode="ro"),
+        ],
+    )
+    session = BoxLiteSandboxSession(profile)
+
+    await session.start()
+
+    assert calls == [
+        {
+            "image": "python:3.12-slim",
+            "auto_remove": True,
+            "working_dir": "/workspace",
+            "cpus": 2,
+            "memory_mib": 4096,
+            "volumes": [
+                ("/host/project", "/workspace", False),
+                ("/host/cache", "/cache", True),
+            ],
+        }
+    ]
 
 
 async def test_boxlite_missing_sdk_error(monkeypatch):

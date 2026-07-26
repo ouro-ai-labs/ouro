@@ -46,8 +46,24 @@ class BoxLiteSandboxSession(ExecOnlySandboxSession):
         if not image:
             raise SandboxProviderError("BoxLite sandbox requires an `image` in sandboxes.yaml.")
 
+        options: dict[str, Any] = {
+            "image": image,
+            "auto_remove": not self.profile.persist,
+        }
+        if self.profile.working_dir:
+            options["working_dir"] = self.profile.working_dir
+        if self.profile.resources.cpu is not None:
+            options["cpus"] = self.profile.resources.cpu
+        if self.profile.resources.memory_mb is not None:
+            options["memory_mib"] = self.profile.resources.memory_mb
+        if self.profile.volumes:
+            options["volumes"] = [
+                (mount.source, mount.target, mount.mode.lower() == "ro")
+                for mount in self.profile.volumes
+            ]
+
         try:
-            self._box = boxlite.SimpleBox(image=image)
+            self._box = boxlite.SimpleBox(**options)
             # Some SDK versions require explicit async start, others start lazily.
             start = getattr(self._box, "start", None)
             if start is not None:
