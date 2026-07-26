@@ -132,6 +132,7 @@ class AgentBuilder:
     skills_registry: SkillsRegistry | None = None
     soul_section: str | None = None
     system_prompt: str = DEFAULT_SYSTEM_PROMPT
+    sandbox_section: str | None = None
     verifier: Verifier | None = None
     verification_max_iterations: int = 0  # 0 disables verification
     progress: ProgressSink = field(default_factory=NullProgressSink)
@@ -163,6 +164,10 @@ class AgentBuilder:
     ) -> AgentBuilder:
         self.llm = llm
         self.model_manager = model_manager
+        return self
+
+    def with_sandbox_section(self, section: str | None) -> AgentBuilder:
+        self.sandbox_section = section
         return self
 
     def with_max_iterations(self, n: int) -> AgentBuilder:
@@ -473,6 +478,7 @@ class AgentBuilder:
             skills_registry=self.skills_registry,
             soul_section=self.soul_section,
             system_prompt=self.system_prompt,
+            sandbox_section=self.sandbox_section,
             progress=progress_sink,
             sessions_dir=self.sessions_dir,
             memory_dir=self.memory_dir,
@@ -530,6 +536,7 @@ class ComposedAgent:
         skills_registry: SkillsRegistry | None,
         soul_section: str | None,
         system_prompt: str,
+        sandbox_section: str | None,
         progress: ProgressSink,
         sessions_dir: str | None,
         memory_dir: str | None,
@@ -547,6 +554,7 @@ class ComposedAgent:
         self.soul_section = soul_section
         self._skills_section_override: str | None = None
         self._system_prompt = system_prompt
+        self._sandbox_section = sandbox_section
         self._progress = progress
         self._sessions_dir = sessions_dir
         self._memory_dir = memory_dir
@@ -830,6 +838,8 @@ class ComposedAgent:
             skills_section = render_skills_section(list(self.skills_registry.skills.values()))
         if skills_section:
             system_content = system_content + "\n\n" + skills_section
+        if self._sandbox_section:
+            system_content = system_content + "\n\n" + self._sandbox_section
         if self.soul_section:
             system_content = (
                 system_content

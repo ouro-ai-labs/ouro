@@ -10,11 +10,14 @@ builtin tool set + a TUI-backed `ProgressSink`. Used by:
 from __future__ import annotations
 
 from ouro.capabilities import AgentBuilder, ComposedAgent
+from ouro.capabilities.sandbox import SandboxManager
+from ouro.capabilities.sandbox.adapters import create_sandbox_session
 from ouro.capabilities.tools.builtins.advanced_file_ops import GlobTool, GrepTool
 from ouro.capabilities.tools.builtins.conversation_search import ConversationSearchTool
 from ouro.capabilities.tools.builtins.file_ops import FileReadTool, FileWriteTool
 from ouro.capabilities.tools.builtins.memory_block_edit import MemoryBlockEditTool
 from ouro.capabilities.tools.builtins.multi_task import MultiTaskTool
+from ouro.capabilities.tools.builtins.sandbox import create_sandbox_tools
 from ouro.capabilities.tools.builtins.shell import ShellTool
 from ouro.capabilities.tools.builtins.smart_edit import SmartEditTool
 from ouro.capabilities.tools.builtins.web_fetch import WebFetchTool
@@ -34,6 +37,8 @@ def create_agent(
     progress_format: str = "tui",
     progress_stream=None,
     tracer: Tracer | None = None,
+    sandbox_id: str | None = None,
+    sandbox_enabled: bool = False,
 ) -> ComposedAgent:
     """Factory function to create a fully wired ComposedAgent.
 
@@ -100,6 +105,44 @@ def create_agent(
         ConversationSearchTool(memory_dir=memory_dir),
     ]
 
+    sandbox_section = None
+    if sandbox_enabled:
+        sandbox_manager = SandboxManager()
+        if sandbox_id:
+            sandbox_profile = sandbox_manager.get_sandbox(sandbox_id)
+            if sandbox_profile is None:
+                available = ", ".join(sandbox_manager.get_sandbox_ids())
+                raise ValueError(
+                    f"Sandbox '{sandbox_id}' not found."
+                    + (
+                        f" Available: {available}"
+                        if available
+                        else " Add one to ~/.ouro/sandboxes.yaml."
+                    )
+                )
+            sandbox_manager.switch_sandbox(sandbox_id)
+        else:
+            sandbox_profile = sandbox_manager.get_current_sandbox()
+        if sandbox_profile is None:
+            raise ValueError(
+                "No sandbox configured. Edit ~/.ouro/sandboxes.yaml or run with --no-sandbox."
+            )
+        is_valid_sandbox, sandbox_error = sandbox_manager.validate_sandbox(sandbox_profile)
+        if not is_valid_sandbox:
+            raise ValueError(sandbox_error)
+        sandbox_session = create_sandbox_session(sandbox_profile)
+        tools.extend(create_sandbox_tools(sandbox_session))
+        sandbox_section = (
+            "<sandbox>\n"
+            "Sandbox is enabled. Use sandbox_* tools for commands and files inside the isolated sandbox.\n"
+            "Use non-sandbox file tools only for host-side repository/configuration files.\n"
+            f"Sandbox id: {sandbox_profile.sandbox_id}\n"
+            f"Provider: {sandbox_profile.provider}\n"
+            f"Working directory: {sandbox_profile.working_dir}\n"
+            "Do not assume host paths exist inside the sandbox unless configured as mounted volumes.\n"
+            "</sandbox>"
+        )
+
     builder = (
         AgentBuilder()
         .with_llm(llm, model_manager=model_manager)
@@ -112,6 +155,7 @@ def create_agent(
             role="root",
         )
         .with_memory(sessions_dir=sessions_dir, memory_dir=memory_dir)
+        .with_sandbox_section(sandbox_section)
         .with_tools(tools)
     )
 
