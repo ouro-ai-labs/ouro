@@ -170,11 +170,6 @@ def main():
         help="Enable sandbox tools using the given sandbox id, or the current/default sandbox if omitted.",
     )
     parser.add_argument(
-        "--no-sandbox",
-        action="store_true",
-        help="Disable sandbox tools even if a sandbox is configured.",
-    )
-    parser.add_argument(
         "--json",
         action="store_true",
         help="Emit machine-readable JSON progress events in one-shot task mode.",
@@ -191,12 +186,6 @@ def main():
     # Initialize logging in verbose mode or when LLM-history debugging is on.
     if args.verbose or debug_history:
         setup_logger()
-
-    if args.sandbox and args.no_sandbox:
-        terminal_ui.print_error(
-            "Use only one of --sandbox or --no-sandbox.", title="Invalid Arguments"
-        )
-        return
 
     if args.login and args.logout:
         terminal_ui.print_error("Use only one of --login or --logout.", title="Invalid Arguments")
@@ -286,7 +275,7 @@ def main():
     # models aren't configured yet, enter a setup session first.
     progress_format = "json" if args.json else "tui"
     progress_stream = __import__("sys").stdout if args.json else None
-    sandbox_enabled = bool(args.sandbox) and not args.no_sandbox
+    sandbox_enabled = bool(args.sandbox)
     sandbox_id = None if args.sandbox in {None, "__current__"} else args.sandbox
     try:
         agent = create_agent(

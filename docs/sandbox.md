@@ -79,11 +79,7 @@ Use the current/default sandbox:
 ouro --sandbox --task "Create and run a small Python script inside the sandbox"
 ```
 
-Disable sandbox tools explicitly:
-
-```bash
-ouro --no-sandbox --task "Run normally on the host"
-```
+If you do not pass `--sandbox`, sandbox tools are not enabled.
 
 Interactive mode also accepts `--sandbox` at startup:
 

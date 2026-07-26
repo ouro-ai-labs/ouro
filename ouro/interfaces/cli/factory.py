@@ -136,9 +136,7 @@ def create_agent(
         else:
             sandbox_profile = sandbox_manager.get_current_sandbox()
         if sandbox_profile is None:
-            raise ValueError(
-                "No sandbox configured. Edit ~/.ouro/sandboxes.yaml or run with --no-sandbox."
-            )
+            raise ValueError("No sandbox configured. Edit ~/.ouro/sandboxes.yaml.")
         is_valid_sandbox, sandbox_error = sandbox_manager.validate_sandbox(sandbox_profile)
         if not is_valid_sandbox:
             raise ValueError(sandbox_error)

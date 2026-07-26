@@ -82,7 +82,6 @@ ouro --resume a1b2c3d4
 | `--reasoning-effort LEVEL` | - | Set run-scoped reasoning effort (`default|none|minimal|low|medium|high|xhigh|off`) |
 | `--trace` | - | Enable agent/LLM/tool tracing to the configured SQLite trace DB |
 | `--sandbox [ID]` | - | Enable sandbox tools using the given sandbox id, or current/default if omitted |
-| `--no-sandbox` | - | Disable sandbox tools |
 | `--verbose` | `-v` | Enable verbose logging to `~/.ouro/logs/` |
 
 ## Interactive Commands
