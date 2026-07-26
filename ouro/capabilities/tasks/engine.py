@@ -163,13 +163,15 @@ class TaskEngine:
 
         all_tasks = {t.id: t for t in self.store.list_all()}
         completed_ids = {t.id for t in all_tasks.values() if t.status == TaskStatus.COMPLETED}
-        derived_counts = {"done": 0, "running": 0, "blocked": 0, "pending": 0}
+        derived_counts = {"done": 0, "running": 0, "blocked": 0, "pending": 0, "failed": 0}
         task_lines: list[str] = []
 
         for task in tasks:
             blockers = [b for b in task.blockedBy if b not in completed_ids]
             if task.status == TaskStatus.COMPLETED:
                 state = "done"
+            elif task.status == TaskStatus.FAILED:
+                state = "failed"
             elif task.status == TaskStatus.IN_PROGRESS:
                 state = "running"
             elif blockers:
@@ -192,7 +194,10 @@ class TaskEngine:
             f"{derived_counts['blocked']} blocked, "
             f"{derived_counts['pending']} pending"
         )
-        return {"task_lines": task_lines, "summary": summary, "counts": derived_counts}
+        if derived_counts["failed"]:
+            summary += f", {derived_counts['failed']} failed"
+        counts = {k: v for k, v in derived_counts.items() if k != "failed" or v}
+        return {"task_lines": task_lines, "summary": summary, "counts": counts}
 
     def format_task_list(self, tasks: list[Task] | None = None) -> str:
         """Format tasks for display with user-friendly derived statuses."""
@@ -206,12 +211,14 @@ class TaskEngine:
         completed_ids = {t.id for t in all_tasks.values() if t.status == TaskStatus.COMPLETED}
 
         lines = ["Tasks:"]
-        derived_counts = {"done": 0, "running": 0, "blocked": 0, "pending": 0}
+        derived_counts = {"done": 0, "running": 0, "blocked": 0, "pending": 0, "failed": 0}
 
         for task in tasks:
             blockers = [b for b in task.blockedBy if b not in completed_ids]
             if task.status == TaskStatus.COMPLETED:
                 state = "done"
+            elif task.status == TaskStatus.FAILED:
+                state = "failed"
             elif task.status == TaskStatus.IN_PROGRESS:
                 state = "running"
             elif blockers:
@@ -227,12 +234,15 @@ class TaskEngine:
             display = task.activeForm or task.subject
             lines.append(f"[{state}] #{task.id}{owner_str} {display}{blocked_str}")
 
-        lines.append(
+        summary = (
             "\nSummary: "
             f"{derived_counts['done']} done, "
             f"{derived_counts['running']} running, "
             f"{derived_counts['blocked']} blocked, "
             f"{derived_counts['pending']} pending"
         )
+        if derived_counts["failed"]:
+            summary += f", {derived_counts['failed']} failed"
+        lines.append(summary)
 
         return "\n".join(lines)

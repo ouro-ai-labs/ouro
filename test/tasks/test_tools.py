@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from ouro.capabilities.tasks.models import TaskStatus
 from ouro.capabilities.tasks.store import TaskStore
 from ouro.capabilities.tools.builtins.task_claim import TaskClaimTool
 from ouro.capabilities.tools.builtins.task_create import TaskCreateTool
@@ -97,10 +98,31 @@ class TestTaskUpdateTool:
         assert "Updated" in result
         assert "completed" in result
 
+    async def test_update_failed_status(self, tools: dict) -> None:
+        task = tools["store"].create(subject="Test", description="...")
+        result = await tools["update"].execute(
+            taskId=task.id,
+            status="failed",
+            metadata={"error": "boom"},
+        )
+        updated = tools["store"].get(task.id)
+        assert "Updated" in result
+        assert updated is not None
+        assert updated.status == TaskStatus.FAILED
+        assert updated.metadata["error"] == "boom"
+
     async def test_update_owner(self, tools: dict) -> None:
         task = tools["store"].create(subject="Test", description="...")
         result = await tools["update"].execute(taskId=task.id, owner="alice")
         assert "alice" in result
+
+    async def test_update_empty_owner_unassigns(self, tools: dict) -> None:
+        task = tools["store"].create(subject="Test", description="...", owner="alice")
+        result = await tools["update"].execute(taskId=task.id, owner="")
+        updated = tools["store"].get(task.id)
+        assert "owner=(unassigned)" in result
+        assert updated is not None
+        assert updated.owner is None
 
     async def test_delete_via_status(self, tools: dict) -> None:
         task = tools["store"].create(subject="Test", description="...")

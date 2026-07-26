@@ -43,6 +43,7 @@ class SwarmRuntime:
             status_line = (
                 "Swarm status: "
                 f"{status.completed}/{status.total_tasks} done, "
+                f"{status.failed} failed, "
                 f"{status.in_progress} running, "
                 f"{status.blocked} blocked, "
                 f"{status.pending} pending"
@@ -60,7 +61,9 @@ class SwarmRuntime:
             self._apply_followups(store)
 
             refreshed = self.coordinator.get_status()
-            if refreshed.pending == 0 and refreshed.in_progress == 0:
+            if refreshed.in_progress == 0 and (
+                refreshed.pending == 0 or not self.coordinator.store.list_available()
+            ):
                 idle_count += 1
                 if idle_count >= self.coordinator.max_idle_iterations:
                     break

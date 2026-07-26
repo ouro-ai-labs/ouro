@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import tempfile
 from pathlib import Path
 
@@ -40,6 +41,32 @@ async def test_runtime_emits_status_only_on_change() -> None:
 
     status_events = [event for event in progress.events if event.kind == "swarm_status"]
     assert len(status_events) <= 1
+
+
+async def test_runtime_stops_on_blocked_only_deadlock() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = TaskStore(Path(tmpdir) / "tasks.db")
+        first = store.create(subject="First", description="...")
+        second = store.create(subject="Second", description="...")
+        store.update(first.id, blockedBy=[second.id])
+        store.update(second.id, blockedBy=[first.id])
+
+        progress = RecordingProgress()
+        coordinator = SwarmCoordinator(
+            store,
+            lambda agent_id: BuilderStub(),
+            heartbeat_interval=0.01,
+            max_idle_iterations=2,
+            progress=progress,
+        )
+        runtime = SwarmRuntime(coordinator, default_agents=0)
+
+        await asyncio.wait_for(
+            runtime.run_until_done(store=store, plan=None, root_task="task"), 1.0
+        )
+
+    status_events = [event for event in progress.events if event.kind == "swarm_status"]
+    assert status_events
 
 
 async def test_runtime_spawns_up_to_configured_default_agents() -> None:

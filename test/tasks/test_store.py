@@ -82,6 +82,14 @@ class TestUpdate:
         assert updated.status == TaskStatus.COMPLETED
         assert updated.completed_at is not None
 
+    def test_update_status_to_failed_clears_completed_timestamp(self, store: TaskStore) -> None:
+        task = store.create(subject="Test", description="...")
+        store.update(task.id, status=TaskStatus.COMPLETED)
+        updated = store.update(task.id, status=TaskStatus.FAILED)
+        assert updated is not None
+        assert updated.status == TaskStatus.FAILED
+        assert updated.completed_at is None
+
     def test_update_status_to_pending_clears_completed(self, store: TaskStore) -> None:
         task = store.create(subject="Test", description="...")
         store.update(task.id, status=TaskStatus.COMPLETED)
@@ -162,6 +170,19 @@ class TestListAvailable:
         assert len(available) == 1
         assert available[0].id == t1.id
 
+    def test_failed_blocker_does_not_unblock_dependent_task(self, store: TaskStore) -> None:
+        blocker = store.create(subject="Blocker", description="...")
+        blocked = store.create(subject="Blocked", description="...", blockedBy=[blocker.id])
+        store.update(blocker.id, status=TaskStatus.FAILED)
+
+        available = store.list_available()
+        result = store.claim(blocked.id, "alice")
+
+        assert [task.id for task in available] == []
+        assert result.success is False
+        assert result.reason == "blocked"
+        assert result.blocked_by_tasks == [blocker.id]
+
     def test_available_includes_unblocked(self, store: TaskStore) -> None:
         t1 = store.create(subject="Blocker", description="...")
         t2 = store.create(subject="Blocked", description="...", blockedBy=[t1.id])
@@ -191,6 +212,13 @@ class TestClaim:
         result = store.claim(task.id, "alice")
         assert result.success is False
         assert result.reason == "already_claimed"
+
+    def test_claim_failed_task_already_resolved(self, store: TaskStore) -> None:
+        task = store.create(subject="Test", description="...")
+        store.update(task.id, status=TaskStatus.FAILED)
+        result = store.claim(task.id, "alice")
+        assert result.success is False
+        assert result.reason == "already_resolved"
 
     def test_claim_already_resolved(self, store: TaskStore) -> None:
         task = store.create(subject="Test", description="...")
@@ -239,6 +267,22 @@ class TestUnassign:
         assert updated is not None
         assert updated.owner is None
         assert updated.status == TaskStatus.PENDING
+
+    def test_unassign_does_not_revive_completed_task(self, store: TaskStore) -> None:
+        task = store.create(subject="Test", description="...", owner="alice")
+        store.update(task.id, status=TaskStatus.COMPLETED)
+        updated = store.unassign(task.id)
+        assert updated is not None
+        assert updated.status == TaskStatus.COMPLETED
+        assert updated.owner == "alice"
+
+    def test_unassign_does_not_revive_failed_task(self, store: TaskStore) -> None:
+        task = store.create(subject="Test", description="...", owner="alice")
+        store.update(task.id, status=TaskStatus.FAILED)
+        updated = store.unassign(task.id)
+        assert updated is not None
+        assert updated.status == TaskStatus.FAILED
+        assert updated.owner == "alice"
 
 
 class TestGetAgentTasks:
