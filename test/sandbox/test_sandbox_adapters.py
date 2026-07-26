@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from ouro.capabilities.sandbox import ResourceConfig, SandboxProfile, VolumeMount
+from ouro.capabilities.sandbox import NetworkConfig, ResourceConfig, SandboxProfile, VolumeMount
 from ouro.capabilities.sandbox.adapters.base import ExecOnlySandboxSession, SandboxProviderError
 from ouro.capabilities.sandbox.adapters.boxlite import BoxLiteSandboxSession
 from ouro.capabilities.sandbox.adapters.smolvm import SmolVMSandboxSession
@@ -108,9 +108,118 @@ async def test_boxlite_missing_sdk_error(monkeypatch):
         await session.start()
 
 
+async def test_smolvm_start_uses_latest_smol_sdk(monkeypatch):
+    calls = []
+
+    class FakeMountSpec:
+        def __init__(self, *, source, target, read_only=False):
+            self.source = source
+            self.target = target
+            self.read_only = read_only
+
+        def __eq__(self, other):
+            return self.__dict__ == getattr(other, "__dict__", {})
+
+    class FakeResourceSpec:
+        def __init__(self, *, cpus=None, memory_mb=None, network=None, allow_hosts=None):
+            self.cpus = cpus
+            self.memory_mb = memory_mb
+            self.network = network
+            self.allow_hosts = allow_hosts
+
+        def __eq__(self, other):
+            return self.__dict__ == getattr(other, "__dict__", {})
+
+    class FakeMachineConfig:
+        def __init__(self, **kwargs):
+            calls.append(("config", kwargs))
+            self.kwargs = kwargs
+
+    class FakeMachine:
+        @classmethod
+        def create(cls, config):
+            calls.append(("create", config.kwargs))
+            return cls()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "smol",
+        SimpleNamespace(
+            Machine=FakeMachine,
+            MachineConfig=FakeMachineConfig,
+            MountSpec=FakeMountSpec,
+            ResourceSpec=FakeResourceSpec,
+        ),
+    )
+
+    profile = SandboxProfile(
+        sandbox_id="smol",
+        provider="smolvm",
+        image="python:3.12-alpine",
+        working_dir="/workspace",
+        persist=True,
+        network=NetworkConfig(enabled=True, allow_hosts=["registry.npmjs.org"]),
+        resources=ResourceConfig(cpu=2, memory_mb=4096),
+        volumes=[VolumeMount(source="/host/project", target="/workspace", mode="rw")],
+    )
+    session = SmolVMSandboxSession(profile)
+
+    await session.start()
+
+    expected = {
+        "name": "smol",
+        "image": "python:3.12-alpine",
+        "mounts": [FakeMountSpec(source="/host/project", target="/workspace")],
+        "resources": FakeResourceSpec(
+            cpus=2,
+            memory_mb=4096,
+            network=True,
+            allow_hosts=["registry.npmjs.org"],
+        ),
+        "persistent": True,
+    }
+    assert calls == [("config", expected), ("create", expected)]
+
+
+async def test_smolvm_exec_uses_exec_options(monkeypatch):
+    from ouro.core.sandbox import SandboxExecResult
+
+    class FakeExecOptions:
+        def __init__(self, *, env=None, workdir=None, timeout=None):
+            self.env = env
+            self.workdir = workdir
+            self.timeout = timeout
+
+    class FakeMachine:
+        def exec(self, args, opts):
+            assert args == ["sh", "-lc", "pwd"]
+            assert opts.__dict__ == {
+                "env": {"A": "B"},
+                "workdir": "/workspace",
+                "timeout": 5,
+            }
+            return SandboxExecResult(stdout="/workspace\n", exit_code=0)
+
+    monkeypatch.setitem(sys.modules, "smol", SimpleNamespace(ExecOptions=FakeExecOptions))
+
+    session = SmolVMSandboxSession(
+        SandboxProfile(sandbox_id="smol", provider="smolvm", image="python:alpine")
+    )
+    session._machine = FakeMachine()
+
+    result = await session._exec_provider(
+        "pwd",
+        cwd="/workspace",
+        env={"A": "B"},
+        timeout=5,
+    )
+
+    assert result.stdout == "/workspace\n"
+
+
 async def test_smolvm_missing_sdk_error(monkeypatch):
-    _block_import(monkeypatch, "smolvm")
+    _block_import(monkeypatch, "smol")
     profile = SandboxProfile(sandbox_id="smol", provider="smolvm", image="python:alpine")
     session = SmolVMSandboxSession(profile)
-    with pytest.raises(SandboxProviderError, match="pip install smolvm"):
+    with pytest.raises(SandboxProviderError, match="smol-machines Python SDK"):
         await session.start()

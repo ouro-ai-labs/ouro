@@ -9,7 +9,7 @@ This first sandbox slice supports the **sandbox-as-a-tool** mode: ouro itself st
 | Provider | Install / Runtime | Notes |
 |----------|-------------------|-------|
 | `boxlite` | `pip install boxlite` | SDK-first adapter for BoxLite boxes. |
-| `smolvm` | `pip install smolvm` plus a running smolvm server | SDK-first adapter; default server is `http://127.0.0.1:8080`. |
+| `smolvm` | `pip install smolmachines` | SDK-first adapter using the embedded local engine; no `smolvm serve` process is required. |
 
 Provider runtimes are not installed by ouro. Install and validate the provider you want to use before enabling sandbox tools.
 
@@ -21,7 +21,6 @@ Sandboxes are configured in `~/.ouro/sandboxes.yaml` (auto-created when `Sandbox
 sandboxes:
   smolvm-local:
     provider: smolvm
-    api_url: http://127.0.0.1:8080
     image: python:3.12-alpine
     working_dir: /workspace
     persist: true
@@ -55,7 +54,6 @@ current: smolvm-local
 |-------|----------|-------------|
 | `provider` | Yes | `boxlite` or `smolvm` |
 | `image` | Yes | OCI image used by the provider |
-| `api_url` | smolvm only when non-default | smolvm server URL |
 | `working_dir` | No | Working directory shown to the agent; defaults to `/workspace` |
 | `persist` | No | Whether provider state should persist when possible |
 | `network.enabled` | No | Provider-specific network enable flag; defaults to `false` |
@@ -118,9 +116,9 @@ Host implementations of `shell`, `read_file`, `write_file`, `smart_edit`, `glob_
 
 Install the BoxLite Python SDK/runtime in the environment running ouro.
 
-### `smolvm sandbox provider requires pip install smolvm and a running smolvm server`
+### `smol sandbox provider requires the smol-machines Python SDK`
 
-Install the smolvm Python SDK and start/verify the smolvm server. The default SDK endpoint is `http://127.0.0.1:8080` unless `api_url` is configured.
+Install the current smol-machines Python SDK with `pip install smolmachines`. The adapter uses the embedded local engine and does not require `smolvm serve start`.
 
 ### Sandbox files are missing
 
