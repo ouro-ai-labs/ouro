@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-07-26
+
+### Added
+
+- **Local web trace monitor**: added `ouro-trace` with persisted SQLite trace browsing, run lists, live trace trees, structured event details, raw JSON views, and auto-scroll behavior for active runs (#249, #251, #252, #254, #255).
+- **SQLite trace persistence and CLI tracing**: added SQLite trace export/storage configuration and opt-in `--trace` instrumentation for run, LLM, and tool spans (#245, #247).
+
+### Changed
+
+- **Trace payloads**: tracing now captures richer run, LLM, and tool content by default with redaction/truncation safety for secrets and large/blob values (#253).
+- **Retry and stale-file UX**: reduced noisy retry/stale-file warnings and styled retry notices consistently with tool-call panels (#248, #250).
+
+### Fixed
+
+- **Codex subscription adapter**: stopped forwarding unsupported `max_tokens`/`max_output_tokens` parameters to avoid ChatGPT Codex HTTP 400 errors (#256).
+- **OAuth model catalog**: cleaned up legacy ChatGPT OAuth model aliases (#257).
+- **Session resume UX**: added regression coverage for CLI resume ordering, fixed session persistence replay, and suppressed the startup banner/config/tip after `ouro-cli --resume` history replay (#246, #260, #261).
+
 ## [0.5.1] - 2026-06-21
 
 ### Added
