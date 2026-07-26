@@ -10,15 +10,11 @@ builtin tool set + a TUI-backed `ProgressSink`. Used by:
 from __future__ import annotations
 
 from ouro.capabilities import AgentBuilder, ComposedAgent
-from ouro.capabilities.tools.builtins.advanced_file_ops import GlobTool, GrepTool
-from ouro.capabilities.tools.builtins.conversation_search import ConversationSearchTool
-from ouro.capabilities.tools.builtins.file_ops import FileReadTool, FileWriteTool
+from ouro.capabilities.sandbox import SandboxManager
+from ouro.capabilities.sandbox.adapters import create_sandbox_session
 from ouro.capabilities.tools.builtins.memory_block_edit import MemoryBlockEditTool
 from ouro.capabilities.tools.builtins.multi_task import MultiTaskTool
-from ouro.capabilities.tools.builtins.shell import ShellTool
-from ouro.capabilities.tools.builtins.smart_edit import SmartEditTool
-from ouro.capabilities.tools.builtins.web_fetch import WebFetchTool
-from ouro.capabilities.tools.builtins.web_search import WebSearchTool
+from ouro.capabilities.tools.builtins.sandbox import create_default_tools
 from ouro.config import Config
 from ouro.core.llm import ModelManager, create_llm_adapter
 from ouro.core.tracing import Tracer
@@ -34,6 +30,8 @@ def create_agent(
     progress_format: str = "tui",
     progress_stream=None,
     tracer: Tracer | None = None,
+    sandbox_id: str | None = None,
+    sandbox_enabled: bool = False,
 ) -> ComposedAgent:
     """Factory function to create a fully wired ComposedAgent.
 
@@ -87,18 +85,36 @@ def create_agent(
     progress_sink = (
         JsonProgressSink(stream=progress_stream) if progress_format == "json" else TuiProgressSink()
     )
+    sandbox_session = None
+    if sandbox_enabled:
+        sandbox_manager = SandboxManager()
+        if sandbox_id:
+            sandbox_profile = sandbox_manager.get_sandbox(sandbox_id)
+            if sandbox_profile is None:
+                available = ", ".join(sandbox_manager.get_sandbox_ids())
+                raise ValueError(
+                    f"Sandbox '{sandbox_id}' not found."
+                    + (
+                        f" Available: {available}"
+                        if available
+                        else " Add one to ~/.ouro/sandboxes.yaml."
+                    )
+                )
+            sandbox_manager.switch_sandbox(sandbox_id)
+        else:
+            sandbox_profile = sandbox_manager.get_current_sandbox()
+        if sandbox_profile is None:
+            raise ValueError("No sandbox configured. Edit ~/.ouro/sandboxes.yaml.")
+        is_valid_sandbox, sandbox_error = sandbox_manager.validate_sandbox(sandbox_profile)
+        if not is_valid_sandbox:
+            raise ValueError(sandbox_error)
+        sandbox_session = create_sandbox_session(sandbox_profile)
 
-    tools = [
-        FileReadTool(),
-        FileWriteTool(),
-        WebSearchTool(),
-        WebFetchTool(),
-        GlobTool(),
-        GrepTool(),
-        SmartEditTool(),
-        ShellTool(attribution_enabled=Config.ATTRIBUTION_ENABLED),
-        ConversationSearchTool(memory_dir=memory_dir),
-    ]
+    tools = create_default_tools(
+        sandbox_session=sandbox_session,
+        memory_dir=memory_dir,
+        attribution_enabled=Config.ATTRIBUTION_ENABLED,
+    )
 
     builder = (
         AgentBuilder()
@@ -114,6 +130,12 @@ def create_agent(
         .with_memory(sessions_dir=sessions_dir, memory_dir=memory_dir)
         .with_tools(tools)
     )
+
+    if sandbox_enabled:
+        # The default read-before-write rule checks host filesystem paths. In
+        # sandbox mode, the same tool names are backed by a remote sandbox, so
+        # keep the host-aware rule out of the sandbox tool path.
+        builder = builder.without_read_before_write()
 
     # Agent Swarm / Task V2: persistent task store + multi-agent coordination.
     # When enabled, replaces TodoTool and MultiTaskTool with task_create,
