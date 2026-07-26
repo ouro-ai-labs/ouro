@@ -131,6 +131,7 @@ Extra flags are forwarded to `harbor run`, so any Harbor CLI option works. See [
 - **[Bot Guide](docs/bot-guide.md)** -- IM bot setup, commands, proactive mechanisms, personality
 - [Configuration](docs/configuration.md) -- model setup, runtime settings, custom endpoints
 - [Examples](docs/examples.md) -- usage patterns and programmatic API
+- [Sandbox Providers](docs/sandbox.md) -- BoxLite/smolvm sandbox tools and configuration
 - [Memory Management](docs/memory-management.md) -- compression, persistence, token tracking
 - [Task V2](docs/task-v2.md) -- persistent task store with dependency graphs (Phase 1)
 - [Extending](docs/extending.md) -- adding tools, agents, LLM providers

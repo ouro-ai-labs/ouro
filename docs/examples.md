@@ -28,6 +28,12 @@ ouro --task "Summarize this README" --model openai/gpt-4o
 # Set reasoning effort (LiteLLM/OpenAI-style). Use `off` as alias for `none`.
 ouro --task "Solve this logic puzzle" --reasoning-effort high
 
+# Enable sandbox tools using a configured sandbox profile
+ouro --sandbox smolvm-local --task "Use sandbox_shell to run python --version"
+
+# Use the current/default sandbox from ~/.ouro/sandboxes.yaml
+ouro --sandbox --task "Create and run a small Python script inside the sandbox"
+
 # Enable tracing to the configured SQLite trace DB (`TRACE_DB_PATH`, default `~/.ouro/trace.db`)
 ouro --task "Summarize this README" --trace
 
@@ -129,6 +135,12 @@ ouro --task "Find all TODO comments in Python files"
 ```bash
 ouro --task "Search for Python 3.12 new features and summarize"
 ouro --task "Fetch https://example.com and extract the main content"
+```
+
+**Sandboxed shell/files** (requires `~/.ouro/sandboxes.yaml` and provider runtime):
+```bash
+ouro --sandbox boxlite-local --task "Use sandbox_write_file to create /workspace/app.py, then run it with sandbox_shell"
+ouro --sandbox smolvm-local --task "Use sandbox_grep_content to search files under /workspace"
 ```
 
 **Shell commands**:

@@ -80,6 +80,41 @@ Advanced environment overrides (rarely needed; defaults work for most users):
 
 Maintainer note: refresh the bundled OAuth model catalog with `python scripts/update_oauth_model_catalog.py`.
 
+## Sandbox Configuration
+
+Sandbox profiles are configured in `~/.ouro/sandboxes.yaml` (auto-created when sandbox configuration is first loaded). Sandboxes are optional and only enabled when you pass `--sandbox`.
+
+```yaml
+sandboxes:
+  smolvm-local:
+    provider: smolvm
+    api_url: http://127.0.0.1:8080
+    image: python:3.12-alpine
+    working_dir: /workspace
+    persist: true
+    network:
+      enabled: false
+      allow_hosts: []
+
+  boxlite-local:
+    provider: boxlite
+    image: python:3.12-slim
+    working_dir: /workspace
+    persist: true
+
+default: smolvm-local
+current: smolvm-local
+```
+
+Run with a configured sandbox:
+
+```bash
+ouro --sandbox smolvm-local --task "Run python --version inside the sandbox"
+ouro --sandbox --task "Use the current/default sandbox"
+```
+
+When enabled, ouro adds `sandbox_shell`, `sandbox_read_file`, `sandbox_write_file`, `sandbox_glob_files`, `sandbox_grep_content`, and `sandbox_smart_edit`. Host tools remain unchanged. See [sandbox.md](sandbox.md) for provider setup, safety notes, and troubleshooting.
+
 ## Runtime Settings
 
 Settings live in `~/.ouro/config` (KEY=VALUE format, auto-created with defaults).
