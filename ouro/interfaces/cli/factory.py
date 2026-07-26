@@ -12,45 +12,15 @@ from __future__ import annotations
 from ouro.capabilities import AgentBuilder, ComposedAgent
 from ouro.capabilities.sandbox import SandboxManager
 from ouro.capabilities.sandbox.adapters import create_sandbox_session
-from ouro.capabilities.tools.builtins.advanced_file_ops import GlobTool, GrepTool
-from ouro.capabilities.tools.builtins.conversation_search import ConversationSearchTool
-from ouro.capabilities.tools.builtins.file_ops import FileReadTool, FileWriteTool
 from ouro.capabilities.tools.builtins.memory_block_edit import MemoryBlockEditTool
 from ouro.capabilities.tools.builtins.multi_task import MultiTaskTool
-from ouro.capabilities.tools.builtins.sandbox import create_sandbox_tools
-from ouro.capabilities.tools.builtins.shell import ShellTool
-from ouro.capabilities.tools.builtins.smart_edit import SmartEditTool
-from ouro.capabilities.tools.builtins.web_fetch import WebFetchTool
-from ouro.capabilities.tools.builtins.web_search import WebSearchTool
+from ouro.capabilities.tools.builtins.sandbox import create_default_tools
 from ouro.config import Config
 from ouro.core.llm import ModelManager, create_llm_adapter
 from ouro.core.tracing import Tracer
 from ouro.interfaces.tui import terminal_ui
 from ouro.interfaces.tui.json_progress import JsonProgressSink
 from ouro.interfaces.tui.tui_progress import TuiProgressSink
-
-
-def _base_tools(*, sandbox_enabled: bool, memory_dir: str | None):
-    if sandbox_enabled:
-        # Sandbox mode is sandbox-only for filesystem/search/command tools.
-        # Keep host-independent agent capabilities (web + memory search), but do
-        # not expose host shell/read/write/edit/glob/grep.
-        return [
-            WebSearchTool(),
-            WebFetchTool(),
-            ConversationSearchTool(memory_dir=memory_dir),
-        ]
-    return [
-        FileReadTool(),
-        FileWriteTool(),
-        WebSearchTool(),
-        WebFetchTool(),
-        GlobTool(),
-        GrepTool(),
-        SmartEditTool(),
-        ShellTool(attribution_enabled=Config.ATTRIBUTION_ENABLED),
-        ConversationSearchTool(memory_dir=memory_dir),
-    ]
 
 
 def create_agent(
@@ -115,8 +85,7 @@ def create_agent(
     progress_sink = (
         JsonProgressSink(stream=progress_stream) if progress_format == "json" else TuiProgressSink()
     )
-    tools = _base_tools(sandbox_enabled=sandbox_enabled, memory_dir=memory_dir)
-
+    sandbox_session = None
     if sandbox_enabled:
         sandbox_manager = SandboxManager()
         if sandbox_id:
@@ -140,7 +109,12 @@ def create_agent(
         if not is_valid_sandbox:
             raise ValueError(sandbox_error)
         sandbox_session = create_sandbox_session(sandbox_profile)
-        tools.extend(create_sandbox_tools(sandbox_session))
+
+    tools = create_default_tools(
+        sandbox_session=sandbox_session,
+        memory_dir=memory_dir,
+        attribution_enabled=Config.ATTRIBUTION_ENABLED,
+    )
 
     builder = (
         AgentBuilder()

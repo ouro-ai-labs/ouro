@@ -9,9 +9,12 @@ from ouro.core.sandbox import SandboxExecResult, SandboxSession
 
 from ..base import BaseTool
 from .advanced_file_ops import GlobTool, GrepTool
+from .conversation_search import ConversationSearchTool
 from .file_ops import FileReadTool, FileWriteTool
 from .shell import ShellTool
 from .smart_edit import SmartEditTool
+from .web_fetch import WebFetchTool
+from .web_search import WebSearchTool
 
 
 def _format_exec_result(result: SandboxExecResult) -> str:
@@ -363,14 +366,57 @@ class SandboxSmartEditTool(SmartEditTool):
         return "\n".join(parts)
 
 
-def create_sandbox_tools(session: SandboxSession) -> list[BaseTool]:
-    """Create standard-named tools backed by a sandbox session."""
+def _sandbox_backed_tools(
+    session: SandboxSession, *, attribution_enabled: bool = True
+) -> list[BaseTool]:
+    """Create standard-named filesystem/search/command tools backed by a sandbox."""
 
     return [
         SandboxReadFileTool(session),
         SandboxWriteFileTool(session),
-        SandboxShellTool(session),
+        SandboxShellTool(session, attribution_enabled=attribution_enabled),
         SandboxGlobTool(session),
         SandboxGrepTool(session),
         SandboxSmartEditTool(session),
     ]
+
+
+def _host_filesystem_tools(*, attribution_enabled: bool = True) -> list[BaseTool]:
+    """Create standard host filesystem/search/command tools."""
+
+    return [
+        FileReadTool(),
+        FileWriteTool(),
+        GlobTool(),
+        GrepTool(),
+        SmartEditTool(),
+        ShellTool(attribution_enabled=attribution_enabled),
+    ]
+
+
+def _host_independent_tools(*, memory_dir: str | None = None) -> list[BaseTool]:
+    """Create tools that are not host filesystem/command execution backends."""
+
+    return [
+        WebSearchTool(),
+        WebFetchTool(),
+        ConversationSearchTool(memory_dir=memory_dir),
+    ]
+
+
+def create_default_tools(
+    *,
+    sandbox_session: SandboxSession | None = None,
+    memory_dir: str | None = None,
+    attribution_enabled: bool = True,
+) -> list[BaseTool]:
+    """Create the default CLI/bot toolset.
+
+    When ``sandbox_session`` is provided, shell/file/edit/search tool names are
+    backed by the sandbox instead of the host. Host-independent tools are kept.
+    """
+
+    tools = _host_independent_tools(memory_dir=memory_dir)
+    if sandbox_session is None:
+        return _host_filesystem_tools(attribution_enabled=attribution_enabled) + tools
+    return _sandbox_backed_tools(sandbox_session, attribution_enabled=attribution_enabled) + tools
