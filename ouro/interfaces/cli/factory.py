@@ -30,6 +30,29 @@ from ouro.interfaces.tui.json_progress import JsonProgressSink
 from ouro.interfaces.tui.tui_progress import TuiProgressSink
 
 
+def _base_tools(*, sandbox_enabled: bool, memory_dir: str | None):
+    if sandbox_enabled:
+        # Sandbox mode is sandbox-only for filesystem/search/command tools.
+        # Keep host-independent agent capabilities (web + memory search), but do
+        # not expose host shell/read/write/edit/glob/grep.
+        return [
+            WebSearchTool(),
+            WebFetchTool(),
+            ConversationSearchTool(memory_dir=memory_dir),
+        ]
+    return [
+        FileReadTool(),
+        FileWriteTool(),
+        WebSearchTool(),
+        WebFetchTool(),
+        GlobTool(),
+        GrepTool(),
+        SmartEditTool(),
+        ShellTool(attribution_enabled=Config.ATTRIBUTION_ENABLED),
+        ConversationSearchTool(memory_dir=memory_dir),
+    ]
+
+
 def create_agent(
     model_id: str | None = None,
     sessions_dir: str | None = None,
@@ -92,18 +115,7 @@ def create_agent(
     progress_sink = (
         JsonProgressSink(stream=progress_stream) if progress_format == "json" else TuiProgressSink()
     )
-
-    tools = [
-        FileReadTool(),
-        FileWriteTool(),
-        WebSearchTool(),
-        WebFetchTool(),
-        GlobTool(),
-        GrepTool(),
-        SmartEditTool(),
-        ShellTool(attribution_enabled=Config.ATTRIBUTION_ENABLED),
-        ConversationSearchTool(memory_dir=memory_dir),
-    ]
+    tools = _base_tools(sandbox_enabled=sandbox_enabled, memory_dir=memory_dir)
 
     sandbox_section = None
     if sandbox_enabled:
@@ -134,8 +146,8 @@ def create_agent(
         tools.extend(create_sandbox_tools(sandbox_session))
         sandbox_section = (
             "<sandbox>\n"
-            "Sandbox is enabled. Use sandbox_* tools for commands and files inside the isolated sandbox.\n"
-            "Use non-sandbox file tools only for host-side repository/configuration files.\n"
+            "Sandbox is enabled. Host shell/file/edit/search tools are not available.\n"
+            "Use sandbox_* tools for commands and files inside the isolated sandbox.\n"
             f"Sandbox id: {sandbox_profile.sandbox_id}\n"
             f"Provider: {sandbox_profile.provider}\n"
             f"Working directory: {sandbox_profile.working_dir}\n"

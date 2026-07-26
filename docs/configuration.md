@@ -113,7 +113,7 @@ ouro --sandbox smolvm-local --task "Run python --version inside the sandbox"
 ouro --sandbox --task "Use the current/default sandbox"
 ```
 
-When enabled, ouro adds `sandbox_shell`, `sandbox_read_file`, `sandbox_write_file`, `sandbox_glob_files`, `sandbox_grep_content`, and `sandbox_smart_edit`. Host tools remain unchanged. See [sandbox.md](sandbox.md) for provider setup, safety notes, and troubleshooting.
+When enabled, ouro adds `sandbox_shell`, `sandbox_read_file`, `sandbox_write_file`, `sandbox_glob_files`, `sandbox_grep_content`, and `sandbox_smart_edit`. Host shell/file/edit/search tools are not registered in sandbox mode. See [sandbox.md](sandbox.md) for provider setup, safety notes, and troubleshooting.
 
 ## Runtime Settings
 

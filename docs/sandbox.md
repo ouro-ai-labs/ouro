@@ -95,7 +95,7 @@ The selected sandbox is bound when the agent is created. Switching sandboxes mid
 
 ## Sandbox Tools
 
-When sandbox is enabled, ouro adds these tools alongside the normal host tools:
+When sandbox is enabled, ouro registers sandbox-scoped replacements for filesystem/search/command tools:
 
 | Tool | Runs inside sandbox |
 |------|---------------------|
@@ -106,11 +106,11 @@ When sandbox is enabled, ouro adds these tools alongside the normal host tools:
 | `sandbox_grep_content` | Search sandbox files |
 | `sandbox_smart_edit` | Edit sandbox files with diff preview/fuzzy matching |
 
-The normal tools (`shell`, `read_file`, `write_file`, `smart_edit`, etc.) still operate on the host. Use the `sandbox_*` tools for sandbox paths and the normal tools for host repository/configuration files.
+In sandbox mode, host `shell`, `read_file`, `write_file`, `smart_edit`, `glob_files`, and `grep_content` are not registered. The agent can still use host-independent capabilities such as `web_search`, `web_fetch`, conversation search, memory tools, and task orchestration tools.
 
 ## Safety Notes
 
-- Sandbox is opt-in; host tools are unchanged by default.
+- Sandbox is opt-in. When enabled, host shell/file/edit/search tools are not exposed to the agent.
 - Do not mount secrets or sensitive host directories into untrusted workloads.
 - No host environment variables are forwarded by this first slice.
 - Network should stay disabled unless the task requires it.
