@@ -181,6 +181,102 @@ async def test_smolvm_start_uses_latest_smol_sdk(monkeypatch):
     assert calls == [("config", expected), ("create", expected)]
 
 
+async def test_smolvm_persistent_start_connects_existing_machine(monkeypatch):
+    calls = []
+
+    class FakeMountSpec:
+        def __init__(self, *, source, target, read_only=False):
+            pass
+
+    class FakeResourceSpec:
+        def __init__(self, **kwargs):
+            pass
+
+    class FakeMachineConfig:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    class FakeMachine:
+        @classmethod
+        def create(cls, config):
+            calls.append(("create", config.kwargs["name"]))
+            raise RuntimeError("machine 'smol' already exists")
+
+        @classmethod
+        def connect(cls, machine_id):
+            calls.append(("connect", machine_id))
+            return cls()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "smol",
+        SimpleNamespace(
+            Machine=FakeMachine,
+            MachineConfig=FakeMachineConfig,
+            MountSpec=FakeMountSpec,
+            ResourceSpec=FakeResourceSpec,
+        ),
+    )
+
+    profile = SandboxProfile(
+        sandbox_id="smol",
+        provider="smolvm",
+        image="python:3.12-alpine",
+        persist=True,
+    )
+    session = SmolVMSandboxSession(profile)
+
+    await session.start()
+
+    assert isinstance(session._machine, FakeMachine)
+    assert calls == [("create", "smol"), ("connect", "smol")]
+
+
+async def test_smolvm_nonpersistent_start_does_not_reuse_existing_machine(monkeypatch):
+    class FakeMountSpec:
+        def __init__(self, *, source, target, read_only=False):
+            pass
+
+    class FakeResourceSpec:
+        def __init__(self, **kwargs):
+            pass
+
+    class FakeMachineConfig:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    class FakeMachine:
+        @classmethod
+        def create(cls, config):
+            raise RuntimeError("machine 'smol' already exists")
+
+        @classmethod
+        def connect(cls, machine_id):
+            raise AssertionError("non-persistent machines must not be reused")
+
+    monkeypatch.setitem(
+        sys.modules,
+        "smol",
+        SimpleNamespace(
+            Machine=FakeMachine,
+            MachineConfig=FakeMachineConfig,
+            MountSpec=FakeMountSpec,
+            ResourceSpec=FakeResourceSpec,
+        ),
+    )
+
+    profile = SandboxProfile(
+        sandbox_id="smol",
+        provider="smolvm",
+        image="python:3.12-alpine",
+        persist=False,
+    )
+    session = SmolVMSandboxSession(profile)
+
+    with pytest.raises(SandboxProviderError, match="already exists"):
+        await session.start()
+
+
 async def test_smolvm_exec_uses_exec_options(monkeypatch):
     from ouro.core.sandbox import SandboxExecResult
 

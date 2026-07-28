@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 from prompt_toolkit.application import Application
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import HSplit, Layout, Window
@@ -118,7 +120,7 @@ async def pick_reasoning_effort(
         lines.append(("class:hint", "\nEnter to select. Esc to go back\n"))
         return lines
 
-    control = FormattedTextControl(_render, focusable=True)
+    control = FormattedTextControl(cast(Any, _render), focusable=True)
     window = Window(content=control, dont_extend_height=True, always_hide_cursor=True)
     layout = Layout(HSplit([window]))
 

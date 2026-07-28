@@ -11,6 +11,11 @@ from ..manager import SandboxProfile
 from .base import ExecOnlySandboxSession, SandboxProviderError, normalize_exec_result, split_command
 
 
+def _is_already_exists_error(error: Exception) -> bool:
+    message = str(error).lower()
+    return "already exists" in message or "already_exist" in message
+
+
 class SmolVMSandboxSession(ExecOnlySandboxSession):
     """SDK-first smol session using the current embedded local engine.
 
@@ -70,7 +75,15 @@ class SmolVMSandboxSession(ExecOnlySandboxSession):
                 resources=resources,
                 persistent=self.profile.persist,
             )
-            self._machine = await asyncio.to_thread(Machine.create, config)
+            try:
+                self._machine = await asyncio.to_thread(Machine.create, config)
+            except Exception as e:
+                if self.profile.persist and _is_already_exists_error(e):
+                    self._machine = await asyncio.to_thread(
+                        Machine.connect, self.profile.sandbox_id
+                    )
+                else:
+                    raise
         except Exception as e:  # pragma: no cover - provider-specific
             raise SandboxProviderError(f"Failed to start smol sandbox: {e}") from e
 

@@ -1,6 +1,6 @@
 """Enhanced input handling with auto-completion and keyboard shortcuts."""
 
-from typing import Callable, List, Optional
+from typing import Any, Callable, List, Optional, cast
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.buffer import CompletionState
@@ -262,7 +262,7 @@ class InputHandler:
             key_bindings=self.key_bindings,
             complete_while_typing=True,
             enable_history_search=True,
-            bottom_toolbar=bottom_toolbar,
+            bottom_toolbar=cast(Any, bottom_toolbar),
         )
 
         def _on_text_insert(_buffer: object) -> None:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Sequence
+from typing import Any, Sequence, cast
 
 from prompt_toolkit.application import Application
 from prompt_toolkit.key_binding import KeyBindings
@@ -72,7 +72,7 @@ async def pick_skills_action(title: str = "Skills") -> str | None:
         lines.append(("class:hint", "\nPress enter to confirm or esc to go back\n"))
         return lines
 
-    control = FormattedTextControl(_render, focusable=True)
+    control = FormattedTextControl(cast(Any, _render), focusable=True)
     window = Window(content=control, dont_extend_height=True, always_hide_cursor=True)
     layout = Layout(HSplit([window]))
 

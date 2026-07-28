@@ -8,7 +8,7 @@ import shlex
 import shutil
 import sys
 from pathlib import Path
-from typing import Protocol, Sequence
+from typing import Any, Protocol, Sequence, cast
 
 import aiofiles.os
 from prompt_toolkit.application import Application
@@ -159,7 +159,7 @@ async def pick_model_id(model_manager: _ModelManager, title: str) -> str | None:
 
         return lines
 
-    control = FormattedTextControl(_render, focusable=True)
+    control = FormattedTextControl(cast(Any, _render), focusable=True)
     window = Window(content=control, dont_extend_height=True, always_hide_cursor=True)
     layout = Layout(HSplit([window]))
 
